@@ -1,0 +1,22 @@
+---
+app_dir: /opt/old-news
+
+# Loopback only: Tailscale Serve fronts the API on the tailnet and terminates TLS.
+app_bind: 127.0.0.1
+api_host_port: 8000
+
+# Public packages, so the box holds no registry credential.
+registry: ghcr.io/adam-hammo
+
+tailscale_tag: "tag:server"
+tailscale_hostname: rss-01
+
+heartbeat_interval: 5min
+
+keepbusy_enabled: true
+keepbusy_workers: 1
+keepbusy_load: 50
+keepbusy_duration: 2h
+keepbusy_schedule: "17:00"
+
+telemetry_enabled: true

@@ -16,7 +16,10 @@ var/
 *.opml
 !feeds.example.opml
 
-# pulumi
-infra/Pulumi.*.yaml
-!infra/Pulumi.*.yaml.example
-infra/ansible/inventory.ini
+launch.log
+
+# Pulumi.<stack>.yaml is committed. Its `secure:` values are ciphertext that only
+# the stack's Pulumi Cloud key can read, and CI cannot select a stack it has no
+# config for. Only local state and backups stay out.
+infra/.pulumi/
+infra/Pulumi.*.yaml.bak

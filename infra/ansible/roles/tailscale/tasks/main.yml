@@ -1,0 +1,65 @@
+---
+# The one piece of box state this playbook asserts rather than converges:
+# re-authenticating changes the node's identity and drops the connection Ansible is
+# running over.
+
+- name: Add the Tailscale repository
+  # `curl | sh` installs the same package but leaves apt unable to upgrade it.
+  ansible.builtin.deb822_repository:
+    name: tailscale
+    types: [deb]
+    uris: https://pkgs.tailscale.com/stable/ubuntu
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [main]
+    signed_by: https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_facts['distribution_release'] }}.asc
+    state: present
+
+- name: Remove the legacy one-line Tailscale repository
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/tailscale.list
+    state: absent
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: true
+
+- name: Enable tailscaled
+  ansible.builtin.systemd:
+    name: tailscaled
+    enabled: true
+    state: started
+
+- name: Read the node state
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+
+- name: Re-authenticate as a tagged node
+  # Expect the play to fail here: the connection dies with the old identity.
+  # Re-run without the flag afterwards.
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - up
+      - --auth-key={{ tailscale_auth_key }}
+      - --advertise-tags={{ tailscale_tag }}
+      - --ssh
+      - --hostname={{ tailscale_hostname }}
+  when: tailscale_retag | default(false) | bool
+  async: 60
+  poll: 0
+  no_log: true
+
+- name: Require a tagged node
+  # An untagged node's key expires, and the box then leaves the tailnet silently.
+  ansible.builtin.assert:
+    that:
+      - tailscale_tag in ((tailscale_status.stdout | from_json).Self.Tags | default([]))
+    fail_msg: >-
+      {{ inventory_hostname }} is not tagged {{ tailscale_tag }}, so its node key
+      expires. Fix it in the Tailscale admin console (machine menu -> Edit ACL
+      tags), which does not interrupt this connection, or re-run with
+      -e tailscale_retag=true and expect one failed play.
+    quiet: true

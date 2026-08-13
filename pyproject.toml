@@ -34,8 +34,26 @@ dev = [
   "ty>=0.0.71",
   "pre-commit>=4.0",
 ]
-# Not installed by default. `uv run --group infra ...`
-infra = ["pulumi>=3.140", "pulumi-oci>=2.20", "ansible-core>=2.18"]
+# Neither is installed by default. Kept apart because a deploy needs Ansible and
+# nothing else — pulling Pulumi's provider SDKs would add ~100 MB to every one.
+# These are the Python SDKs only; the Pulumi CLI is a separate binary on PATH.
+infra = [
+  "pulumi>=3.256",
+  "pulumi-oci>=4.20",
+  "pulumi-random>=4.21",
+  "pulumi-tailscale>=0.29",
+  "pulumi-b2",
+  "pulumi-logfire",
+]
+deploy = ["ansible-core>=2.21"]
+
+# Backblaze and Logfire publish Terraform providers but no Pulumi ones, so their
+# SDKs are generated locally by `pulumi package add terraform-provider <ns>/<name>`
+# and committed — 47 files, and they pin the upstream provider version, which is
+# what keeps a `pulumi up` reproducible.
+[tool.uv.sources]
+pulumi-b2 = { path = "infra/sdks/b2" }
+pulumi-logfire = { path = "infra/sdks/logfire" }
 
 [build-system]
 requires = ["hatchling"]
@@ -46,6 +64,8 @@ packages = ["src/old_news"]
 
 [tool.ruff]
 src = ["src", "tests"]
+# Generated code.
+extend-exclude = ["infra/sdks"]
 target-version = "py314"
 line-length = 100
 

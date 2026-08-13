@@ -57,7 +57,7 @@ tests/
   unit/              no Docker, no network beyond loopback
   integration/       needs a real Postgres
 infra/
-  provider_oci.py    the only cloud-specific file
+  resources/         one module per vendor
   ansible/roles/     app + backup
 docker/
   postgres.Dockerfile   pg18 + pgvector + pg_search, multi-arch

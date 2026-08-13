@@ -1,0 +1,18 @@
+---
+# Tailscale terminates TLS on the MagicDNS name, so the app binds 127.0.0.1 and
+# nothing listens on the tailnet directly. No DNS records, no certificate renewal,
+# and no hostname baked into the app's config.
+
+- name: Read the current serve config
+  ansible.builtin.command: tailscale serve status --json
+  register: serve_status
+  changed_when: false
+
+- name: Publish the API over HTTPS on the tailnet
+  ansible.builtin.command:
+    argv: [tailscale, serve, --bg, "{{ api_host_port }}"]
+  vars:
+    proxy_target: "http://127.0.0.1:{{ api_host_port }}"
+  when: proxy_target not in serve_status.stdout
+  register: serve_applied
+  changed_when: serve_applied.rc == 0

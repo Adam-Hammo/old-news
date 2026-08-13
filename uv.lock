@@ -1134,6 +1134,9 @@ s3 = [
 ]
 
 [package.dev-dependencies]
+deploy = [
+    { name = "ansible-core" },
+]
 dev = [
     { name = "pre-commit" },
     { name = "pytest" },
@@ -1144,9 +1147,12 @@ dev = [
     { name = "ty" },
 ]
 infra = [
-    { name = "ansible-core" },
     { name = "pulumi" },
+    { name = "pulumi-b2" },
+    { name = "pulumi-logfire" },
     { name = "pulumi-oci" },
+    { name = "pulumi-random" },
+    { name = "pulumi-tailscale" },
 ]
 
 [package.metadata]
@@ -1166,6 +1172,7 @@ requires-dist = [
 provides-extras = ["s3"]
 
 [package.metadata.requires-dev]
+deploy = [{ name = "ansible-core", specifier = ">=2.21" }]
 dev = [
     { name = "pre-commit", specifier = ">=4.0" },
     { name = "pytest", specifier = ">=8.3" },
@@ -1176,9 +1183,12 @@ dev = [
     { name = "ty", specifier = ">=0.0.71" },
 ]
 infra = [
-    { name = "ansible-core", specifier = ">=2.18" },
-    { name = "pulumi", specifier = ">=3.140" },
-    { name = "pulumi-oci", specifier = ">=2.20" },
+    { name = "pulumi", specifier = ">=3.256" },
+    { name = "pulumi-b2", directory = "infra/sdks/b2" },
+    { name = "pulumi-logfire", directory = "infra/sdks/logfire" },
+    { name = "pulumi-oci", specifier = ">=4.20" },
+    { name = "pulumi-random", specifier = ">=4.21" },
+    { name = "pulumi-tailscale", specifier = ">=0.29" },
 ]
 
 [[package]]
@@ -1596,6 +1606,42 @@ wheels = [
 ]
 
 [[package]]
+name = "pulumi-b2"
+version = "0.13.2"
+source = { directory = "infra/sdks/b2" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "parver", specifier = ">=0.2.1" },
+    { name = "pulumi", specifier = ">=3.247.0,<4.0.0" },
+    { name = "semver", specifier = ">=2.8.1" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.11,<5" },
+]
+
+[[package]]
+name = "pulumi-logfire"
+version = "0.1.15"
+source = { directory = "infra/sdks/logfire" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "parver", specifier = ">=0.2.1" },
+    { name = "pulumi", specifier = ">=3.247.0,<4.0.0" },
+    { name = "semver", specifier = ">=2.8.1" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.11,<5" },
+]
+
+[[package]]
 name = "pulumi-oci"
 version = "4.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1607,6 +1653,34 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f4/3e/61adc45fdb68e1697bf426a6a40c0e64ada32d2e0792d5e3d8940f9c4d6d/pulumi_oci-4.20.0.tar.gz", hash = "sha256:51d4aa2ce6e8120c4cdf5f688ff974827e734f4042a340f47e50c64ae85f71ab", size = 11809685, upload-time = "2026-07-15T06:02:57.636Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ed/d1/75e0661391d7d7c492c363b43f76d31dd4995527be2d06ab5815a801b5ad/pulumi_oci-4.20.0-py3-none-any.whl", hash = "sha256:72675609ee39f2e0b40aa33439f995318a6468fe26227f54d0b2e9c8325c157b", size = 16715425, upload-time = "2026-07-15T06:02:53.546Z" },
+]
+
+[[package]]
+name = "pulumi-random"
+version = "4.21.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ec/95/d648a11cd6976a5251e057b7d716f060a009a4c189373d199cb627e8a278/pulumi_random-4.21.1.tar.gz", hash = "sha256:bb60cebafecaef508cbc00c4df8d9d1f70de1c87c4594bb02815b3302699f20e", size = 22616, upload-time = "2026-07-22T19:27:05.207Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/c3/84a3278781de5e00b2d5002c5f847372b029e845826a3ad2440fc0537cf9/pulumi_random-4.21.1-py3-none-any.whl", hash = "sha256:889943db1a109c1c1e7c5c2d706296a717c366c358b0bec92b77de3747af682a", size = 36076, upload-time = "2026-07-22T19:27:04.209Z" },
+]
+
+[[package]]
+name = "pulumi-tailscale"
+version = "0.29.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/11/64/f49bfbad4933e62747bf6ef01e460d83b194708fd2eb1b389c25bfaf8099/pulumi_tailscale-0.29.0.tar.gz", hash = "sha256:683bdff543f74869b01c07b34c37cf41fb189659ad2b5d6ce191b6f2eb566086", size = 53681, upload-time = "2026-07-13T13:58:10.061Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/42/40/5428ca523be36c72c7763b8a65456231454addec34a4c20a00572cf4c7ae/pulumi_tailscale-0.29.0-py3-none-any.whl", hash = "sha256:7a012cabce1fcb5326fe27d36e25d167c123d059691190901b2c31c3a4a1e3c5", size = 86919, upload-time = "2026-07-13T13:58:08.572Z" },
 ]
 
 [[package]]

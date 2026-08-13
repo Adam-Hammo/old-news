@@ -1,0 +1,47 @@
+---
+- name: Remove the hand-written heartbeat cron job
+  # Superseded by the timer below, which gates on readiness.
+  ansible.builtin.file:
+    path: /etc/cron.d/heartbeat
+    state: absent
+
+- name: Create the config directory
+  ansible.builtin.file:
+    path: /etc/old-news
+    state: directory
+    mode: "0755"
+
+- name: Install the ping URL
+  # A capability URL: anyone holding it can forge a healthy signal.
+  ansible.builtin.template:
+    src: heartbeat.env.j2
+    dest: /etc/old-news/heartbeat.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install the heartbeat script
+  ansible.builtin.template:
+    src: old-news-heartbeat.sh.j2
+    dest: /usr/local/bin/old-news-heartbeat
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the heartbeat units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - old-news-heartbeat.service
+    - old-news-heartbeat.timer
+  notify: Restart heartbeat timer
+
+- name: Enable the heartbeat timer
+  # `started`, not `restarted`: the latter reports a change on every run.
+  ansible.builtin.systemd:
+    name: old-news-heartbeat.timer
+    enabled: true
+    state: started
+    daemon_reload: true

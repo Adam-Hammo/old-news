@@ -1,0 +1,47 @@
+---
+# cloud-init never ran on this box, so this role is what guarantees Docker exists.
+
+- name: Add the Docker repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: [deb]
+    uris: https://download.docker.com/linux/ubuntu
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [stable]
+    architectures: ["{{ 'arm64' if ansible_facts['architecture'] == 'aarch64' else 'amd64' }}"]
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Remove the legacy one-line Docker repository
+  # A .list and a .sources describing the same repo makes apt warn on every run.
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
+
+- name: Install Docker
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+
+- name: Enable Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Add the deploy user to the docker group
+  ansible.builtin.user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: true
+
+# INPUT is left alone: ts-input already accepts tailscale0, and flushing would
+# delete that jump.
+- name: Confirm Tailscale still accepts tailnet traffic
+  ansible.builtin.command: iptables -C ts-input -i tailscale0 -j ACCEPT
+  changed_when: false

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily CPU burn to defeat the idle test
+
+[Timer]
+OnCalendar={{ keepbusy_schedule }}
+# Missing a run because the box was down doesn't need making up.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

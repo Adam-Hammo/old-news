@@ -1,0 +1,7 @@
+[Unit]
+Description=old-news readiness heartbeat
+After=old-news.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/old-news-heartbeat

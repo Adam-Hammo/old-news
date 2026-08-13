@@ -2,10 +2,34 @@
 - name: Configure the old-news host
   hosts: old_news
   become: true
-  vars:
-    app_dir: /opt/old-news
-    repo_url: https://github.com/Adam-Hammo/old-news.git
-    repo_version: main
+
+  pre_tasks:
+    # python3-debian is what deb822_repository writes .sources with, and more than
+    # one role needs it.
+    - name: Install packaging prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - python3-debian
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+      tags: [always]
+
   roles:
-    - app
-    - backup
+    # First: everything downstream is reached over it.
+    - role: tailscale
+      tags: [tailscale]
+    - role: bootstrap
+      tags: [bootstrap]
+    - role: app
+      tags: [app]
+    - role: serve
+      tags: [serve]
+    - role: backup
+      tags: [backup]
+    - role: heartbeat
+      tags: [heartbeat]
+    - role: keepbusy
+      tags: [keepbusy]

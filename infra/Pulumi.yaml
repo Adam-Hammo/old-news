@@ -2,5 +2,11 @@ name: old-news
 runtime:
   name: python
   options:
-    toolchain: uv
+    # The root venv. `toolchain: uv` would want infra/ to be its own uv project.
+    virtualenv: ../.venv
 description: Oracle Cloud A1 host for old-news
+# Backblaze and Pydantic ship Terraform providers but no Pulumi ones, so sdks/ is
+# generated and committed. Regenerate with:
+#
+#   pulumi package add terraform-provider Backblaze/b2@0.13.2
+#   pulumi package add terraform-provider pydantic/logfire@0.1.15

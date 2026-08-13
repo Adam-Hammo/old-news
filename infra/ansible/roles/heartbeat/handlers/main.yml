@@ -1,0 +1,6 @@
+---
+- name: Restart heartbeat timer
+  ansible.builtin.systemd:
+    name: old-news-heartbeat.timer
+    state: restarted
+    daemon_reload: true

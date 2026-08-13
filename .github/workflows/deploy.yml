@@ -1,0 +1,79 @@
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Commit sha to deploy. Its images must already be in GHCR.
+        required: true
+        type: string
+    secrets:
+      PULUMI_ACCESS_TOKEN:
+        required: true
+      TS_OAUTH_CLIENT_ID:
+        required: true
+      TS_OAUTH_SECRET:
+        required: true
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit sha to deploy. Must have a successful ci run.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# A half-applied playbook is worse than a queued one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  PULUMI_VERSION: 3.257.0
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      IMAGE_TAG: ${{ inputs.sha }}
+      PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # The tree that was tested, not whatever main points at now.
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@ae62891fec2bb8e7d6c99fc78c9fec3a63790f8d # v10
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - run: uv sync --group deploy --locked
+
+      - name: Install the Pulumi CLI
+        run: |
+          curl -fsSL https://get.pulumi.com | sh -s -- --version "$PULUMI_VERSION"
+          echo "$HOME/.pulumi/bin" >>"$GITHUB_PATH"
+
+      - uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888 # v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Resolve the host on the tailnet
+        run: |
+          echo "ANSIBLE_HOST=$(tailscale ip -4 rss-01)" >>"$GITHUB_ENV"
+          echo "BOX_FQDN=$(tailscale status --json |
+            jq -r '.Peer[] | select(.HostName=="rss-01") | .DNSName' | sed 's/\.$//')" >>"$GITHUB_ENV"
+
+      - run: just deploy "$IMAGE_TAG"
+
+      - name: Verify the API answers over the tailnet
+        run: |
+          curl -fsS --max-time 10 --resolve "${BOX_FQDN}:443:${ANSIBLE_HOST}" \
+            "https://${BOX_FQDN}/health/ready"
+          curl -fsS --max-time 10 --resolve "${BOX_FQDN}:443:${ANSIBLE_HOST}" \
+            "https://${BOX_FQDN}/health/queue"

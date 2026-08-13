@@ -1,0 +1,9 @@
+[Unit]
+Description=Keep the box above Oracle's idle-reclamation threshold
+
+[Service]
+Type=oneshot
+# Real work always wins.
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/bin/stress-ng --cpu {{ keepbusy_workers }} --cpu-load {{ keepbusy_load }} --timeout {{ keepbusy_duration }} --quiet

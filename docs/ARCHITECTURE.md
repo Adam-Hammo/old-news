@@ -208,9 +208,32 @@ fixture that leaves a pool open will make readiness checks pass for the wrong re
 local-only and auto-loaded, which is why the server runs `docker compose -f compose.yaml`
 explicitly.
 
-`infra/` provisions and configures the host, and is not exercised by CI — it touches a real cloud
-account. Provider-specific code is confined to `infra/provider_oci.py`, which returns a `Host`.
+Provider-specific code is confined to `infra/resources/compute_oci.py`, which returns a `Host`.
 Adding a cloud is one new module and one changed import.
+
+A deploy is a consequence of a green build: `ci` calls the `deploy` workflow, which applies the
+playbook with `image_tag` set to that commit's sha. Never `latest`, so the box's state is a function
+of a commit rather than of when it last pulled. `just deploy <sha>` is the recipe CI runs.
+
+**The box holds no clone of this repo and no registry credential.** Ansible copies the one file it
+needs, `compose.yaml`, from the control node, so the compose file and the image tag cannot come from
+different commits. The images are public: a private registry would mean a classic PAT, and GitHub
+has no API to mint one, so rotation could never be automated.
+
+### Pulumi adopts, Ansible converges
+
+The split is about which tool can run twice. `pulumi import` taught Pulumi about a box that already
+existed, so every value in the program is pinned to what is there — a computed image id reads as a
+changed `source_details`, which replaces the instance.
+
+Bootstrap therefore does **not** use cloud-init, which runs once and can never converge. Docker,
+Tailscale, the heartbeat and the reclamation defence are Ansible roles instead, so re-running the
+playbook is always the way back to a known state.
+
+Reachability is Tailscale, for you and for CI, which joins as an ephemeral tagged node. Serve
+publishes the API over HTTPS on the MagicDNS name, so the app binds loopback, nothing listens on the
+tailnet, and no domain is bought or baked in anywhere. Node key expiry is the one way to lose access
+to the box; `infra/README.md` covers it.
 
 ## Security
 

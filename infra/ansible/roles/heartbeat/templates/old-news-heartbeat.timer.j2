@@ -1,0 +1,10 @@
+[Unit]
+Description=Ping the dead-man switch every {{ heartbeat_interval }}
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ heartbeat_interval }}
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

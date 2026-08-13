@@ -1,17 +1,37 @@
 ---
-- name: Check out the repo
-  ansible.builtin.git:
-    repo: "{{ repo_url }}"
-    dest: "{{ app_dir }}"
-    version: "{{ repo_version }}"
-    force: true
+- name: Require an explicit image tag
+  # Never `latest`, so the box's state is a function of a commit rather than of
+  # when it last pulled.
+  ansible.builtin.assert:
+    that:
+      - image_tag is defined
+      - image_tag | length >= 7
+      - image_tag != 'latest'
+    fail_msg: "image_tag must be the git sha CI built, not 'latest'"
+    quiet: true
+
+- name: Create the app directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    mode: "0755"
+
+# Copied from the control node rather than checked out, so the compose file and the
+# image tag cannot come from different commits.
+- name: Install the compose file
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../compose.yaml"
+    dest: "{{ app_dir }}/compose.yaml"
+    owner: "{{ ansible_user }}"
+    mode: "0644"
   notify: Restart stack
 
 - name: Install the environment file
   ansible.builtin.template:
     src: env.j2
     dest: "{{ app_dir }}/.env"
-    owner: ubuntu
+    owner: "{{ ansible_user }}"
     mode: "0600"
   notify: Restart stack
 
@@ -28,3 +48,16 @@
     enabled: true
     state: started
     daemon_reload: true
+
+- name: Flush handlers so the stack is running before it is verified
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for readiness
+  # Fail here rather than report a half-started stack as green.
+  ansible.builtin.uri:
+    url: "http://{{ app_bind }}:{{ api_host_port }}/health/ready"
+    status_code: 200
+  register: readiness
+  retries: 30
+  delay: 5
+  until: readiness.status == 200

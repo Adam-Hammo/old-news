@@ -1,0 +1,44 @@
+---
+# Oracle reclaims Always Free compute idle on CPU, network *and* memory over 7 days;
+# breaking one is enough. Postgres' shared_buffers may already do it — set
+# keepbusy_enabled: false and see if the box survives a fortnight.
+
+- name: Remove the hand-written keepbusy cron job
+  ansible.builtin.file:
+    path: /etc/cron.d/keepbusy
+    state: absent
+
+- name: Install stress-ng
+  ansible.builtin.apt:
+    name: stress-ng
+    state: "{{ 'present' if keepbusy_enabled else 'absent' }}"
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install the keepbusy units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - old-news-keepbusy.service
+    - old-news-keepbusy.timer
+  when: keepbusy_enabled
+
+- name: Set the keepbusy timer state
+  ansible.builtin.systemd:
+    name: old-news-keepbusy.timer
+    enabled: "{{ keepbusy_enabled }}"
+    state: "{{ 'started' if keepbusy_enabled else 'stopped' }}"
+    daemon_reload: true
+  failed_when: false
+
+- name: Remove the keepbusy units when disabled
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - old-news-keepbusy.service
+    - old-news-keepbusy.timer
+  when: not keepbusy_enabled
+  notify: Reload systemd

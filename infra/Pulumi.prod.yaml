@@ -1,0 +1,46 @@
+config:
+  oci:region: ap-sydney-1
+  # The tenancy root. The box was launched here rather than in a child compartment.
+  old-news:compartmentOcid: ocid1.tenancy.oc1..aaaaaaaaaaxbwrq4cb54ujen7vcgdfxg42v6ffoaw3oa2qb6gzgnijom4quq
+  old-news:availabilityDomain: jXKd:AP-SYDNEY-1-AD-1
+  old-news:sshPublicKey:
+    secure: AAABAM4liSwJV+w5cHFqg/eszG/aECfamVmQWy/XtoKF2XZ7Wz1YGqxDQDeIYmjJT/shG3YXSjc3xHJNJ1hmpohwnLOQwzP8Yowv4Zc46tsnMxmOXwl15RjN9gMxD/VkjsnYqM3MeyLVkmBrGUS+0rfHT7+OrRrMiATKyV+7YOnF2f7lY+D1QA==
+  # Canonical-Ubuntu-24.04-aarch64-2026.07.17-0, pinned to what the box runs.
+  # Bumping this is a rebuild, not an update.
+  old-news:imageOcid: ocid1.image.oc1.ap-sydney-1.aaaaaaaahzxrwhax5qywggqgfqazvlx57tpm34axdjmbkkxix6zrufpwzgjq
+  old-news:ocpus: "2"
+  old-news:memoryGb: "12"
+  old-news:bootVolumeGb: "200"
+  # Set false to close port 22, once Tailscale is proven.
+  old-news:publicSshEnabled: "true"
+  # Globally unique across all of Backblaze.
+  old-news:b2Bucket: adam-hammo-old-news-archive
+  # The cluster Backblaze assigned this account, from the S3 endpoint. "US West"
+  # spans us-west-000 to us-west-004, so read it rather than assume it.
+  old-news:b2Region: us-west-004
+  old-news:logfireProject: old-news
+  # Secrets are set with the CLI and land here as `secure:` ciphertext, which is
+  # why this file is committed:
+  #
+  #   pulumi config set --secret heartbeatUrl https://hc-ping.com/...
+  #   pulumi config set --secret b2:applicationKeyId ...
+  #   pulumi config set --secret b2:applicationKey ...
+  #   pulumi config set --secret logfire:apiKey ...
+  #   pulumi config set --secret tailscale:apiKey ...
+  #   pulumi config set tailscale:tailnet tailed73bc.ts.net
+  #
+  # An API key, not an OAuth client: a client must name a tag it may act as, and
+  # tag:ci does not exist until this program has written the policy.
+
+  tailscale:apiKey:
+    secure: AAABAKaWfN8ABryV/EIey9gC8QNRtBP5PxNzVq4nKSBhRIkKazN+nyqYFwQLgLBxJ+Ew7h6OQSZY/o/iy8b7jRHZChmyhLBdMno1mF5Ycz5QqgsAOsDz6ca7Qac=
+  tailscale:tailnet: tailed73bc.ts.net
+  b2:applicationKey:
+    secure: AAABAPwJBZYuaQUnWPBmfbDRFkcf1VZ23c0r7bCElr7HuFViqjCMPbHJiOOOpDtn9wVTxdZpHEnkBvYxuV66c27tpAJKRYPeuxo=
+  b2:applicationKeyId:
+    secure: AAABALLnPT6R6D+IXkfOPps4I0fIMJg8qX8zRAz4CLxY/+qjGMPc0xjgaV8=
+  logfire:apiKey:
+    secure: AAABANp02pB7sHh1+nCKN4RoKvLdN6PGputCpzp6PWdG4bBnrJ52vrCVX+TJqwLPIe1/7p0jvbxHxdaWtFE6j56sGa5yNS8e3VBqBBB2VjK4GcJZ+lNVIjxusUfGZ9ACYGFAQbOjYQsaoYcBQzrTjxPAsCyDQgDrJSsJVQ==
+  old-news:heartbeatUrl:
+    secure: AAABAIw6WQ8sFHFRyBWPQrZaL7mYHcfMvDy1FiAosmZismC3LYEbLnd7Axi6XbrabXJ+3i2/ZyKsLKO9cfF3gLiVIU219FsKiwcLb0WnQPOvPp8Ujj3D7g==
+  oci:configFileProfile: DEFAULT

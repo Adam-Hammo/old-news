@@ -107,14 +107,46 @@ build-arm64:
 
 # --- infrastructure ---
 
-[working-directory('infra')]
-tf-preview:
-    uv run --group infra pulumi preview
+# The Pulumi CLI is a Go binary, not a Python package: `brew install pulumi`.
 
 [working-directory('infra')]
-tf-up:
-    uv run --group infra pulumi up
+tf-preview: _infra-env
+    pulumi preview
 
 [working-directory('infra')]
-provision:
-    uv run --group infra ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+tf-up: _infra-env
+    pulumi up
+
+# Drift check: fails if the live cloud no longer matches the program.
+[working-directory('infra')]
+tf-drift: _infra-env
+    pulumi preview --refresh --expect-no-changes
+
+# infra and deploy share the root venv, so each entrypoint installs what it needs.
+_infra-env:
+    uv sync --group infra --quiet
+
+# Deploy an exact image tag; the deploy workflow runs this same recipe. Needs
+# PULUMI_ACCESS_TOKEN. No _infra-env: `stack output` doesn't run the program.
+[working-directory('infra')]
+deploy tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    vars=$(mktemp)  # 0600
+    trap 'rm -f "$vars"' EXIT
+    pulumi stack output --json --show-secrets --stack prod >"$vars"
+    cd ansible
+    uv run --group deploy ansible-playbook playbook.yml -e "@$vars" -e image_tag={{ tag }}
+
+# One-off: move the box onto a tagged Tailscale identity. Expect it to fail — it
+# drops the connection it runs over.
+[working-directory('infra')]
+retag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    vars=$(mktemp)
+    trap 'rm -f "$vars"' EXIT
+    pulumi stack output --json --show-secrets --stack prod >"$vars"
+    cd ansible
+    uv run --group deploy ansible-playbook playbook.yml --tags tailscale \
+      -e "@$vars" -e tailscale_retag=true
