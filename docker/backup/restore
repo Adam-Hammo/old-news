@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Restores the latest snapshot over ${PGDATABASE}. Destructive by design — this is
+# the disaster path, and it is meant to be run and re-run until it is boring.
+set -euo pipefail
+
+: "${PGHOST:?}" "${PGUSER:?}" "${PGDATABASE:?}"
+: "${RESTIC_REPOSITORY:?}" "${RESTIC_PASSWORD:?}"
+
+snapshot="${1:-latest}"
+
+echo "restoring ${snapshot} into ${PGDATABASE} on ${PGHOST}"
+restic dump "${snapshot}" "${PGDATABASE}.dump" \
+  | pg_restore --clean --if-exists --no-owner --no-privileges --dbname "${PGDATABASE}"
+
+echo "restore complete"

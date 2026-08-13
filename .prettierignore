@@ -1,0 +1,4 @@
+uv.lock
+.venv/
+src/old_news/db/migrations/
+infra/ansible/**/*.j2

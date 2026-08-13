@@ -1,0 +1,30 @@
+---
+- name: Check out the repo
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ app_dir }}"
+    version: "{{ repo_version }}"
+    force: true
+  notify: Restart stack
+
+- name: Install the environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: ubuntu
+    mode: "0600"
+  notify: Restart stack
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: old-news.service.j2
+    dest: /etc/systemd/system/old-news.service
+    mode: "0644"
+  notify: Restart stack
+
+- name: Enable the stack
+  ansible.builtin.systemd:
+    name: old-news
+    enabled: true
+    state: started
+    daemon_reload: true

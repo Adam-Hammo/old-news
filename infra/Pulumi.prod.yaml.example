@@ -1,0 +1,11 @@
+config:
+  oci:region: ap-melbourne-1
+  old-news:compartmentOcid: ocid1.compartment.oc1..xxxxx
+  old-news:availabilityDomain: xxxx:AP-MELBOURNE-1-AD-1
+  old-news:sshPublicKey: ssh-ed25519 AAAA... you@host
+  old-news:ocpus: "2"
+  old-news:memoryGb: "12"
+  old-news:bootVolumeGb: "200"
+  # pulumi config set --secret tailscaleAuthKey tskey-auth-...
+  old-news:tailscaleAuthKey:
+    secure: v1:xxxxx

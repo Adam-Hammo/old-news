@@ -1,0 +1,18 @@
+[Unit]
+Description=old-news
+Requires=docker.service
+After=docker.service tailscaled.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+WorkingDirectory={{ app_dir }}
+# Explicit -f: compose.override.yaml is local dev only. Images are built in CI
+# for arm64 and pulled — this box has 2 OCPUs and better things to do.
+ExecStartPre=/usr/bin/docker compose -f compose.yaml pull --quiet
+ExecStart=/usr/bin/docker compose -f compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f compose.yaml down
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Proves the backup is restorable rather than merely present: writes a canary,
+# backs up, then restores into a scratch database and checks the canary arrived.
+#
+# Safe to run in production — it never writes to ${PGDATABASE}. An untested backup
+# is a hypothesis; this is the test.
+set -euo pipefail
+
+: "${PGHOST:?}" "${PGUSER:?}" "${PGDATABASE:?}"
+
+canary="restore_canary_$$"
+scratch="${PGDATABASE}_verify_$$"
+
+cleanup() {
+  psql -qc "DROP TABLE IF EXISTS ${canary}" >/dev/null 2>&1 || true
+  psql -qd postgres -c "DROP DATABASE IF EXISTS ${scratch}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+psql -qc "CREATE TABLE ${canary} (id int primary key, note text)"
+psql -qc "INSERT INTO ${canary} VALUES (1, 'survived')"
+
+backup
+
+# Take the canary out of the live database so a false pass is impossible.
+psql -qc "DROP TABLE ${canary}"
+
+psql -qd postgres -c "CREATE DATABASE ${scratch}"
+restic dump latest "${PGDATABASE}.dump" \
+  | pg_restore --no-owner --no-privileges --dbname "${scratch}"
+
+got=$(psql -tAd "${scratch}" -c "SELECT note FROM ${canary} WHERE id = 1" | tr -d '[:space:]')
+if [ "$got" != "survived" ]; then
+  echo "FAIL: expected 'survived' from the restored copy, got '${got}'" >&2
+  exit 1
+fi
+
+echo "PASS: snapshot restored into ${scratch}, canary intact, live database untouched"

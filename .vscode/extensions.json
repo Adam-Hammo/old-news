@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "astral-sh.ty",
+    "esbenp.prettier-vscode",
+    "tamasfe.even-better-toml",
+    "davidanson.vscode-markdownlint",
+    "ms-azuretools.vscode-docker",
+    "nefrob.vscode-just-syntax",
+    "redhat.ansible"
+  ],
+  "unwantedRecommendations": ["ms-python.mypy-type-checker"]
+}

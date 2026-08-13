@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# pg_dump -> restic. RESTIC_REPOSITORY decides where it lands: a local path for
+# testing, an s3: URL for Backblaze B2 in production. Nothing else changes.
+set -euo pipefail
+
+: "${PGHOST:?}" "${PGUSER:?}" "${PGDATABASE:?}"
+: "${RESTIC_REPOSITORY:?}" "${RESTIC_PASSWORD:?}"
+
+restic snapshots >/dev/null 2>&1 || restic init
+
+# --format=custom so pg_restore can be selective on the way back in.
+pg_dump --format=custom --no-owner --no-privileges \
+  | restic backup --stdin --stdin-filename "${PGDATABASE}.dump" --tag old-news
+
+restic forget --tag old-news --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune
+restic check
+
+echo "backup complete: $(restic snapshots --tag old-news --json | tail -c 200 | grep -o '"short_id":"[^"]*"' | tail -1)"

@@ -1,0 +1,19 @@
+# Local dev only. Auto-loaded by `docker compose up`.
+# On the server run `docker compose -f compose.yaml up -d` so none of this applies.
+services:
+  db:
+    ports:
+      # Deliberately not 5432 — this should never collide with a local Postgres.
+      - "127.0.0.1:${PG_HOST_PORT:-55432}:5432"
+
+  # uv installs the project editable, so mounting src is enough to get reload.
+  app:
+    volumes:
+      - ./src:/app/src:ro
+    command: >
+      uvicorn old_news.api.app:create_app --factory
+      --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+
+  worker:
+    volumes:
+      - ./src:/app/src:ro

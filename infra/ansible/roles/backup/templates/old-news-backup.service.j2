@@ -1,0 +1,9 @@
+[Unit]
+Description=old-news backup to B2
+After=old-news.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ app_dir }}
+ExecStart=/usr/bin/docker compose -f compose.yaml --profile tools run --rm backup backup

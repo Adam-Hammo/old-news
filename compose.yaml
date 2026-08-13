@@ -1,0 +1,129 @@
+# Unbounded container logs will eat a long-lived box alive.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-app: &app
+  image: ${REGISTRY:-ghcr.io/adam-hammo}/old-news:${IMAGE_TAG:-latest}
+  build:
+    context: .
+  environment:
+    OLD_NEWS_ENVIRONMENT: ${OLD_NEWS_ENVIRONMENT:-local}
+    OLD_NEWS_DATABASE__URL: postgres://old_news:${POSTGRES_PASSWORD:-old_news}@db:5432/old_news
+    OLD_NEWS_TELEMETRY__ENABLED: ${OLD_NEWS_TELEMETRY__ENABLED:-false}
+    OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
+    PICCOLO_CONF: old_news.db.piccolo_conf
+  depends_on:
+    db:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+  logging: *logging
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: [/tmp]
+
+services:
+  db:
+    image: ${REGISTRY:-ghcr.io/adam-hammo}/old-news-postgres:${IMAGE_TAG:-latest}
+    build:
+      context: ./docker
+      dockerfile: postgres.Dockerfile
+    environment:
+      POSTGRES_DB: old_news
+      POSTGRES_USER: old_news
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-old_news}
+      # Tuning is fetched from api.pgconfig.org at first start — initdb/00-tune.sh.
+      PG_TUNING_ENVIRONMENT: ${PG_TUNING_ENVIRONMENT:-WEB}
+      PG_TUNING_DRIVE_TYPE: ${PG_TUNING_DRIVE_TYPE:-SSD}
+      PG_TUNING_OFFLINE: ${PG_TUNING_OFFLINE:-}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    shm_size: 1gb
+    command: postgres -c shared_preload_libraries=pg_search
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U old_news -d old_news"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  migrate:
+    <<: *app
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m old_news.db.migrate
+    restart: "no"
+
+  app:
+    <<: *app
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${API_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request;urllib.request.urlopen(''http://localhost:8000/health/live'')"',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEMORY_LIMIT:-1g}
+
+  worker:
+    <<: *app
+    command: procrastinate --app=old_news.tasks.app worker
+    healthcheck:
+      test: ["CMD-SHELL", "procrastinate --app=old_news.tasks.app healthchecks"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    # Extraction and embedding are the memory-hungry parts. Capping the worker is
+    # what stops a runaway job taking Postgres down with it.
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-2g}
+
+  # `docker compose run --rm backup <backup|restore|verify-restore>`
+  backup:
+    profiles: [tools]
+    image: ${REGISTRY:-ghcr.io/adam-hammo}/old-news-backup:${IMAGE_TAG:-latest}
+    build:
+      context: ./docker
+      dockerfile: backup.Dockerfile
+    environment:
+      PGHOST: db
+      PGUSER: old_news
+      PGDATABASE: old_news
+      PGPASSWORD: ${POSTGRES_PASSWORD:-old_news}
+      # A local path by default. Point at s3:... for Backblaze B2 and nothing
+      # else about these scripts changes.
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/backups/restic}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-not-a-real-password}
+      AWS_ACCESS_KEY_ID: ${B2_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${B2_APPLICATION_KEY:-}
+    volumes:
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  pgdata:
+  backups:

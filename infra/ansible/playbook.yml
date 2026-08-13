@@ -1,0 +1,11 @@
+---
+- name: Configure the old-news host
+  hosts: old_news
+  become: true
+  vars:
+    app_dir: /opt/old-news
+    repo_url: https://github.com/Adam-Hammo/old-news.git
+    repo_version: main
+  roles:
+    - app
+    - backup

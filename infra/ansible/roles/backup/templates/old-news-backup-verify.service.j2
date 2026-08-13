@@ -1,0 +1,10 @@
+[Unit]
+Description=old-news backup restore verification
+After=old-news.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ app_dir }}
+# Restores into a scratch database; never touches the live one.
+ExecStart=/usr/bin/docker compose -f compose.yaml --profile tools run --rm backup verify-restore

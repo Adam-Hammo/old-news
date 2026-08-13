@@ -1,0 +1,6 @@
+---
+- name: Restart stack
+  ansible.builtin.systemd:
+    name: old-news
+    state: restarted
+    daemon_reload: true

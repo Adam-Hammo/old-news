@@ -1,0 +1,6 @@
+name: old-news
+runtime:
+  name: python
+  options:
+    toolchain: uv
+description: Oracle Cloud A1 host for old-news

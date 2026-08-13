@@ -1,0 +1,25 @@
+---
+# No restic or scripts installed on the host: backup, restore and verify all live
+# in the `backup` compose service, so the code path is identical to the one you
+# run locally.
+
+- name: Install the backup units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - old-news-backup.service
+    - old-news-backup.timer
+    - old-news-backup-verify.service
+    - old-news-backup-verify.timer
+
+- name: Enable the backup and verification timers
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - old-news-backup.timer
+    - old-news-backup-verify.timer
