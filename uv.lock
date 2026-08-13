@@ -1167,7 +1167,7 @@ requires-dist = [
     { name = "psycopg", specifier = ">=3.2" },
     { name = "pydantic-settings", specifier = ">=2.7" },
     { name = "trafilatura", specifier = ">=2.2" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.52.1" },
 ]
 provides-extras = ["s3"]
 

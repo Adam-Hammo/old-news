@@ -14,7 +14,7 @@ version = "0.13.2"
 Repository = "https://github.com/backblaze/terraform-provider-b2"
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool]
