@@ -122,9 +122,9 @@ tf-up: _infra-env
 tf-drift: _infra-env
     pulumi preview --refresh --expect-no-changes
 
-# infra and deploy share the root venv, so each entrypoint installs what it needs.
+[working-directory('infra')]
 _infra-env:
-    uv sync --group infra --quiet
+    uv sync --quiet
 
 # Deploy an exact image tag; the deploy workflow runs this same recipe. Needs
 # PULUMI_ACCESS_TOKEN. No _infra-env: `stack output` doesn't run the program.

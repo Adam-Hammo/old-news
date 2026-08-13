@@ -50,7 +50,8 @@ jobs:
         with:
           enable-cache: true
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-      - run: uv sync --group deploy --locked
+      # Ansible only; reading stack outputs needs no Pulumi SDKs.
+      - run: uv sync --project infra --group deploy --locked
 
       - name: Install the Pulumi CLI
         run: |

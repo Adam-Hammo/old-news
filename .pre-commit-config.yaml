@@ -104,3 +104,11 @@ repos:
         language: system
         files: ^uv\.lock$
         pass_filenames: false
+
+      # infra/ is a second uv project, which the uv-lock hook above does not see.
+      - id: uv-lock-infra
+        name: uv lock --check (infra)
+        entry: uv lock --project infra --check
+        language: system
+        files: ^infra/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
