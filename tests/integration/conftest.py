@@ -11,7 +11,7 @@ from testcontainers.community.postgres import PostgresContainer
 from old_news.api.app import create_app
 from old_news.config import DatabaseSettings, Settings
 from old_news.db import DB
-from old_news.tasks import app as queue_app
+from old_news.tasks import app as procrastinate_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POSTGRES_IMAGE = "old-news-postgres:test"
@@ -46,11 +46,25 @@ def postgres() -> Iterator[PostgresContainer]:
 
 @pytest.fixture(scope="session")
 def database_url(postgres: PostgresContainer) -> str:
-    return postgres.get_connection_url().replace("postgresql://", "postgres://", 1)
+    url = postgres.get_connection_url().replace("postgresql://", "postgres://", 1)
+    # The suite once passed only because a developer's .env happened to name a
+    # running database. Nothing here may touch anything but the container.
+    assert str(postgres.get_exposed_port(5432)) in url
+    return url
 
 
 @pytest.fixture(scope="session")
-async def migrated(database_url: str) -> AsyncIterator[None]:
+def queue_app(database_url: str):
+    """Procrastinate builds its connector from the environment at import time, so it
+    must be pointed at the container explicitly — otherwise the suite quietly talks to
+    whatever `OLD_NEWS_DATABASE__URL` happens to name."""
+    connector = PsycopgConnector(conninfo=DatabaseSettings(url=database_url).psycopg_url)
+    with procrastinate_app.replace_connector(connector):
+        yield procrastinate_app
+
+
+@pytest.fixture(scope="session")
+async def migrated(database_url: str, queue_app) -> AsyncIterator[None]:
     """Points the engine at the container and migrates it, leaving no pool behind.
 
     asyncpg binds a pool to the loop that created it, and AsyncTestClient runs
@@ -66,10 +80,8 @@ async def migrated(database_url: str) -> AsyncIterator[None]:
         await DB.close_connection_pool()
 
     # Procrastinate migrates its own schema, separately from Piccolo.
-    connector = PsycopgConnector(conninfo=DatabaseSettings(url=database_url).psycopg_url)
-    with queue_app.replace_connector(connector) as live:
-        async with live.open_async():
-            await live.schema_manager.apply_schema_async()
+    async with queue_app.open_async():
+        await queue_app.schema_manager.apply_schema_async()
 
     yield
 
