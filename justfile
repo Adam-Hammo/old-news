@@ -126,6 +126,11 @@ tf-drift: _infra-env
 _infra-env:
     uv sync --quiet
 
+# Dependabot doesn't watch infra/. Check `just tf-drift` before `just tf-up`.
+[working-directory('infra')]
+infra-update:
+    uv lock --upgrade
+
 # Deploy an exact image tag; the deploy workflow runs this same recipe. Needs
 # PULUMI_ACCESS_TOKEN. No _infra-env: `stack output` doesn't run the program.
 [working-directory('infra')]

@@ -15,7 +15,7 @@ dependencies = [
   "feedparser>=6.0.14",
   "trafilatura>=2.2",
   "logfire[asyncpg,psycopg,system-metrics]>=4.40",
-  "uvicorn[standard]>=0.34",
+  "uvicorn[standard]>=0.52.1",
 ]
 
 [project.optional-dependencies]

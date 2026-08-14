@@ -1,4 +1,6 @@
 version: 2
+# infra/ is absent on purpose: Dependabot follows its path sources into the generated
+# SDKs, and there is no key to exclude a path. Use `just infra-update`.
 updates:
   - package-ecosystem: uv
     directory: /
