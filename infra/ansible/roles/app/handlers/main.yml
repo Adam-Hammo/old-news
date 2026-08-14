@@ -1,6 +1,25 @@
 ---
-- name: Restart stack
-  ansible.builtin.systemd:
-    name: old-news
-    state: restarted
-    daemon_reload: true
+# `systemctl restart` blocks on D-Bus until the unit finishes, and this unit is
+# Type=oneshot with an image pull in ExecStartPre and TimeoutStartSec=0 — so the
+# wait can run for minutes. When that D-Bus connection drops, Ansible fails a
+# deploy that actually succeeded:
+#
+#   Unable to restart service old-news: Warning! D-Bus connection terminated.
+#
+# --no-block returns as soon as the job is queued. Nothing is lost by not
+# waiting: the readiness gate in tasks/main.yml polls /health/ready and is what
+# actually decides whether the stack came back.
+#
+# Both handlers listen rather than being named "Restart stack", so a single
+# notify runs the pair in order.
+- name: Reload the systemd units
+  ansible.builtin.command:
+    argv: [systemctl, daemon-reload]
+  changed_when: true
+  listen: Restart stack
+
+- name: Restart the stack without waiting on D-Bus
+  ansible.builtin.command:
+    argv: [systemctl, restart, --no-block, old-news]
+  changed_when: true
+  listen: Restart stack

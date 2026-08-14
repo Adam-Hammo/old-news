@@ -53,11 +53,10 @@
   ansible.builtin.meta: flush_handlers
 
 - name: Wait for readiness
-  # Fail here rather than report a half-started stack as green.
   ansible.builtin.uri:
     url: "http://{{ app_bind }}:{{ api_host_port }}/health/ready"
     status_code: 200
   register: readiness
-  retries: 30
+  retries: 60
   delay: 5
   until: readiness.status == 200
