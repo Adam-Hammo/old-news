@@ -15,7 +15,9 @@ from old_news.config import TelemetrySettings
 _tracer = trace.get_tracer("old_news")
 _meter = metrics.get_meter("old_news")
 
-UNTRACED_PATHS = ["/health", "/schema", "/accounts"]
+# /admin is an interactive UI: every list page and static asset would be a
+# span, for a surface that is not part of the product.
+UNTRACED_PATHS = ["/health", "/schema", "/admin"]
 
 SENSITIVE_FIELDS = ["password", "passwd", "token", "secret", "authorization", "auth"]
 
@@ -44,6 +46,7 @@ def configure(settings: TelemetrySettings, *, environment: str) -> None:
     logging.getLogger().addHandler(logfire.LogfireLoggingHandler())
 
     if settings.instrument_database:
+        logfire.instrument_sqlalchemy()
         logfire.instrument_asyncpg()
         logfire.instrument_psycopg()
     if settings.system_metrics:
@@ -60,7 +63,9 @@ def litestar_config() -> OpenTelemetryConfig:
 
 
 @contextmanager
-def span(name: str, /, context: Context | None = None, **attributes: Any) -> Generator[trace.Span]:
+def span(
+    name: str, /, *, context: Context | None = None, **attributes: Any
+) -> Generator[trace.Span]:
     with _tracer.start_as_current_span(name, context=context, attributes=attributes) as current:
         yield current
 

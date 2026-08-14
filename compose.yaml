@@ -12,9 +12,9 @@ x-app: &app
   environment:
     OLD_NEWS_ENVIRONMENT: ${OLD_NEWS_ENVIRONMENT:-local}
     OLD_NEWS_DATABASE__URL: postgres://old_news:${POSTGRES_PASSWORD:-old_news}@db:5432/old_news
+    OLD_NEWS_ADMIN__PASSWORD_HASH: ${OLD_NEWS_ADMIN__PASSWORD_HASH:-}
     OLD_NEWS_TELEMETRY__ENABLED: ${OLD_NEWS_TELEMETRY__ENABLED:-false}
     OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
-    PICCOLO_CONF: old_news.db.piccolo_conf
   depends_on:
     db:
       condition: service_healthy
@@ -85,7 +85,7 @@ services:
 
   worker:
     <<: *app
-    command: procrastinate --app=old_news.tasks.app worker
+    command: python -m old_news worker
     healthcheck:
       test: ["CMD-SHELL", "procrastinate --app=old_news.tasks.app healthchecks"]
       interval: 60s

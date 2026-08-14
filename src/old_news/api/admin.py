@@ -1,0 +1,170 @@
+"""Never publicly reachable — full CRUD over the archive."""
+
+import logging
+from hmac import compare_digest
+from typing import cast
+
+from litestar.types import ASGIApp, Receive, Scope, Send
+from sqladmin import Admin, ModelView
+from sqladmin.authentication import AuthenticationBackend
+from sqlalchemy.ext.asyncio import AsyncEngine
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import RedirectResponse, Response
+
+from old_news import passwords
+from old_news.config import AdminSettings
+from old_news.config.admin import DEVELOPMENT_PASSWORD
+from old_news.db import Document, Feed, Item, ItemVersion, Subscription
+
+logger = logging.getLogger(__name__)
+
+
+class SingleUserBackend(AuthenticationBackend):
+    """One seeded credential, from config. No registration endpoint, ever."""
+
+    def __init__(self, settings: AdminSettings) -> None:
+        super().__init__(secret_key=settings.session_secret.get_secret_value())
+        self._username = settings.username
+        self._hash = settings.password_hash.get_secret_value()
+
+        if not self._hash:
+            logger.warning(
+                "admin has no password hash; falling back to the development "
+                "password. Run `just admin-password` and set "
+                "OLD_NEWS_ADMIN__PASSWORD_HASH."
+            )
+            self._hash = passwords.hash_password(DEVELOPMENT_PASSWORD)
+
+    async def login(self, request: Request) -> bool:
+        form = await request.form()
+        username, password = str(form.get("username", "")), str(form.get("password", ""))
+
+        # Both halves are checked even when the username is wrong, so a valid
+        # username can't be identified by how quickly the request comes back.
+        # Bytes, not str: compare_digest raises TypeError on non-ASCII text,
+        # which would turn a stray accent in the form into a 500.
+        named = compare_digest(username.encode(), self._username.encode())
+        known = passwords.verify(password, self._hash)
+        if not (named and known):
+            return False
+
+        request.session.update({"user": username})
+        return True
+
+    async def logout(self, request: Request) -> bool:
+        request.session.clear()
+        return True
+
+    async def authenticate(self, request: Request) -> Response | bool:
+        if request.session.get("user"):
+            return True
+        return RedirectResponse(request.url_for("admin:login"), status_code=302)
+
+
+class FeedAdmin(ModelView, model=Feed):
+    name_plural = "Feeds"
+    icon = "fa-solid fa-rss"
+    column_list = [
+        Feed.title,
+        Feed.url,
+        Feed.next_poll_at,
+        Feed.consecutive_failures,
+        Feed.suspended,
+    ]
+    column_searchable_list = [Feed.title, Feed.url]
+    column_sortable_list = [Feed.title, Feed.next_poll_at, Feed.consecutive_failures]
+    column_default_sort = [(Feed.next_poll_at, False)]
+
+
+class SubscriptionAdmin(ModelView, model=Subscription):
+    name_plural = "Subscriptions"
+    icon = "fa-solid fa-star"
+    column_list = [Subscription.category, Subscription.active, Subscription.added_at]
+    column_sortable_list = [Subscription.category, Subscription.added_at]
+
+
+class ItemAdmin(ModelView, model=Item):
+    name_plural = "Items"
+    icon = "fa-solid fa-fingerprint"
+    # Identity only. Content lives on the versions — that split is the schema
+    # working as intended, not something to paper over here.
+    column_list = [Item.id, Item.identity_key, Item.identity_source, Item.first_seen_at, Item.read]
+    column_sortable_list = [Item.first_seen_at]
+    column_default_sort = [(Item.first_seen_at, True)]
+
+
+class ItemVersionAdmin(ModelView, model=ItemVersion):
+    name = "Item version"
+    name_plural = "Item versions"
+    icon = "fa-solid fa-clock-rotate-left"
+    column_list = [
+        ItemVersion.title,
+        ItemVersion.observed_at,
+        ItemVersion.supersedes_id,
+        ItemVersion.canonical_url,
+        ItemVersion.published_at,
+    ]
+    column_searchable_list = [ItemVersion.title, ItemVersion.canonical_url]
+    column_sortable_list = [ItemVersion.observed_at, ItemVersion.published_at]
+    column_default_sort = [(ItemVersion.observed_at, True)]
+    can_create = False
+    can_edit = False
+    can_delete = False
+
+
+class DocumentAdmin(ModelView, model=Document):
+    name_plural = "Documents"
+    icon = "fa-solid fa-file-code"
+    # `body` is a compressed feed document. Fifty of them in a list view is how
+    # this page becomes unusable, and it is the default without this.
+    column_list = [Document.fetched_at, Document.status, Document.parse_ok, Document.parse_note]
+    column_sortable_list = [Document.fetched_at, Document.status]
+    column_default_sort = [(Document.fetched_at, True)]
+    can_create = False
+    can_edit = False
+
+
+def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
+    """sqladmin is a Starlette app; Litestar mounts it as a plain ASGI sub-application."""
+    host = Starlette()
+    admin = Admin(
+        app=host,
+        engine=engine,
+        base_url="/",
+        title="old-news",
+        authentication_backend=SingleUserBackend(settings),
+    )
+    for view in (FeedAdmin, SubscriptionAdmin, ItemAdmin, ItemVersionAdmin, DocumentAdmin):
+        admin.add_view(view)
+
+    # Litestar and Starlette spell the ASGI protocol with different types. This
+    # is the only place the two meet, so the cast lives here rather than being
+    # spread over the call.
+    downstream = cast("ASGIApp", host)
+
+    async def mounted(scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] in {"http", "websocket"}:
+            # Litestar and Starlette disagree about what a mounted app receives.
+            # Litestar strips the prefix from `path` and leaves `root_path` empty;
+            # Starlette wants `path` whole with `root_path` naming the prefix,
+            # because it derives the route path by subtracting one from the other.
+            #
+            # Setting root_path alone satisfies neither: top-level pages route by
+            # falling through, but a nested Mount then subtracts a prefix `path`
+            # never had — which is how /admin/statics/* 404'd while /admin/login
+            # worked, leaving the UI with no CSS or JS.
+            #
+            # Litestar also appends a trailing slash, which sqladmin's routes
+            # don't carry.
+            trimmed = scope["path"].rstrip("/") or "/"
+            forwarded = {
+                **scope,
+                "root_path": settings.path,
+                "path": settings.path + trimmed,
+            }
+            forwarded.pop("raw_path", None)
+            scope = cast("Scope", forwarded)
+        await downstream(scope, receive, send)
+
+    return mounted

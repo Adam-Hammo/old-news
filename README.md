@@ -14,12 +14,22 @@ just up
 That builds a Postgres image with `pgvector` and `pg_search`, applies migrations, and starts the API
 and a worker.
 
-|               |                                                             |
-| ------------- | ----------------------------------------------------------- |
-| API           | <http://localhost:8000>                                     |
-| OpenAPI       | <http://localhost:8000/schema>                              |
-| Piccolo Admin | <http://localhost:8000/admin> (run `just admin-user` first) |
-| Postgres      | `localhost:55432` — deliberately not 5432                   |
+Drop an OPML export from whatever reader you use now into `local/feeds.opml` and subscribe to the
+lot. Nothing in `local/` is ever committed.
+
+```sh
+just opml-import                    # reads local/feeds.opml
+just opml-export > local/feeds.opml # and back out again
+```
+
+The worker picks the feeds up within a minute.
+
+|          |                                                           |
+| -------- | --------------------------------------------------------- |
+| API      | <http://localhost:8000>                                   |
+| OpenAPI  | <http://localhost:8000/schema>                            |
+| Admin    | <http://localhost:8000/admin> (`admin` / `admin` locally) |
+| Postgres | `localhost:55432` — deliberately not 5432                 |
 
 `just` on its own lists every recipe. The ones you'll use:
 
@@ -29,6 +39,8 @@ just test           # everything, spins up a real Postgres
 just test unit      # fast subset, no Docker
 just lint           # every formatter and linter, every file type
 just migration NAME # generate a migration from model changes
+just opml-import    # subscribe to everything in local/feeds.opml
+just admin-password # hash a password for the admin UI
 just logs worker
 just psql
 just nuke           # down + drop the volume
@@ -41,17 +53,21 @@ src/old_news/
   config/            pydantic-settings, one module per section
   observability/     telemetry.py — installs the global OTel provider
   db/
-    piccolo_conf.py  the engine
-    piccolo_app.py   migration registry
-    tables/          base.py (uuidv7 keys), procrastinate.py (queue mirrors)
-    migrations/
+    base.py          DeclarativeBase, naming conventions, uuidv7 keys
+    session.py       async engine and session
+    models/          feed, subscription, document, item (+ item_versions)
+    migrations/      alembic
   fetch/             client.py — httpx2 lives only here
+  ingest/            polling: service, store, parser, normalise, schedule
+  subscriptions/     service, opml, discover
+  passwords.py       scrypt hashing for the admin login
   api/
     app.py           Litestar factory and lifespan
-    admin.py         Piccolo Admin, mounted over the procrastinate tables
-    routes/          health.py; greader/ and native/ land here
+    admin.py         sqladmin, mounted as an ASGI sub-application
+    routes/          health.py; a read surface lands here
   tasks/
     app.py           the procrastinate App
+    ingest.py        schedule_polls + poll_feed
     maintenance.py   registered tasks
 tests/
   unit/              no Docker, no network beyond loopback
@@ -70,7 +86,33 @@ Each package owns its own dataclasses. There's no ports/adapters layer: swapping
 rewriting one module, and the dataclass it returns is what keeps callers honest.
 
 Feature packages land as siblings of `fetch/` when they're built — `extract/`, `enrich/`,
-`backfill/`, `blob/`. See [CLAUDE.md](CLAUDE.md).
+`backfill/`, `library/`. See [CLAUDE.md](CLAUDE.md).
+
+## Picking the admin password
+
+Admin is full CRUD over the archive, so it never goes on a public interface. It still wants a
+password, because the hash is what stops the plaintext existing in `.env`, in `pulumi stack output`,
+in the Ansible variable file and in the box's environment at once.
+
+`just admin-password` prompts for one and prints the line to use. Nothing is stored on your machine.
+
+```sh
+just admin-password                 # -> OLD_NEWS_ADMIN__PASSWORD_HASH=scrypt:32768:...
+```
+
+Locally, paste it into `.env`. Leave it unset and the development password `admin` applies, with a
+warning on every boot.
+
+For the box, the hash is stack config — the plaintext never leaves your machine:
+
+```sh
+cd infra
+pulumi config set --secret adminPasswordHash "$(just admin-password | cut -d= -f2-)"
+just deploy <sha>
+```
+
+Production refuses to start without it. That is deliberate: a reachable admin UI on a default
+password is worse than a failed deploy.
 
 ## Configuration
 
@@ -102,6 +144,28 @@ just test unit   # ~1s, no Docker
 ```
 
 Details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## The deployed box
+
+Reachability is Tailscale only — the app binds loopback and `tailscale serve` terminates TLS on the
+MagicDNS name. There is no public address and no DNS record to buy.
+
+|         |                                                |
+| ------- | ---------------------------------------------- |
+| OpenAPI | `https://<host>.<tailnet>.ts.net/schema`       |
+| Health  | `https://<host>.<tailnet>.ts.net/health/ready` |
+| Admin   | `https://<host>.<tailnet>.ts.net/admin`        |
+
+Subscriptions go in over ssh rather than over HTTP — there is no write API yet, and the container is
+read-only, so the OPML is piped in rather than copied:
+
+```sh
+just host=<host>.<tailnet>.ts.net opml-import
+```
+
+`host=` works on every operational recipe — `logs`, `ps`, `psql`, `backup`, `restore`, `opml-export`
+— so the same command reads the local stack or the box. Lifecycle recipes (`up`, `down`, `nuke`) are
+local-only on purpose: the box is deployed, never built in place.
 
 ## Deploying
 

@@ -1,0 +1,68 @@
+"""Password hashing for the admin UI. stdlib scrypt — no dependency, no service.
+
+The point is not that the admin UI is exposed; it is behind Tailscale and bound
+to loopback. The point is that a plaintext password would exist in `.env`, in
+`pulumi stack output --show-secrets`, in the Ansible variable file and in the
+box's environment. A hash makes every one of those copies unusable.
+"""
+
+import base64
+import secrets
+from hashlib import scrypt
+from hmac import compare_digest
+
+SCHEME = "scrypt"
+# Not "$": docker compose treats $NAME in an env value as a variable reference and
+# silently expands it away, which would eat the salt and leave a hash that never
+# verifies. Base64 never produces a colon.
+SEPARATOR = ":"
+COST = 2**15
+BLOCK_SIZE = 8
+PARALLELISM = 1
+SALT_BYTES = 16
+KEY_BYTES = 32
+FIELDS = 6
+
+
+def _encode(raw: bytes) -> str:
+    return base64.b64encode(raw).decode()
+
+
+def _derive(password: str, salt: bytes, *, cost: int, block: int, parallel: int) -> bytes:
+    return scrypt(
+        password.encode(),
+        salt=salt,
+        n=cost,
+        r=block,
+        p=parallel,
+        maxmem=cost * block * 256,
+        dklen=KEY_BYTES,
+    )
+
+
+def hash_password(password: str) -> str:
+    """`scrypt:cost:block:parallel:salt:key`, salt and key base64."""
+    salt = secrets.token_bytes(SALT_BYTES)
+    key = _derive(password, salt, cost=COST, block=BLOCK_SIZE, parallel=PARALLELISM)
+    return SEPARATOR.join(
+        [SCHEME, str(COST), str(BLOCK_SIZE), str(PARALLELISM), _encode(salt), _encode(key)]
+    )
+
+
+def verify(password: str, encoded: str) -> bool:
+    """Parameters come from the stored hash, so raising COST keeps old hashes valid."""
+    parts = encoded.split(SEPARATOR)
+    if len(parts) != FIELDS or parts[0] != SCHEME:
+        return False
+
+    try:
+        cost, block, parallel = (int(part) for part in parts[1:4])
+        salt, expected = base64.b64decode(parts[4]), base64.b64decode(parts[5])
+    except ValueError:
+        return False
+
+    try:
+        candidate = _derive(password, salt, cost=cost, block=block, parallel=parallel)
+    except ValueError:
+        return False
+    return compare_digest(candidate, expected)

@@ -4,13 +4,14 @@ from pathlib import Path
 
 import pytest
 from litestar.testing import AsyncTestClient
-from piccolo.apps.migrations.commands.forwards import run_forwards
 from procrastinate import PsycopgConnector
+from sqlalchemy import text
 from testcontainers.community.postgres import PostgresContainer
 
+from old_news import db
 from old_news.api.app import create_app
 from old_news.config import DatabaseSettings, Settings
-from old_news.db import DB
+from old_news.db.migrate import upgrade
 from old_news.tasks import app as procrastinate_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -54,54 +55,58 @@ def database_url(postgres: PostgresContainer) -> str:
 
 
 @pytest.fixture(scope="session")
-def queue_app(database_url: str):
+def settings(database_url: str) -> Settings:
+    return Settings(
+        environment="test",
+        database=DatabaseSettings(url=database_url),
+        _env_file=None,
+    )
+
+
+@pytest.fixture(scope="session")
+def queue_app(settings: Settings):
     """Procrastinate builds its connector from the environment at import time, so it
     must be pointed at the container explicitly — otherwise the suite quietly talks to
     whatever `OLD_NEWS_DATABASE__URL` happens to name."""
-    connector = PsycopgConnector(conninfo=DatabaseSettings(url=database_url).psycopg_url)
+    connector = PsycopgConnector(conninfo=settings.database.psycopg_url)
     with procrastinate_app.replace_connector(connector):
         yield procrastinate_app
 
 
 @pytest.fixture(scope="session")
-async def migrated(database_url: str, queue_app) -> AsyncIterator[None]:
-    """Points the engine at the container and migrates it, leaving no pool behind.
+def migrated(settings: Settings, queue_app) -> None:
+    # Alembic runs its own event loop, so this fixture stays synchronous.
+    upgrade(settings.database.sqlalchemy_url)
 
-    asyncpg binds a pool to the loop that created it, and AsyncTestClient runs
-    handlers on a loop of its own — so a pool opened here would be unusable from
-    inside a request. Whoever needs one opens it on their own loop.
-    """
-    DB.config.update(DatabaseSettings(url=database_url).asyncpg_kwargs())
 
-    await DB.start_connection_pool()
-    try:
-        await run_forwards("all")
-    finally:
-        await DB.close_connection_pool()
-
-    # Procrastinate migrates its own schema, separately from Piccolo.
+@pytest.fixture(scope="session", autouse=True)
+async def queue_schema(migrated: None, queue_app) -> None:
+    """Autouse: procrastinate migrates itself, and alembic can't do it from an
+    async fixture because its env.py drives its own loop."""
     async with queue_app.open_async():
         await queue_app.schema_manager.apply_schema_async()
 
+
+@pytest.fixture
+async def database(migrated: None, settings: Settings) -> AsyncIterator[None]:
+    """An engine for tests that talk to Postgres directly rather than through the app."""
+    db.configure(settings.database)
+    try:
+        yield
+    finally:
+        await db.dispose()
+
+
+@pytest.fixture
+async def clean(database: None) -> AsyncIterator[None]:
+    """Truncating feeds cascades to documents, items and versions."""
+    async with db.session() as session:
+        await session.execute(text("TRUNCATE feeds CASCADE"))
     yield
 
 
 @pytest.fixture
-async def database(migrated: None) -> AsyncIterator[None]:
-    await DB.start_connection_pool()
-    try:
-        yield
-    finally:
-        await DB.close_connection_pool()
-
-
-@pytest.fixture
-def settings() -> Settings:
-    return Settings(environment="test", _env_file=None)
-
-
-@pytest.fixture
 async def client(migrated: None, settings: Settings) -> AsyncIterator[AsyncTestClient]:
-    """The app opens its own pool in lifespan, exactly as it does in production."""
+    """The app builds its own engine, exactly as it does in production."""
     async with AsyncTestClient(app=create_app(settings)) as test_client:
         yield test_client

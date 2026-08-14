@@ -1,8 +1,9 @@
 """Credentials must not reach the telemetry backend.
 
-The Google Reader protocol puts the API password in a query parameter, and the
-`http.url` span attribute keeps the whole query string. Logfire treats `http.url` as
-a SAFE_KEY and never scrubs it, so the only defence is not tracing the route.
+The `http.url` span attribute keeps the whole query string, and Logfire treats
+`http.url` as a SAFE_KEY and never scrubs it. So for any route that can carry a
+credential the only defence is not tracing it at all — which is what
+UNTRACED_PATHS is for. `/admin` is that route today.
 """
 
 import logfire
@@ -19,8 +20,8 @@ SECRET = "hunter2-SUPERSECRET"
 TOKEN = "adam/DEADBEEFTOKEN"
 
 
-@get("/accounts/ClientLogin")
-async def client_login() -> dict[str, bool]:
+@get("/admin/login")
+async def admin_login() -> dict[str, bool]:
     return {"ok": True}
 
 
@@ -49,10 +50,10 @@ def _emitted(exporter: TestExporter) -> str:
 
 
 def test_credentials_in_the_query_string_are_never_traced(exporter: TestExporter):
-    app = Litestar(route_handlers=[client_login], plugins=[OpenTelemetryPlugin(litestar_config())])
+    app = Litestar(route_handlers=[admin_login], plugins=[OpenTelemetryPlugin(litestar_config())])
 
     with TestClient(app=app) as client:
-        client.get(f"/accounts/ClientLogin?Email=adam&Passwd={SECRET}")
+        client.get(f"/admin/login?username=adam&password={SECRET}")
 
     assert SECRET not in _emitted(exporter)
 

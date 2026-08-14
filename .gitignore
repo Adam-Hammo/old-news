@@ -13,8 +13,11 @@ build/
 
 .env
 var/
+# Your reading list is yours. local/ is the place to keep it, and an .opml
+# anywhere else is ignored too so a stray export can't be committed by accident.
+/local/*
+!/local/README.md
 *.opml
-!feeds.example.opml
 
 launch.log
 

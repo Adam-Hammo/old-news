@@ -24,6 +24,7 @@ config:
   # why this file is committed:
   #
   #   pulumi config set --secret heartbeatUrl https://hc-ping.com/...
+  #   pulumi config set --secret adminPasswordHash "$(just admin-password | cut -d= -f2-)"
   #   pulumi config set --secret b2:applicationKeyId ...
   #   pulumi config set --secret b2:applicationKey ...
   #   pulumi config set --secret logfire:apiKey ...
@@ -45,3 +46,5 @@ config:
   old-news:heartbeatUrl:
     secure: AAABAIw6WQ8sFHFRyBWPQrZaL7mYHcfMvDy1FiAosmZismC3LYEbLnd7Axi6XbrabXJ+3i2/ZyKsLKO9cfF3gLiVIU219FsKiwcLb0WnQPOvPp8Ujj3D7g==
   oci:configFileProfile: DEFAULT
+  old-news:adminPasswordHash:
+    secure: AAABAFyjXCx7zwU76MQ9qByUxdeGDAbOEdzcHKpET2R6Y6X8ebHoPkDf28HbP380WOAgXoUtPWAz7NZ8h1H0fEA6t+Cp6j12XzyFRoQVQg3/6V66ofUt0jxof0sHyElg1eKa7ekdO1h2mTNbeWeZZubtSCSzsw==

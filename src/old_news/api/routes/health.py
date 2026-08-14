@@ -1,8 +1,8 @@
 from litestar import Router, get
 from litestar.exceptions import ServiceUnavailableException
+from sqlalchemy import text
 
-from old_news import __version__
-from old_news.db import run_sql
+from old_news import __version__, db
 from old_news.tasks.app import app as queue_app
 from old_news.tasks.maintenance import JOB_STATUSES, STALLED_AFTER_SECONDS
 
@@ -15,7 +15,8 @@ async def live() -> dict[str, str]:
 @get("/ready", summary="Readiness — Postgres answers.")
 async def ready() -> dict[str, str]:
     try:
-        await run_sql("SELECT 1")
+        async with db.session() as current:
+            await current.execute(text("SELECT 1"))
     except Exception as exc:
         raise ServiceUnavailableException(detail=f"database unreachable: {exc}") from exc
     return {"status": "ok", "database": "ok"}

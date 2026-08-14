@@ -32,5 +32,9 @@ pulumi.export("b2_application_key", repository.application_key)
 pulumi.export("logfire_token", telemetry.write_token)
 pulumi.export("tailscale_auth_key", access.server_auth_key)
 
+# Chosen rather than generated — it is typed into a login form — so it is stack
+# config, not passwords.generate(). Only the scrypt hash ever leaves your machine.
+pulumi.export("admin_password_hash", config.require_secret("adminPasswordHash"))
+
 # A capability URL: anyone holding it can forge a healthy signal.
 pulumi.export("heartbeat_url", config.require_secret("heartbeatUrl"))

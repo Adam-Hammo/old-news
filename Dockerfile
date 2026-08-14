@@ -43,8 +43,7 @@ COPY --from=builder --chown=app:app /app /app
 
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PICCOLO_CONF=old_news.db.piccolo_conf
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 USER 10001

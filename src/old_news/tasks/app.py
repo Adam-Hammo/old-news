@@ -7,7 +7,7 @@ from old_news.tasks.tracing import trace_jobs
 # registration out of __init__ and avoids an import cycle.
 app = App(
     connector=PsycopgConnector(conninfo=get_settings().database.psycopg_url),
-    import_paths=["old_news.tasks.maintenance"],
+    import_paths=["old_news.tasks.maintenance", "old_news.tasks.ingest"],
     worker_defaults={
         "worker_middleware": [trace_jobs],
         # Successful jobs leave no row behind. Postgres holds the queue; the

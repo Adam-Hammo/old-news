@@ -6,15 +6,24 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
   "litestar[opentelemetry]>=2.24",
-  "piccolo[postgres]>=1.36",
+  "sqlalchemy[asyncio]>=2.1.0b3",
+  "alembic>=1.14",
+  "asyncpg>=0.31",
+  # itsdangerous is what starlette's SessionMiddleware signs cookies with;
+  # sqladmin needs it for auth but doesn't declare it.
+  "sqladmin>=0.20",
+  "itsdangerous>=2.2",
   "procrastinate>=3.9",
   # Pure-python: psycopg-binary publishes no free-threaded wheels. Needs libpq present.
   "psycopg>=3.2",
   "pydantic-settings>=2.7",
   "httpx2>=2.10",
   "feedparser>=6.0.14",
+  # stdlib ElementTree expands entities, so an OPML file is a billion-laughs
+  # vector. Confined to subscriptions/opml.py.
+  "defusedxml>=0.7.1",
   "trafilatura>=2.2",
-  "logfire[asyncpg,psycopg,system-metrics]>=4.40",
+  "logfire[asyncpg,psycopg,sqlalchemy,system-metrics]>=4.40",
   "uvicorn[standard]>=0.52.1",
 ]
 
@@ -35,12 +44,24 @@ dev = [
   "pre-commit>=4.0",
 ]
 
+[tool.uv]
+# 2.0.x ships a cp314t wheel whose C extension doesn't declare free-thread
+# safety, so CPython re-enables the GIL to load it and then segfaults — during
+# traceback printing, which hides the real error. 2.1's declares it and works.
+# Drop this once 2.1.0 final ships.
+prerelease = "allow"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/old_news"]
+
+[tool.codespell]
+# "statics" is sqladmin's static-assets URL segment, not a misspelling of
+# "statistics".
+ignore-words-list = "statics"
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -63,6 +84,10 @@ select = [
 ignore = [
   "B008", # function call in default arg — Litestar/Piccolo idiom
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# sqladmin's ModelView is configured with plain class-level lists.
+"src/old_news/api/admin.py" = ["RUF012"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["old_news", "provider", "provider_oci"]

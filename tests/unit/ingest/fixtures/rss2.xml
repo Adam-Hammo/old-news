@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+     xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>The Example</title>
+    <link>https://www.example.com/</link>
+    <description>A feed for testing</description>
+    <language>en-GB</language>
+    <generator>WordPress 6.4</generator>
+    <ttl>45</ttl>
+    <sy:updatePeriod>hourly</sy:updatePeriod>
+    <sy:updateFrequency>2</sy:updateFrequency>
+    <category>News</category>
+    <atom:link rel="hub" href="https://pubsubhubbub.example.com/"/>
+    <image><url>https://www.example.com/icon.png</url><title>The Example</title>
+      <link>https://www.example.com/</link></image>
+    <item>
+      <title>First article</title>
+      <link>/news/first?utm_source=rss&amp;utm_medium=feed</link>
+      <guid isPermaLink="false">tag:example.com,2026:1</guid>
+      <description>A summary</description>
+      <content:encoded xmlns:content="http://purl.org/rss/1.0/modules/content/"><![CDATA[<p>Full body</p>]]></content:encoded>
+      <author>reporter@example.com (A Reporter)</author>
+      <category>Politics</category>
+      <category>UK</category>
+      <comments>/news/first#comments</comments>
+      <pubDate>Mon, 03 Aug 2026 09:00:00 GMT</pubDate>
+      <enclosure url="/audio/first.mp3" type="audio/mpeg" length="12345"/>
+    </item>
+    <item>
+      <title>Second article, no guid</title>
+      <link>https://www.example.com/news/second</link>
+      <description>Another summary</description>
+      <pubDate>Mon, 03 Aug 2026 10:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

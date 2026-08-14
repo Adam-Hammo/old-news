@@ -1,33 +1,55 @@
 """Schema bootstrap, safe to run on every boot.
 
-Piccolo's migrations are already idempotent. `procrastinate schema --apply` is not —
-it fails with "type procrastinate_job_status already exists" on a second run, which
-would break every restart — so it only runs when the queue tables are absent.
+Alembic is idempotent. `procrastinate schema --apply` is not — it fails with
+"type procrastinate_job_status already exists" on a second run, which would break
+every restart — so it only runs when the queue tables are absent.
 
 Upgrading procrastinate itself is a separate job: its versioned migration scripts
 live at `procrastinate schema --migrations-path` and are applied by hand.
 """
 
 import asyncio
+from pathlib import Path
 
-from piccolo.apps.migrations.commands.forwards import run_forwards
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import text
 
-from old_news.db import DB, run_sql
+from old_news import db
+from old_news.config import get_settings
 from old_news.tasks import app as queue_app
 
 
+def alembic_config(url: str | None = None) -> Config:
+    """Built in code rather than read from alembic.ini.
+
+    The image ships the installed package, not the repo, so a path relative to
+    the working directory would only resolve in development.
+    """
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    if url is not None:
+        config.set_main_option("sqlalchemy.url", url)
+    return config
+
+
+def upgrade(url: str | None = None) -> None:
+    """Alembic's env.py runs asyncio.run itself, so this must stay outside a loop."""
+    command.upgrade(alembic_config(url), "head")
+
+
 async def queue_schema_installed() -> bool:
-    rows = await run_sql("SELECT to_regclass('procrastinate_jobs') AS table_name")
-    return rows[0]["table_name"] is not None
+    async with db.session() as session:
+        result = await session.execute(text("SELECT to_regclass('procrastinate_jobs')"))
+        return result.scalar() is not None
 
 
-async def migrate() -> None:
-    await DB.start_connection_pool()
+async def apply_queue_schema() -> None:
+    db.configure(get_settings().database)
     try:
-        await run_forwards("all")
         installed = await queue_schema_installed()
     finally:
-        await DB.close_connection_pool()
+        await db.dispose()
 
     if installed:
         print("procrastinate schema already present")
@@ -39,7 +61,8 @@ async def migrate() -> None:
 
 
 def main() -> None:
-    asyncio.run(migrate())
+    upgrade()
+    asyncio.run(apply_queue_schema())
 
 
 if __name__ == "__main__":

@@ -1,5 +1,21 @@
 set dotenv-load
-export PICCOLO_CONF := "old_news.db.piccolo_conf"
+
+# Where the operational recipes act. Empty is the local compose stack; set a
+# tailnet host to reach the box instead:
+#
+#   just host=rss-01.tailed73bc.ts.net logs worker
+#   just host=rss-01.tailed73bc.ts.net opml-import
+#
+# Lifecycle recipes (up, down, nuke) are deliberately local-only — the box is
+# deployed with `just deploy`, never built in place.
+host := ""
+remote_dir := "/opt/old-news"
+
+# --project-directory rather than `cd … &&`, so the remote command needs no shell
+# quoting. Two forms because a pty and a pipe are mutually exclusive: -t breaks
+# stdin redirection, and no -t makes psql unusable.
+compose := if host == "" { "docker compose" } else { "ssh " + host + " docker compose --project-directory " + remote_dir }
+compose_tty := if host == "" { "docker compose" } else { "ssh -t " + host + " docker compose --project-directory " + remote_dir }
 
 default:
     @just --list
@@ -15,6 +31,7 @@ up:
     @just wait
     @echo "api      http://localhost:${API_HOST_PORT:-8000}"
     @echo "schema   http://localhost:${API_HOST_PORT:-8000}/schema"
+    @echo "admin    http://localhost:${API_HOST_PORT:-8000}/admin"
 
 down:
     docker compose down
@@ -23,21 +40,26 @@ down:
 nuke:
     docker compose down -v
 
-logs service="":
-    docker compose logs -f {{ service }}
-
 wait:
     @until docker compose exec -T db pg_isready -U old_news -d old_news >/dev/null 2>&1; do sleep 1; done
-
-psql:
-    docker compose exec db psql -U old_news -d old_news
 
 # Run the API on the host against the compose Postgres.
 serve:
     uv run python -m old_news
 
 worker:
-    uv run procrastinate --app=old_news.tasks.app worker
+    uv run python -m old_news worker
+
+# --- operating (honour `host`) ---
+
+ps:
+    {{ compose }} ps
+
+logs service="":
+    {{ compose_tty }} logs -f {{ service }}
+
+psql:
+    {{ compose_tty }} exec db psql -U old_news -d old_news
 
 # --- database ---
 
@@ -45,20 +67,42 @@ migrate:
     uv run python -m old_news.db.migrate
 
 migration name:
-    uv run piccolo migrations new old_news --auto --desc="{{ name }}"
+    uv run alembic revision --autogenerate -m "{{ name }}"
 
-# --- backups ---
+# Show the current revision and what is pending.
+migration-status:
+    uv run alembic current
+    uv run alembic history --indicate-current
+
+rollback steps="-1":
+    uv run alembic downgrade {{ steps }}
+
+# Hash a password for the admin console — prints a line for .env or pulumi config.
+admin-password:
+    @uv run python -m old_news admin-password
+
+# --- subscriptions (honour `host`) ---
+
+# Piped rather than copied, so it works against a read-only container.
+opml-import path="local/feeds.opml":
+    {{ compose }} exec -T app python -m old_news opml import - < {{ path }}
+
+# Writes to stdout: `just opml-export > local/feeds.opml` to round-trip.
+opml-export:
+    @{{ compose }} exec -T app python -m old_news opml export
+
+# --- backups (honour `host`) ---
 
 backup:
-    docker compose run --rm backup backup
+    {{ compose }} run --rm backup backup
 
 # Destructive: overwrites the database with the latest snapshot.
 restore snapshot="latest":
-    docker compose run --rm backup restore {{ snapshot }}
+    {{ compose }} run --rm backup restore {{ snapshot }}
 
 # Writes a canary, backs up, destroys it, restores, checks it came back.
 backup-verify:
-    docker compose run --rm backup verify-restore
+    {{ compose }} run --rm backup verify-restore
 
 # --- quality ---
 
@@ -110,48 +154,41 @@ build-arm64:
 # The Pulumi CLI is a Go binary, not a Python package: `brew install pulumi`.
 
 [working-directory('infra')]
-tf-preview: _infra-env
+infra-preview: _infra-env
     pulumi preview
 
 [working-directory('infra')]
-tf-up: _infra-env
+infra-up: _infra-env
     pulumi up
 
 # Drift check: fails if the live cloud no longer matches the program.
 [working-directory('infra')]
-tf-drift: _infra-env
+infra-drift: _infra-env
     pulumi preview --refresh --expect-no-changes
+
+# Dependabot doesn't watch infra/. Check `just infra-drift` before `just infra-up`.
+[working-directory('infra')]
+infra-update:
+    uv lock --upgrade
 
 [working-directory('infra')]
 _infra-env:
     uv sync --quiet
 
-# Dependabot doesn't watch infra/. Check `just tf-drift` before `just tf-up`.
+# Stack secrets land on disk for the length of the call and no longer. No
+# _infra-env here: `stack output` reads state, it doesn't run the program.
 [working-directory('infra')]
-infra-update:
-    uv lock --upgrade
-
-# Deploy an exact image tag; the deploy workflow runs this same recipe. Needs
-# PULUMI_ACCESS_TOKEN. No _infra-env: `stack output` doesn't run the program.
-[working-directory('infra')]
-deploy tag:
+_playbook +args:
     #!/usr/bin/env bash
     set -euo pipefail
     vars=$(mktemp)  # 0600
     trap 'rm -f "$vars"' EXIT
     pulumi stack output --json --show-secrets --stack prod >"$vars"
     cd ansible
-    uv run --group deploy ansible-playbook playbook.yml -e "@$vars" -e image_tag={{ tag }}
+    uv run --group deploy ansible-playbook playbook.yml -e "@$vars" {{ args }}
 
-# One-off: move the box onto a tagged Tailscale identity. Expect it to fail — it
-# drops the connection it runs over.
-[working-directory('infra')]
-retag:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    vars=$(mktemp)
-    trap 'rm -f "$vars"' EXIT
-    pulumi stack output --json --show-secrets --stack prod >"$vars"
-    cd ansible
-    uv run --group deploy ansible-playbook playbook.yml --tags tailscale \
-      -e "@$vars" -e tailscale_retag=true
+# Deploy an exact image tag. Needs PULUMI_ACCESS_TOKEN; CI runs this same recipe.
+deploy tag: (_playbook ("-e image_tag=" + tag))
+
+# Move the box onto a tagged Tailscale identity. Expect it to fail: it drops the connection it runs over.
+retag: (_playbook "--tags tailscale -e tailscale_retag=true")

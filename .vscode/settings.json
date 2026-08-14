@@ -27,11 +27,18 @@
   "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
   "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
   "[toml]": { "editor.defaultFormatter": "tamasfe.even-better-toml" },
+  "[xml]": { "editor.defaultFormatter": "redhat.vscode-xml" },
 
   "files.associations": {
     "*.j2": "jinja",
-    "compose*.yaml": "dockercompose"
+    "compose*.yaml": "dockercompose",
+    "*.opml": "xml"
   },
+
+  "xml.format.maxLineWidth": 100,
+  "xml.format.splitAttributes": "preserve",
+  "xml.format.preserveAttributeLineBreaks": false,
+  "xml.format.preservedNewlines": 1,
   "yaml.schemas": {
     "https://json.schemastore.org/pre-commit-config.json": ".pre-commit-config.yaml",
     "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml"

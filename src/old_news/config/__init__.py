@@ -4,9 +4,11 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from old_news.config.admin import AdminSettings
 from old_news.config.api import ApiSettings
 from old_news.config.database import DatabaseSettings
 from old_news.config.http import HttpSettings
+from old_news.config.ingest import IngestSettings
 from old_news.config.telemetry import TelemetrySettings
 
 
@@ -24,6 +26,8 @@ class Settings(BaseSettings):
     http: HttpSettings = Field(default_factory=HttpSettings)
     telemetry: TelemetrySettings = Field(default_factory=TelemetrySettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
+    admin: AdminSettings = Field(default_factory=AdminSettings)
+    ingest: IngestSettings = Field(default_factory=IngestSettings)
 
 
 @lru_cache
@@ -32,9 +36,11 @@ def get_settings() -> Settings:
 
 
 __all__ = [
+    "AdminSettings",
     "ApiSettings",
     "DatabaseSettings",
     "HttpSettings",
+    "IngestSettings",
     "Settings",
     "TelemetrySettings",
     "get_settings",

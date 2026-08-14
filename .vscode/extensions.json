@@ -5,6 +5,7 @@
     "astral-sh.ty",
     "esbenp.prettier-vscode",
     "tamasfe.even-better-toml",
+    "redhat.vscode-xml",
     "davidanson.vscode-markdownlint",
     "ms-azuretools.vscode-docker",
     "nefrob.vscode-just-syntax",
