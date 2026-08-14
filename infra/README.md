@@ -141,11 +141,11 @@ replaces the instance, and the instance carries `protect=True`.
 The VCN's **default** route table and security list are adopted rather than replaced — that is what
 the subnet is attached to.
 
-## Closing the last inbound port
+## The last inbound port
 
-`publicSshEnabled: true` matches the live security list: TCP 22 is open to the world, which is how
-Tailscale got installed. Set it false and run `just tf-up`, but only once the box is tagged and you
-have confirmed tailnet access.
+`publicSshEnabled: false`, so nothing inbound reaches the box but ICMP. Setting it true and running
+`just tf-up` reopens TCP 22 — the escape hatch if the tailnet fails and the OCI serial console is
+not enough.
 
 Do not flush the `INPUT` chain to "make Tailscale work" — Tailscale installs
 `-A ts-input -i tailscale0 -j ACCEPT` itself, and flushing deletes that jump.

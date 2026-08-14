@@ -11,8 +11,9 @@ config:
   old-news:ocpus: "2"
   old-news:memoryGb: "12"
   old-news:bootVolumeGb: "200"
-  # Set false to close port 22, once Tailscale is proven.
-  old-news:publicSshEnabled: "true"
+  # Zero inbound. True reopens port 22 to the world, if the tailnet ever fails and
+  # the OCI serial console is not enough.
+  old-news:publicSshEnabled: "false"
   # Globally unique across all of Backblaze.
   old-news:b2Bucket: adam-hammo-old-news-archive
   # The cluster Backblaze assigned this account, from the S3 endpoint. "US West"
