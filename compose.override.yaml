@@ -10,9 +10,8 @@ services:
   app:
     volumes:
       - ./src:/app/src:ro
-    command: >
-      uvicorn old_news.api.app:create_app --factory
-      --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    environment:
+      OLD_NEWS_API__RELOAD: "true"
 
   worker:
     volumes:

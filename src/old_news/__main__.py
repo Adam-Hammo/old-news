@@ -41,11 +41,19 @@ async def _worker(settings: Settings) -> None:
 def serve(settings: Settings) -> None:
     import uvicorn
 
+    import old_news
+
+    package = Path(old_news.__file__).resolve().parent
+
     uvicorn.run(
         "old_news.api.app:create_app",
         factory=True,
         host=settings.api.host,
         port=settings.api.port,
+        proxy_headers=True,
+        forwarded_allow_ips=settings.api.forwarded_allow_ips,
+        reload=settings.api.reload,
+        reload_dirs=[str(package.parent)] if settings.api.reload else None,
     )
 
 
