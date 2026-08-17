@@ -231,6 +231,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "pulumi" },
     { name = "pulumi-b2" },
+    { name = "pulumi-healthchecksio" },
     { name = "pulumi-logfire" },
     { name = "pulumi-oci" },
     { name = "pulumi-random" },
@@ -246,6 +247,7 @@ deploy = [
 requires-dist = [
     { name = "pulumi", specifier = ">=3.256" },
     { name = "pulumi-b2", directory = "sdks/b2" },
+    { name = "pulumi-healthchecksio", directory = "sdks/healthchecksio" },
     { name = "pulumi-logfire", directory = "sdks/logfire" },
     { name = "pulumi-oci", specifier = ">=4.20" },
     { name = "pulumi-random", specifier = ">=4.21" },
@@ -424,6 +426,24 @@ wheels = [
 name = "pulumi-b2"
 version = "0.13.2"
 source = { directory = "sdks/b2" }
+dependencies = [
+    { name = "parver" },
+    { name = "pulumi" },
+    { name = "semver" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "parver", specifier = ">=0.2.1" },
+    { name = "pulumi", specifier = ">=3.247.0,<4.0.0" },
+    { name = "semver", specifier = ">=2.8.1" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.11,<5" },
+]
+
+[[package]]
+name = "pulumi-healthchecksio"
+version = "2.3.0"
+source = { directory = "sdks/healthchecksio" }
 dependencies = [
     { name = "parver" },
     { name = "pulumi" },

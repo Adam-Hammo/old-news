@@ -8,8 +8,11 @@ set -euo pipefail
 
 restic snapshots >/dev/null 2>&1 || restic init
 
-# --format=custom so pg_restore can be selective on the way back in.
-pg_dump --format=custom --no-owner --no-privileges \
+# --format=custom so pg_restore can be selective on the way back in. --compress=none
+# because restic chunks by content: a compressed dump shifts every byte after the
+# first change, so consecutive snapshots share nothing. restic compresses its own
+# chunks anyway.
+pg_dump --format=custom --compress=none --no-owner --no-privileges \
   | restic backup --stdin --stdin-filename "${PGDATABASE}.dump" --tag old-news
 
 restic forget --tag old-news --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune

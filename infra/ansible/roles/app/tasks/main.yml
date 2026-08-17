@@ -27,6 +27,15 @@
     mode: "0644"
   notify: Restart stack
 
+# Same reason as compose.yaml: both must come from one commit.
+- name: Install the collector config
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../docker/otel-collector.yaml"
+    dest: "{{ app_dir }}/otel-collector.yaml"
+    owner: "{{ ansible_user }}"
+    mode: "0644"
+  notify: Restart stack
+
 - name: Install the environment file
   ansible.builtin.template:
     src: env.j2

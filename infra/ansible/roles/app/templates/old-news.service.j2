@@ -9,9 +9,10 @@ RemainAfterExit=true
 WorkingDirectory={{ app_dir }}
 # Explicit -f: compose.override.yaml is local dev only. Images are built in CI
 # for arm64 and pulled — this box has 2 OCPUs and better things to do.
-ExecStartPre=/usr/bin/docker compose -f compose.yaml --profile tools pull --quiet
-ExecStart=/usr/bin/docker compose -f compose.yaml up -d
-ExecStop=/usr/bin/docker compose -f compose.yaml down
+ExecStartPre=/usr/bin/docker compose -f compose.yaml --profile tools {{ compose_profiles }} pull --quiet
+ExecStart=/usr/bin/docker compose -f compose.yaml {{ compose_profiles }} up -d
+# Every profile, or `down` leaves behind whatever `up` started under one.
+ExecStop=/usr/bin/docker compose -f compose.yaml --profile '*' down
 TimeoutStartSec=0
 
 [Install]

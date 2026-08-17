@@ -1,0 +1,60 @@
+# Feeds Logfire's Hosts, Docker and PostgreSQL views. No dashboards to author.
+# 60s everywhere: the collection interval is the only real lever on ingest volume.
+
+receivers:
+  hostmetrics:
+    # Without root_path the scrapers report the container's limits, not the host's.
+    root_path: /hostfs
+    collection_interval: 60s
+    scrapers:
+      cpu:
+      load:
+      memory:
+      paging:
+      network:
+      filesystem:
+        exclude_mount_points:
+          # Every container layer is a mount point: most of the series, none of
+          # the signal.
+          mount_points: ["/hostfs/var/lib/docker/*", "/hostfs/snap/*"]
+          match_type: glob
+
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 60s
+
+  postgresql:
+    endpoint: db:5432
+    username: old_news
+    password: ${env:POSTGRES_PASSWORD}
+    databases: [old_news]
+    collection_interval: 60s
+    tls:
+      insecure: true
+
+processors:
+  batch:
+    timeout: 10s
+
+  resource:
+    attributes:
+      # Matches what the app reports, so one environment filter covers everything.
+      - key: deployment.environment.name
+        value: production
+        action: upsert
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OTEL_LOGFIRE_ENDPOINT}
+    headers:
+      Authorization: ${env:LOGFIRE_TOKEN}
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics, docker_stats, postgresql]
+      processors: [resource, batch]
+      exporters: [otlphttp]
+  telemetry:
+    logs:
+      level: warn

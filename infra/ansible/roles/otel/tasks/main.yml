@@ -1,0 +1,25 @@
+---
+# Installed before `backup` and `keepbusy`, whose units call the script by path.
+
+- name: Create the config directory
+  ansible.builtin.file:
+    path: /etc/old-news
+    state: directory
+    mode: "0755"
+
+- name: Install the OTLP endpoint and token
+  # The containers' write token. A second one buys no isolation.
+  ansible.builtin.template:
+    src: otel.env.j2
+    dest: /etc/old-news/otel.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install the unit reporter
+  ansible.builtin.template:
+    src: old-news-otel-unit.sh.j2
+    dest: /usr/local/bin/old-news-otel-unit
+    owner: root
+    group: root
+    mode: "0755"

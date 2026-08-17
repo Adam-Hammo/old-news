@@ -152,19 +152,27 @@ build-arm64:
 # --- infrastructure ---
 
 # The Pulumi CLI is a Go binary, not a Python package: `brew install pulumi`.
+#
+# --stack everywhere: a CI runner has no selected stack.
+stack := "prod"
 
 [working-directory('infra')]
 infra-preview: _infra-env
-    pulumi preview
+    pulumi preview --stack {{ stack }}
 
 [working-directory('infra')]
 infra-up: _infra-env
-    pulumi up
+    pulumi up --stack {{ stack }}
+
+# What CI applies on main. Its own recipe so `--yes` is a deliberate word.
+[working-directory('infra')]
+infra-apply: _infra-env
+    pulumi up --stack {{ stack }} --yes --non-interactive
 
 # Drift check: fails if the live cloud no longer matches the program.
 [working-directory('infra')]
 infra-drift: _infra-env
-    pulumi preview --refresh --expect-no-changes
+    pulumi preview --stack {{ stack }} --refresh --expect-no-changes
 
 # Dependabot doesn't watch infra/. Check `just infra-drift` before `just infra-up`.
 [working-directory('infra')]

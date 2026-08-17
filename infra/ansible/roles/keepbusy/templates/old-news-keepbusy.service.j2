@@ -7,3 +7,5 @@ Type=oneshot
 Nice=19
 IOSchedulingClass=idle
 ExecStart=/usr/bin/stress-ng --cpu {{ keepbusy_workers }} --cpu-load {{ keepbusy_load }} --timeout {{ keepbusy_duration }} --quiet
+# Silent failure here ends in a reclaimed box weeks later.
+ExecStopPost=-/usr/local/bin/old-news-otel-unit %n

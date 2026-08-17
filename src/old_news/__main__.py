@@ -29,7 +29,9 @@ async def _worker(settings: Settings) -> None:
     from old_news import db, observability
     from old_news.tasks import app as queue_app
 
-    observability.configure(settings.telemetry, environment=settings.environment)
+    observability.configure(
+        settings.telemetry, environment=settings.environment, component="worker"
+    )
     db.configure(settings.database)
     try:
         async with queue_app.open_async():

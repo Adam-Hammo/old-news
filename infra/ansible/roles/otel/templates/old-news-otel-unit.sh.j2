@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# One OTLP log record per systemd unit run, straight over HTTP.
+#
+# The box's timers are the part of this system nothing else can see: the app only
+# knows what happens inside the app, and healthchecks.io only knows whether the box
+# answers. A backup that runs daily and fails silently is invisible to both.
+set -uo pipefail
+
+source /etc/old-news/otel.env
+
+# Telemetry must never be the reason a backup is reported as failed.
+[[ -n "${LOGFIRE_TOKEN:-}" ]] || exit 0
+
+unit="${1:?unit name required}"
+
+show() { systemctl show "$unit" --property="$1" --value; }
+
+result="$(show Result)"
+started="$(show ExecMainStartTimestampMonotonic)"
+ended="$(show ExecMainExitTimestampMonotonic)"
+
+duration_ms=0
+if [[ "$started" =~ ^[0-9]+$ && "$ended" =~ ^[0-9]+$ && "$ended" -gt "$started" ]]; then
+  duration_ms=$(( (ended - started) / 1000 ))
+fi
+
+if [[ "$result" == "success" ]]; then
+  severity_number=9
+  severity_text=INFO
+else
+  severity_number=17
+  severity_text=ERROR
+fi
+
+read -r -d '' payload <<JSON
+{"resourceLogs":[{
+  "resource":{"attributes":[
+    {"key":"service.name","value":{"stringValue":"old-news-host"}},
+    {"key":"host.name","value":{"stringValue":"{{ tailscale_hostname }}"}},
+    {"key":"deployment.environment.name","value":{"stringValue":"production"}}
+  ]},
+  "scopeLogs":[{
+    "scope":{"name":"systemd"},
+    "logRecords":[{
+      "timeUnixNano":"$(date +%s)000000000",
+      "severityNumber":${severity_number},
+      "severityText":"${severity_text}",
+      "body":{"stringValue":"${unit} ${result}"},
+      "attributes":[
+        {"key":"systemd.unit","value":{"stringValue":"${unit}"}},
+        {"key":"systemd.result","value":{"stringValue":"${result}"}},
+        {"key":"duration_ms","value":{"intValue":"${duration_ms}"}}
+      ]
+    }]
+  }]
+}]}
+JSON
+
+curl -fsS -m 15 --retry 3 \
+  -X POST "${OTLP_ENDPOINT}/v1/logs" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: ${LOGFIRE_TOKEN}" \
+  --data-binary "$payload" >/dev/null 2>&1 || true

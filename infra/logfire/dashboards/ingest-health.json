@@ -1,0 +1,251 @@
+{
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "Ingest health",
+    "project": "old-news"
+  },
+  "spec": {
+    "display": {
+      "name": "Ingest health",
+      "description": "Whether feeds are being polled, how fast, and which ones are failing."
+    },
+    "panels": {
+      "poll_outcomes": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Poll outcomes",
+            "description": "A healthy feed reader is mostly not_modified."
+          },
+          "plugin": {
+            "kind": "TimeSeries",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS x,\n       metric_name AS series,\n       sum(scalar_value) AS y\nFROM metrics\nWHERE metric_name IN (\n    'ingest.polls.not_modified',\n    'ingest.polls.failed',\n    'ingest.items.new',\n    'ingest.items.edited'\n)\nGROUP BY x, series\nORDER BY x\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "http_status": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "HTTP status mix"
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT attributes->>'http.response.status_code' AS status, count(*) AS requests\nFROM records\nWHERE span_name = 'GET feed'\nGROUP BY status\nORDER BY requests DESC\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "slowest_feeds": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Slowest feeds"
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT attributes->>'feed.id' AS feed,\n       count(*) AS polls,\n       avg(duration) AS avg_seconds,\n       max(duration) AS max_seconds\nFROM records\nWHERE span_name = 'poll feed'\nGROUP BY feed\nORDER BY max_seconds DESC\nLIMIT 20\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "failing_feeds": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Feeds failing most"
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT attributes->>'feed' AS feed, sum(scalar_value) AS failures\nFROM metrics\nWHERE metric_name = 'ingest.polls.failed'\nGROUP BY feed\nORDER BY failures DESC\nLIMIT 20\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "suspensions": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Suspended feeds",
+            "description": "A suspended feed is silent data loss."
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT start_timestamp, message\nFROM records\nWHERE level >= 'warn' AND message LIKE 'suspending feed%'\nORDER BY start_timestamp DESC\nLIMIT 50\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "layouts": [
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Polling",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/poll_outcomes"
+              }
+            },
+            {
+              "x": 0,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/http_status"
+              }
+            },
+            {
+              "x": 12,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/slowest_feeds"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Failures",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/failing_feeds"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/suspensions"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "variables": [
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "resolution",
+          "display": {
+            "name": "resolution",
+            "hidden": true
+          },
+          "value": "1 minute"
+        }
+      }
+    ],
+    "duration": "6h",
+    "refreshInterval": "0s",
+    "datasources": {}
+  }
+}

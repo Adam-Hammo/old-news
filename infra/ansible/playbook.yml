@@ -27,6 +27,9 @@
       tags: [app]
     - role: serve
       tags: [serve]
+    # Before backup and keepbusy: their units call the reporter it installs.
+    - role: otel
+      tags: [otel]
     - role: backup
       tags: [backup]
     - role: heartbeat
