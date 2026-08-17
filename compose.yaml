@@ -113,7 +113,9 @@ services:
     command: ["--config=/etc/otel/config.yaml"]
     environment:
       LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
-      OTEL_LOGFIRE_ENDPOINT: ${OTEL_LOGFIRE_ENDPOINT:-https://logfire-api.pydantic.dev}
+      # Region lives in the write token's prefix and nothing here reads it, so
+      # the wrong host is a 401 rather than a redirect. Ansible sets this.
+      OTEL_LOGFIRE_ENDPOINT: ${OTEL_LOGFIRE_ENDPOINT:-https://logfire-eu.pydantic.dev}
       OTEL_HOST_NAME: ${OTEL_HOST_NAME:-localhost}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-old_news}
     group_add:
@@ -149,7 +151,7 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:-old_news}
       # `report` pushes restic's snapshot sizes straight to Logfire.
       LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
-      OTLP_ENDPOINT: ${OTEL_LOGFIRE_ENDPOINT:-https://logfire-api.pydantic.dev}
+      OTLP_ENDPOINT: ${OTEL_LOGFIRE_ENDPOINT:-https://logfire-eu.pydantic.dev}
       OTEL_HOST_NAME: ${OTEL_HOST_NAME:-localhost}
       OLD_NEWS_ENVIRONMENT: ${OLD_NEWS_ENVIRONMENT:-local}
       # A local path by default. Point at s3:... for Backblaze B2 and nothing

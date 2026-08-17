@@ -29,7 +29,7 @@ telemetry_system_metrics: false
 # One span per query: the biggest single lever on telemetry volume.
 telemetry_instrument_database: true
 
-otel_endpoint: https://logfire-api.pydantic.dev
+otel_endpoint: https://logfire-eu.pydantic.dev
 
 # The collector mounts the docker socket, which is root on the host. false drops
 # the container and the mount together.
