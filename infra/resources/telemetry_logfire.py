@@ -21,6 +21,15 @@ DASHBOARDS = Path(__file__).resolve().parent.parent / "logfire" / "dashboards"
 ENVIRONMENTS = ["production"]
 
 
+# The provider rejects anything else, and only says so once a preview has reached
+# Logfire — a CI round trip to learn that 26h is not a window. Checked on import
+# instead. Note the two sets differ: frequency has no 7d or 30d.
+TIME_WINDOWS = frozenset(
+    {"1m", "2m", "5m", "10m", "15m", "30m", "1h", "6h", "12h", "24h", "7d", "30d"}
+)
+FREQUENCIES = frozenset({"1m", "2m", "5m", "10m", "15m", "30m", "1h", "6h", "12h", "24h"})
+
+
 @dataclass(frozen=True)
 class Alert:
     slug: str
@@ -30,6 +39,14 @@ class Alert:
     time_window: str
     frequency: str
     notify_when: str
+
+    def __post_init__(self) -> None:
+        for field, value, allowed in (
+            ("time_window", self.time_window, TIME_WINDOWS),
+            ("frequency", self.frequency, FREQUENCIES),
+        ):
+            if value not in allowed:
+                raise ValueError(f"{self.slug}: {field} {value!r} must be one of {sorted(allowed)}")
 
 
 ALERTS = (
@@ -79,6 +96,74 @@ ALERTS = (
         """,
         time_window="1h",
         frequency="15m",
+        notify_when="has_matches",
+    ),
+    Alert(
+        slug="collector-silent",
+        name="collector-silent",
+        description="No host metrics. The collector is the only thing that sends these, "
+        "it has no dependents, and it restarts forever — so it dies quietly.",
+        # Same inversion as ingest-silent: silence has to become a row to match on.
+        query="""
+            select count(*) as points
+            from metrics
+            where metric_name = 'system.memory.usage'
+            having count(*) = 0
+        """,
+        time_window="1h",
+        frequency="15m",
+        notify_when="has_matches",
+    ),
+    Alert(
+        slug="backup-stale",
+        name="backup-stale",
+        description="No backup in a day. Daily timer, an hour of jitter, and a night of grace.",
+        # 26h is not an allowed window, and 24h would cry wolf: `OnCalendar=daily`
+        # with an hour of RandomizedDelaySec puts up to 25h between two good runs.
+        # So look over a week and measure the staleness rather than the emptiness.
+        # COALESCE is what turns "reported nothing all week" into a row to match on.
+        query="""
+            select max(recorded_timestamp) as last_backup
+            from metrics
+            where metric_name = 'backup.snapshot.age'
+            having coalesce(max(recorded_timestamp), now() - interval '999 days')
+                   < now() - interval '26 hours'
+        """,
+        time_window="7d",
+        frequency="1h",
+        notify_when="has_matches",
+    ),
+    Alert(
+        slug="unit-failed",
+        name="unit-failed",
+        description="A systemd unit on the box failed — backup, its verification, or keepbusy.",
+        query="""
+            select
+              start_timestamp,
+              attributes->>'systemd.unit' as unit,
+              attributes->>'systemd.result' as result,
+              message
+            from records
+            where service_name = 'old-news-host' and level >= 'error'
+            order by start_timestamp desc
+        """,
+        time_window="24h",
+        frequency="15m",
+        notify_when="matches_changed",
+    ),
+    Alert(
+        slug="disk-filling",
+        name="disk-filling",
+        description="The root filesystem is over 80%. The archive only grows, so this one is terminal.",
+        query="""
+            select round(max(metric_avg(value))::numeric * 100, 1) as used_percent
+            from metrics
+            where metric_name = 'system.filesystem.utilization'
+              and attributes->>'mountpoint' = '/'
+            having max(metric_avg(value)) > 0.8
+        """,
+        time_window="1h",
+        frequency="1h",
         notify_when="has_matches",
     ),
     Alert(

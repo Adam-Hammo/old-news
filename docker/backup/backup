@@ -18,4 +18,8 @@ pg_dump --format=custom --compress=none --no-owner --no-privileges \
 restic forget --tag old-news --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune
 restic check
 
+# After the prune, so the sizes reported are the sizes kept. Never fatal: a
+# telemetry outage must not turn a good backup into a failed unit.
+report || true
+
 echo "backup complete: $(restic snapshots --tag old-news --json | tail -c 200 | grep -o '"short_id":"[^"]*"' | tail -1)"

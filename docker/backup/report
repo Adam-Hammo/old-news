@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# What restic actually holds, pushed as OTLP metrics. `backup` calls this on success.
+#
+# The systemd reporter says whether the unit exited 0. It cannot say whether the
+# dump had anything in it: `pg_dump | restic backup` succeeds just as happily on an
+# empty database, and `restic check` verifies the repository rather than its
+# contents. Size over time is what catches a backup quietly emptying out.
+#
+# raw-data is also the Backblaze bill — it is what the bucket stores after restic's
+# own dedup and compression, which no B2-side metric would tell us any better.
+set -uo pipefail
+
+# Telemetry must never be the reason a good backup is reported as failed. Locally
+# there is no token, so this is also what keeps `just backup` quiet.
+[[ -n "${LOGFIRE_TOKEN:-}" && -n "${OTLP_ENDPOINT:-}" ]] || exit 0
+command -v jq >/dev/null || exit 0
+
+snapshots=$(restic snapshots --tag old-news --json) || exit 0
+count=$(jq 'length' <<<"$snapshots") || exit 0
+[[ "$count" -gt 0 ]] || exit 0
+
+# restic sorts oldest first, so the newest is the last element.
+newest=$(jq -r '.[-1].time' <<<"$snapshots") || exit 0
+age=$(( $(date +%s) - $(date -d "$newest" +%s) ))
+
+# restore-size is the dump as pg_restore would see it; raw-data is what B2 stores.
+dump_bytes=$(restic stats --json --mode restore-size --tag old-news latest | jq '.total_size') || exit 0
+repo_bytes=$(restic stats --json --mode raw-data --tag old-news | jq '.total_size') || exit 0
+
+now_ns="$(date +%s)000000000"
+
+gauge() {
+  jq -n --arg name "$1" --arg unit "$2" --argjson value "$3" --arg ts "$now_ns" \
+    '{name: $name, unit: $unit, gauge: {dataPoints: [{asDouble: $value, timeUnixNano: $ts}]}}'
+}
+
+metrics=$(
+  jq -s . <<JSON
+$(gauge backup.snapshots "{snapshot}" "$count")
+$(gauge backup.snapshot.age s "$age")
+$(gauge backup.snapshot.size By "$dump_bytes")
+$(gauge backup.repository.size By "$repo_bytes")
+JSON
+) || exit 0
+
+payload=$(jq -n \
+  --arg host "${OTEL_HOST_NAME:-unknown}" \
+  --arg environment "${OLD_NEWS_ENVIRONMENT:-production}" \
+  --argjson metrics "$metrics" \
+  '{
+     resourceMetrics: [{
+       resource: {attributes: [
+         {key: "service.name", value: {stringValue: "old-news-backup"}},
+         {key: "host.name", value: {stringValue: $host}},
+         {key: "deployment.environment.name", value: {stringValue: $environment}}
+       ]},
+       scopeMetrics: [{scope: {name: "restic"}, metrics: $metrics}]
+     }]
+   }') || exit 0
+
+curl -fsS -m 15 --retry 3 \
+  -X POST "${OTLP_ENDPOINT}/v1/metrics" \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: ${LOGFIRE_TOKEN}" \
+  --data-binary "$payload" >/dev/null 2>&1 || true

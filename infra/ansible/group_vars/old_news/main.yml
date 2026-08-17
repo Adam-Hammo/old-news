@@ -21,8 +21,10 @@ keepbusy_schedule: "17:00"
 
 telemetry_enabled: true
 
-# The only thing that says whether keepbusy clears Oracle's idle bar.
-telemetry_system_metrics: true
+# psutil inside a container reads the host's /proc but reports under the container
+# id, so the api and the worker show up in Logfire as two hosts. The collector's
+# hostmetrics is what answers the keepbusy question now.
+telemetry_system_metrics: false
 
 # One span per query: the biggest single lever on telemetry volume.
 telemetry_instrument_database: true

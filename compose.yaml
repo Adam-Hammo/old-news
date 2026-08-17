@@ -103,7 +103,8 @@ services:
           memory: ${WORKER_MEMORY_LIMIT:-2g}
 
   # The docker socket is root on the host. Read-only, and the only container here
-  # that gets one.
+  # that gets one. The image runs as uid 10001, so reading the socket at all takes
+  # the host's docker group — Ansible sets DOCKER_GID from the box.
   otel-collector:
     profiles: [telemetry]
     # Plain tag, not ${VAR:-tag}: Dependabot cannot parse a substituted one, and a
@@ -113,7 +114,10 @@ services:
     environment:
       LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
       OTEL_LOGFIRE_ENDPOINT: ${OTEL_LOGFIRE_ENDPOINT:-https://logfire-api.pydantic.dev}
+      OTEL_HOST_NAME: ${OTEL_HOST_NAME:-localhost}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-old_news}
+    group_add:
+      - "${DOCKER_GID:-988}"
     volumes:
       - ./otel-collector.yaml:/etc/otel/config.yaml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -143,6 +147,11 @@ services:
       PGUSER: old_news
       PGDATABASE: old_news
       PGPASSWORD: ${POSTGRES_PASSWORD:-old_news}
+      # `report` pushes restic's snapshot sizes straight to Logfire.
+      LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
+      OTLP_ENDPOINT: ${OTEL_LOGFIRE_ENDPOINT:-https://logfire-api.pydantic.dev}
+      OTEL_HOST_NAME: ${OTEL_HOST_NAME:-localhost}
+      OLD_NEWS_ENVIRONMENT: ${OLD_NEWS_ENVIRONMENT:-local}
       # A local path by default. Point at s3:... for Backblaze B2 and nothing
       # else about these scripts changes.
       RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-/backups/restic}

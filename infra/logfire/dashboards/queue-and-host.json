@@ -7,7 +7,7 @@
   "spec": {
     "display": {
       "name": "Queue and host",
-      "description": "The worker, the jobs it runs, and the box underneath them."
+      "description": "Procrastinate queue depth and outcomes, and the box underneath it."
     },
     "panels": {
       "queue_depth": {
@@ -15,12 +15,23 @@
         "spec": {
           "display": {
             "name": "Queue depth",
-            "description": "todo climbing means the poller is falling behind; stalled above zero means a worker died."
+            "description": "todo climbing means the poller is falling behind; stalled above zero means a worker died holding jobs."
           },
           "plugin": {
-            "kind": "TimeSeries",
+            "kind": "TimeSeriesChart",
             "spec": {
-              "query": ""
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "label": "Jobs"
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
             }
           },
           "queries": [
@@ -30,9 +41,9 @@
                 "plugin": {
                   "kind": "LogfireTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS x,\n       metric_name AS series,\n       max(scalar_value) AS y\nFROM metrics\nWHERE metric_name IN ('queue.todo', 'queue.doing', 'queue.failed', 'queue.stalled')\nGROUP BY x, series\nORDER BY x\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       metric_name AS series,\n       SUM(metric_avg(value)) AS jobs\nFROM metrics\nWHERE metric_name IN ('queue.todo', 'queue.doing', 'queue.failed', 'queue.stalled')\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["jobs"]
                   }
                 }
               }
@@ -47,9 +58,23 @@
             "name": "Task duration"
           },
           "plugin": {
-            "kind": "TimeSeries",
+            "kind": "TimeSeriesChart",
             "spec": {
-              "query": ""
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "format": {
+                  "unit": "seconds",
+                  "decimalPlaces": 2
+                }
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
             }
           },
           "queries": [
@@ -59,9 +84,9 @@
                 "plugin": {
                   "kind": "LogfireTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT time_bucket($resolution, start_timestamp) AS x,\n       attributes->>'job.task' AS series,\n       avg(duration) AS y\nFROM records\nWHERE span_name LIKE 'task %'\nGROUP BY x, series\nORDER BY x\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT time_bucket($resolution, start_timestamp) AS time,\n       attributes->>'job.task' AS series,\n       AVG(duration) AS seconds\nFROM records\nWHERE span_name LIKE 'task %'\n  AND start_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["seconds"]
                   }
                 }
               }
@@ -88,9 +113,7 @@
                 "plugin": {
                   "kind": "LogfireNonTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT attributes->>'task' AS task, metric_name AS outcome, sum(scalar_value) AS jobs\nFROM metrics\nWHERE metric_name IN ('queue.jobs.succeeded', 'queue.jobs.failed')\nGROUP BY task, outcome\nORDER BY jobs DESC\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT attributes->>'task' AS task,\n       metric_name AS outcome,\n       SUM(metric_sum(value)) AS jobs\nFROM metrics\nWHERE metric_name IN ('queue.jobs.succeeded', 'queue.jobs.failed')\nGROUP BY task, outcome\nORDER BY jobs DESC;"
                   }
                 }
               }
@@ -117,9 +140,7 @@
                 "plugin": {
                   "kind": "LogfireNonTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT start_timestamp,\n       attributes->>'job.task' AS task,\n       otel_status_message AS failure,\n       trace_id\nFROM records\nWHERE level >= 'error' AND span_name LIKE 'task %'\nORDER BY start_timestamp DESC\nLIMIT 50\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT start_timestamp,\n       attributes->>'job.task' AS task,\n       otel_status_message AS failure,\n       trace_id\nFROM records\nWHERE level >= 'error' AND span_name LIKE 'task %'\nORDER BY start_timestamp DESC\nLIMIT 50;"
                   }
                 }
               }
@@ -127,17 +148,33 @@
           ]
         }
       },
-      "host_metrics": {
+      "host_cpu": {
         "kind": "Panel",
         "spec": {
           "display": {
-            "name": "Host CPU and memory",
+            "name": "Host CPU",
             "description": "Also the answer to whether keepbusy is clearing Oracle's idle bar."
           },
           "plugin": {
-            "kind": "TimeSeries",
+            "kind": "TimeSeriesChart",
             "spec": {
-              "query": ""
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "label": "%",
+                "format": {
+                  "unit": "percent",
+                  "suffix": "%",
+                  "decimalPlaces": 1
+                }
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
             }
           },
           "queries": [
@@ -147,9 +184,215 @@
                 "plugin": {
                   "kind": "LogfireTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS x,\n       metric_name AS series,\n       avg(scalar_value) AS y\nFROM metrics\nWHERE metric_name IN ('system.cpu.utilization', 'system.memory.utilization')\nGROUP BY x, series\nORDER BY x\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "WITH by_cpu AS (\n    -- Sum the busy states per core, then average the cores: one number for the box.\n    SELECT recorded_timestamp,\n           attributes->>'cpu' AS cpu,\n           SUM(metric_avg(value)) AS busy\n    FROM metrics\n    WHERE metric_name = 'system.cpu.utilization'\n      AND attributes->>'state' NOT IN ('idle', 'wait')\n      AND recorded_timestamp < time_bucket($resolution, now())\n    GROUP BY recorded_timestamp, cpu\n)\nSELECT time_bucket($resolution, recorded_timestamp) AS time,\n       'busy' AS series,\n       ROUND(AVG(busy)::numeric * 100, 1) AS \"CPU %\"\nFROM by_cpu\nGROUP BY time\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["CPU %"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "host_memory": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Host memory",
+            "description": "Split by state on purpose: cached is memory Postgres is using well, not memory the box has run out of."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "label": "%",
+                "format": {
+                  "unit": "percent",
+                  "suffix": "%",
+                  "decimalPlaces": 1
+                }
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       attributes->>'state' AS series,\n       ROUND(SUM(metric_avg(value))::numeric * 100, 1) AS \"Memory %\"\nFROM metrics\nWHERE metric_name = 'system.memory.utilization'\n  AND attributes->>'state' IN ('used', 'cached', 'free')\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["Memory %"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "host_disk": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Disk used",
+            "description": "The archive only grows. This is the one that ends the box."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "label": "%",
+                "format": {
+                  "unit": "percent",
+                  "suffix": "%",
+                  "decimalPlaces": 1
+                }
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       attributes->>'mountpoint' AS series,\n       ROUND(AVG(metric_avg(value))::numeric * 100, 1) AS \"Disk %\"\nFROM metrics\nWHERE metric_name = 'system.filesystem.utilization'\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["Disk %"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "host_load": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Load average",
+            "description": "Two OCPUs, so sustained load above 2 is a queue, not work."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       replace(metric_name, 'system.cpu.load_average.', '') AS series,\n       AVG(metric_avg(value)) AS load\nFROM metrics\nWHERE metric_name IN ('system.cpu.load_average.1m',\n                      'system.cpu.load_average.5m',\n                      'system.cpu.load_average.15m')\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["load"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "container_memory": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Container memory",
+            "description": "Which container is eating the box. The worker is the one with a 2g cap."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "label": "%",
+                "format": {
+                  "unit": "percent",
+                  "suffix": "%",
+                  "decimalPlaces": 1
+                }
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       otel_resource_attributes->>'container.name' AS series,\n       ROUND(AVG(metric_avg(value))::numeric, 1) AS \"Memory %\"\nFROM metrics\nWHERE metric_name = 'container.memory.percent'\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["Memory %"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "container_health": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Container health",
+            "description": "Restarts climbing with uptime near zero is a container failing closed. Nothing depends on the collector, so that is the only symptom it has."
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "WITH latest AS (\n    -- Latest sample per container per metric, then pivoted into one row each.\n    SELECT otel_resource_attributes->>'container.name' AS container,\n           metric_name,\n           metric_avg(value) AS v,\n           ROW_NUMBER() OVER (\n               PARTITION BY otel_resource_attributes->>'container.name', metric_name\n               ORDER BY recorded_timestamp DESC) AS rn\n    FROM metrics\n    WHERE metric_name IN ('container.restarts', 'container.uptime', 'container.memory.usage.max')\n)\nSELECT container AS \"Container\",\n       MAX(v) FILTER (WHERE metric_name = 'container.restarts')::numeric(10,0) AS \"Restarts\",\n       MAX(v) FILTER (WHERE metric_name = 'container.uptime')::numeric(10,0) AS \"Uptime (s)\",\n       MAX(v) FILTER (WHERE metric_name = 'container.memory.usage.max') AS \"Peak memory\"\nFROM latest\nWHERE rn = 1\nGROUP BY container\nORDER BY \"Restarts\" DESC, \"Container\";"
                   }
                 }
               }
@@ -177,9 +420,7 @@
                 "plugin": {
                   "kind": "LogfireNonTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT start_timestamp,\n       attributes->>'systemd.unit' AS unit,\n       attributes->>'systemd.result' AS result,\n       attributes->>'duration_ms' AS duration_ms\nFROM records\nWHERE service_name = 'old-news-host'\nORDER BY start_timestamp DESC\nLIMIT 50\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT start_timestamp,\n       attributes->>'systemd.unit' AS unit,\n       attributes->>'systemd.result' AS result,\n       attributes->>'duration_ms' AS duration_ms\nFROM records\nWHERE service_name = 'old-news-host'\nORDER BY start_timestamp DESC\nLIMIT 50;"
                   }
                 }
               }
@@ -251,15 +492,60 @@
             {
               "x": 0,
               "y": 0,
-              "width": 24,
+              "width": 12,
               "height": 8,
               "content": {
-                "$ref": "#/spec/panels/host_metrics"
+                "$ref": "#/spec/panels/host_cpu"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/host_memory"
               }
             },
             {
               "x": 0,
               "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/host_load"
+              }
+            },
+            {
+              "x": 12,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/host_disk"
+              }
+            },
+            {
+              "x": 0,
+              "y": 16,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/container_memory"
+              }
+            },
+            {
+              "x": 12,
+              "y": 16,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/container_health"
+              }
+            },
+            {
+              "x": 0,
+              "y": 24,
               "width": 24,
               "height": 8,
               "content": {
@@ -270,19 +556,7 @@
         }
       }
     ],
-    "variables": [
-      {
-        "kind": "TextVariable",
-        "spec": {
-          "name": "resolution",
-          "display": {
-            "name": "resolution",
-            "hidden": true
-          },
-          "value": "1 minute"
-        }
-      }
-    ],
+    "variables": [],
     "duration": "6h",
     "refreshInterval": "0s",
     "datasources": {}
