@@ -16,6 +16,8 @@ x-app: &app
     OLD_NEWS_API__FORWARDED_ALLOW_IPS: ${OLD_NEWS_API__FORWARDED_ALLOW_IPS:-*}
     OLD_NEWS_TELEMETRY__ENABLED: ${OLD_NEWS_TELEMETRY__ENABLED:-false}
     OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
+    OLD_NEWS_TELEMETRY__SYSTEM_METRICS: ${OLD_NEWS_TELEMETRY__SYSTEM_METRICS:-false}
+    OLD_NEWS_TELEMETRY__INSTRUMENT_DATABASE: ${OLD_NEWS_TELEMETRY__INSTRUMENT_DATABASE:-false}
   depends_on:
     db:
       condition: service_healthy
@@ -99,6 +101,35 @@ services:
       resources:
         limits:
           memory: ${WORKER_MEMORY_LIMIT:-2g}
+
+  # The docker socket is root on the host. Read-only, and the only container here
+  # that gets one.
+  otel-collector:
+    profiles: [telemetry]
+    # Plain tag, not ${VAR:-tag}: Dependabot cannot parse a substituted one, and a
+    # pin nothing watches rots silently.
+    image: otel/opentelemetry-collector-contrib:0.158.0
+    command: ["--config=/etc/otel/config.yaml"]
+    environment:
+      LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
+      OTEL_LOGFIRE_ENDPOINT: ${OTEL_LOGFIRE_ENDPOINT:-https://logfire-api.pydantic.dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-old_news}
+    volumes:
+      - ./otel-collector.yaml:/etc/otel/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/hostfs:ro,rslave
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${OTEL_COLLECTOR_MEMORY_LIMIT:-256m}
 
   # `docker compose run --rm backup <backup|restore|verify-restore>`
   backup:

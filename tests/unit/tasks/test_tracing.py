@@ -112,19 +112,78 @@ def test_context_is_absent_when_nothing_was_propagated():
     assert context_from({}) is None
 
 
+class FakeTask:
+    """What `app.task` returns."""
+
+    queue = "ingest"
+    name = "poll_feed"
+
+    def __init__(self, captured: dict[str, Any]) -> None:
+        self._captured = captured
+
+    async def defer_async(self, **kwargs: Any) -> int:
+        self._captured.update(kwargs)
+        return 1
+
+
+class FakeDeferrer(FakeTask):
+    """What `task.configure(...)` returns: the names move onto a job."""
+
+    queue = None
+    name = None
+
+    def __init__(self, captured: dict[str, Any]) -> None:
+        super().__init__(captured)
+        self.job = job_context().job
+
+
 async def test_defer_attaches_the_current_context():
     captured: dict[str, Any] = {}
 
-    class FakeTask:
-        async def defer_async(self, **kwargs: Any) -> int:
-            captured.update(kwargs)
-            return 1
-
     with span("outer"):
-        await defer(FakeTask(), note="hello")
+        await defer(FakeTask(captured), note="hello")
 
     assert captured["note"] == "hello"
     assert "traceparent" in captured[TRACE_KEY]
+
+
+async def test_defer_emits_a_send_span(exporter: TestExporter):
+    [send] = await _defer_and_collect(exporter, FakeTask({}))
+
+    assert send.attributes["messaging.destination.name"] == "ingest"
+    assert send.attributes["messaging.operation.type"] == "send"
+    assert send.attributes["job.task"] == "poll_feed"
+
+
+async def test_defer_reads_a_configured_task_through_its_job(exporter: TestExporter):
+    """`Task.configure()` hands `defer` a JobDeferrer, which names neither."""
+    [send] = await _defer_and_collect(exporter, FakeDeferrer({}), queue="default")
+
+    assert send.attributes["messaging.destination.name"] == "default"
+    assert send.attributes["job.task"] == "heartbeat"
+
+
+async def _defer_and_collect(
+    exporter: TestExporter, task: FakeTask, *, queue: str = "ingest"
+) -> list:
+    await defer(task)
+    return spans_named(exporter, f"send {queue}")
+
+
+async def test_a_job_parents_to_the_send_span(exporter: TestExporter):
+    """The whole point of the traceparent: one trace from schedule to poll."""
+    captured: dict[str, Any] = {}
+
+    async def call_next() -> None:
+        return None
+
+    await defer(FakeTask(captured), note="hi")
+    await trace_jobs(call_next, job_context({TRACE_KEY: captured[TRACE_KEY]}), worker=None)
+
+    [send] = spans_named(exporter, "send ingest")
+    [job_span] = spans_named(exporter, "task heartbeat")
+
+    assert job_span.parent.span_id == send.context.span_id
 
 
 async def test_housekeeping_tasks_emit_no_span(exporter: TestExporter):

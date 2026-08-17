@@ -21,6 +21,10 @@ TRACE_KEY = "__traceparent"
 # Housekeeping that runs on a timer forever. Failures still count and still log.
 UNTRACED_TASKS = frozenset({"queue_metrics", "prune_jobs"})
 
+# `messaging.*` below is OpenTelemetry's convention, not ours — it is what makes
+# the backend read these spans as a queue.
+MESSAGING_SYSTEM = "procrastinate"
+
 _propagator = TraceContextTextMapPropagator()
 
 
@@ -56,6 +60,11 @@ async def trace_jobs(
         "job.attempts": job.attempts,
         "job.priority": job.priority,
         "worker.name": context.worker_name,
+        "messaging.system": MESSAGING_SYSTEM,
+        "messaging.destination.name": job.queue,
+        "messaging.operation.name": "process",
+        "messaging.operation.type": "process",
+        "messaging.message.id": str(job.id),
     }
 
     with span(f"task {job.task_name}", context=context_from(job.task_kwargs), **attributes) as s:
@@ -83,6 +92,30 @@ def task(app: App, **options: Any) -> Callable[[Callable[..., Any]], Any]:
     return decorator
 
 
+def _destination(registered_task: Any) -> tuple[str, str]:
+    """`Task.configure()` returns a JobDeferrer, so both shapes reach `defer` and
+    only one of them has a `.job`."""
+    job = getattr(registered_task, "job", None)
+    if job is not None:
+        return job.queue, job.task_name
+    return registered_task.queue, registered_task.name
+
+
 async def defer(registered_task: Any, /, **kwargs: Any) -> Any:
-    """Defer a job carrying the current trace context."""
-    return await registered_task.defer_async(**kwargs, **{TRACE_KEY: carrier()})
+    """Defer a job carrying the current trace context.
+
+    Without the send span a job deferred by a periodic task parents to nothing.
+    """
+    queue, task_name = _destination(registered_task)
+    attributes: dict[str, Any] = {
+        "job.queue": queue,
+        "job.task": task_name,
+        "messaging.system": MESSAGING_SYSTEM,
+        "messaging.destination.name": queue,
+        "messaging.operation.name": "send",
+        "messaging.operation.type": "send",
+    }
+
+    with span(f"send {queue}", **attributes):
+        # Inside the span, so `carrier()` captures it and the job becomes its child.
+        return await registered_task.defer_async(**kwargs, **{TRACE_KEY: carrier()})

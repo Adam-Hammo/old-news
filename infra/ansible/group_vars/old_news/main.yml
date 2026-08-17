@@ -20,3 +20,16 @@ keepbusy_duration: 2h
 keepbusy_schedule: "17:00"
 
 telemetry_enabled: true
+
+# The only thing that says whether keepbusy clears Oracle's idle bar.
+telemetry_system_metrics: true
+
+# One span per query: the biggest single lever on telemetry volume.
+telemetry_instrument_database: true
+
+otel_endpoint: https://logfire-api.pydantic.dev
+
+# The collector mounts the docker socket, which is root on the host. false drops
+# the container and the mount together.
+otel_collector_enabled: true
+compose_profiles: "{{ '--profile telemetry' if otel_collector_enabled else '' }}"

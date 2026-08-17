@@ -16,6 +16,9 @@ config:
   old-news:b2Region: us-west-004
   old-news:logfireProject: old-news
   # Set every secret with `pulumi config set --secret`, never by editing this file:
-  # heartbeatUrl, b2:applicationKeyId, b2:applicationKey, logfire:apiKey,
-  # tailscale:oauthClientId, tailscale:oauthClientSecret. Plus tailscale:tailnet,
-  # which is not secret.
+  # heartbeatUrl, budgetAlertRecipient, b2:applicationKeyId, b2:applicationKey,
+  # logfire:apiKey, healthchecksio:apiKey, tailscale:oauthClientId,
+  # tailscale:oauthClientSecret. Plus tailscale:tailnet, which is not secret.
+  #
+  # heartbeatUrl and logfireAlertWebhook are only needed without healthchecksio:apiKey
+  # — with it, both checks are created here and their URLs wired up directly.

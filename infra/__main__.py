@@ -5,7 +5,14 @@ from `pulumi stack output` and stores none of them.
 """
 
 import pulumi
-from resources import passwords, storage_b2, tailnet, telemetry_logfire
+from resources import (
+    limits_oci,
+    monitoring_healthchecks,
+    passwords,
+    storage_b2,
+    tailnet,
+    telemetry_logfire,
+)
 from resources.compute_oci import provision as provision_host
 
 config = pulumi.Config()
@@ -13,8 +20,13 @@ config = pulumi.Config()
 host = provision_host()
 generated = passwords.generate()
 repository = storage_b2.provision(config.require("b2Bucket"))
-telemetry = telemetry_logfire.provision(config.get("logfireProject") or "old-news")
+checks = monitoring_healthchecks.provision()
+telemetry = telemetry_logfire.provision(
+    config.get("logfireProject") or "old-news",
+    alert_webhook=checks.alert_webhook if checks else None,
+)
 access = tailnet.provision()
+limits_oci.provision()
 
 pulumi.export("host_name", host.name)
 pulumi.export("host_username", host.username)
@@ -36,5 +48,10 @@ pulumi.export("tailscale_auth_key", access.server_auth_key)
 # config, not passwords.generate(). Only the scrypt hash ever leaves your machine.
 pulumi.export("admin_password_hash", config.require_secret("adminPasswordHash"))
 
-# A capability URL: anyone holding it can forge a healthy signal.
-pulumi.export("heartbeat_url", config.require_secret("heartbeatUrl"))
+# A capability URL: anyone holding it can forge a healthy signal. Minted by the
+# checks module when it runs; the config key is the fallback, and the check it names
+# can be deleted by hand once a deploy has repointed the timer.
+pulumi.export(
+    "heartbeat_url",
+    checks.heartbeat_url if checks else config.require_secret("heartbeatUrl"),
+)

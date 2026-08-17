@@ -31,7 +31,7 @@ async def _lifespan(app: Litestar) -> AsyncGenerator[None]:
 
 def create_app(settings: Settings | None = None) -> Litestar:
     settings = settings or get_settings()
-    observability.configure(settings.telemetry, environment=settings.environment)
+    observability.configure(settings.telemetry, environment=settings.environment, component="api")
 
     # create_async_engine opens nothing — connections are made lazily, on
     # whichever loop first asks for one. So unlike a pre-opened asyncpg pool this

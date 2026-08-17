@@ -1,0 +1,290 @@
+{
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "Queue and host",
+    "project": "old-news"
+  },
+  "spec": {
+    "display": {
+      "name": "Queue and host",
+      "description": "The worker, the jobs it runs, and the box underneath them."
+    },
+    "panels": {
+      "queue_depth": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Queue depth",
+            "description": "todo climbing means the poller is falling behind; stalled above zero means a worker died."
+          },
+          "plugin": {
+            "kind": "TimeSeries",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS x,\n       metric_name AS series,\n       max(scalar_value) AS y\nFROM metrics\nWHERE metric_name IN ('queue.todo', 'queue.doing', 'queue.failed', 'queue.stalled')\nGROUP BY x, series\nORDER BY x\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "task_duration": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Task duration"
+          },
+          "plugin": {
+            "kind": "TimeSeries",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, start_timestamp) AS x,\n       attributes->>'job.task' AS series,\n       avg(duration) AS y\nFROM records\nWHERE span_name LIKE 'task %'\nGROUP BY x, series\nORDER BY x\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "job_outcomes": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Job outcomes by task"
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT attributes->>'task' AS task, metric_name AS outcome, sum(scalar_value) AS jobs\nFROM metrics\nWHERE metric_name IN ('queue.jobs.succeeded', 'queue.jobs.failed')\nGROUP BY task, outcome\nORDER BY jobs DESC\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "task_failures": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Recent task failures"
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT start_timestamp,\n       attributes->>'job.task' AS task,\n       otel_status_message AS failure,\n       trace_id\nFROM records\nWHERE level >= 'error' AND span_name LIKE 'task %'\nORDER BY start_timestamp DESC\nLIMIT 50\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "host_metrics": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Host CPU and memory",
+            "description": "Also the answer to whether keepbusy is clearing Oracle's idle bar."
+          },
+          "plugin": {
+            "kind": "TimeSeries",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS x,\n       metric_name AS series,\n       avg(scalar_value) AS y\nFROM metrics\nWHERE metric_name IN ('system.cpu.utilization', 'system.memory.utilization')\nGROUP BY x, series\nORDER BY x\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "systemd_units": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Systemd timers",
+            "description": "Whether the backup ran, and how long it took."
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT start_timestamp,\n       attributes->>'systemd.unit' AS unit,\n       attributes->>'systemd.result' AS result,\n       attributes->>'duration_ms' AS duration_ms\nFROM records\nWHERE service_name = 'old-news-host'\nORDER BY start_timestamp DESC\nLIMIT 50\n",
+                    "groupBy": "",
+                    "metrics": []
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "layouts": [
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Queue",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/queue_depth"
+              }
+            },
+            {
+              "x": 0,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/task_duration"
+              }
+            },
+            {
+              "x": 12,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/job_outcomes"
+              }
+            },
+            {
+              "x": 0,
+              "y": 16,
+              "width": 24,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/task_failures"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Host",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/host_metrics"
+              }
+            },
+            {
+              "x": 0,
+              "y": 8,
+              "width": 24,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/systemd_units"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "variables": [
+      {
+        "kind": "TextVariable",
+        "spec": {
+          "name": "resolution",
+          "display": {
+            "name": "resolution",
+            "hidden": true
+          },
+          "value": "1 minute"
+        }
+      }
+    ],
+    "duration": "6h",
+    "refreshInterval": "0s",
+    "datasources": {}
+  }
+}

@@ -22,8 +22,12 @@ UNTRACED_PATHS = ["/health", "/schema", "/admin"]
 SENSITIVE_FIELDS = ["password", "passwd", "token", "secret", "authorization", "auth"]
 
 
-def configure(settings: TelemetrySettings, *, environment: str) -> None:
-    """Installs the global OTel provider. The rest of the app talks to OTel, not Logfire."""
+def configure(settings: TelemetrySettings, *, environment: str, component: str) -> None:
+    """Installs the global OTel provider. The rest of the app talks to OTel, not Logfire.
+
+    One service name for both the API and the worker collapses them into a single
+    stream, so `component` names the process.
+    """
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s %(message)s"
     )
@@ -32,7 +36,7 @@ def configure(settings: TelemetrySettings, *, environment: str) -> None:
         return
 
     logfire.configure(
-        service_name=settings.service_name,
+        service_name=f"{settings.service_name}-{component}",
         service_version=__version__,
         environment=environment,
         token=settings.logfire_token,

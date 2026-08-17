@@ -7,3 +7,5 @@ Requires=docker.service
 Type=oneshot
 WorkingDirectory={{ app_dir }}
 ExecStart=/usr/bin/docker compose -f compose.yaml --profile tools run --rm backup backup
+# `-` so a telemetry outage cannot fail a good backup.
+ExecStopPost=-/usr/local/bin/old-news-otel-unit %n

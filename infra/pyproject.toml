@@ -15,6 +15,7 @@ dependencies = [
   "pulumi-tailscale>=0.29",
   "pulumi-b2",
   "pulumi-logfire",
+  "pulumi-healthchecksio",
 ]
 
 [dependency-groups]
@@ -28,3 +29,4 @@ package = false
 [tool.uv.sources]
 pulumi-b2 = { path = "sdks/b2" }
 pulumi-logfire = { path = "sdks/logfire" }
+pulumi-healthchecksio = { path = "sdks/healthchecksio" }

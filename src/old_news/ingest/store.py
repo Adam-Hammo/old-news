@@ -9,6 +9,7 @@ import datetime
 import hashlib
 import logging
 import uuid
+from compression import zstd
 from dataclasses import dataclass
 
 from sqlalchemy import select
@@ -23,6 +24,16 @@ from old_news.ingest.parser import ParsedFeed, ParsedItem
 logger = logging.getLogger(__name__)
 
 CAPTURED_HEADERS = ("etag", "last-modified", "content-type", "cache-control", "retry-after")
+
+# Postgres TOASTs these with pglz, which manages about 2x on feed XML. zstd gets
+# 5-6x, and documents are the great majority of the database.
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+
+
+def decompress(body: bytes) -> bytes:
+    """The way back. Bodies stored before compression began start with `<` or a BOM,
+    never with the zstd magic, so both read the same way and nothing needs migrating."""
+    return zstd.decompress(body) if body.startswith(ZSTD_MAGIC) else body
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +97,7 @@ async def record_document(
     session: AsyncSession, feed: Feed, response: Response, parsed: ParsedFeed
 ) -> Document | None:
     """Store the body if it differs from the previous one. Written before parsing."""
+    # Hashed raw: the hash answers "did this feed change", not "what did we store".
     body_hash = hashlib.sha256(response.body).digest()
     if body_hash == await previous_document_hash(session, feed.id):
         return None
@@ -94,7 +106,7 @@ async def record_document(
         feed_id=feed.id,
         status=response.status,
         body_hash=body_hash,
-        body=response.body,
+        body=zstd.compress(response.body),
         headers={name: value for name in CAPTURED_HEADERS if (value := response.header(name))},
         parse_ok=parsed.ok,
         parse_note=parsed.note,
