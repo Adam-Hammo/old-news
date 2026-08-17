@@ -29,6 +29,8 @@ jobs:
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          # Without a fallback, changing one hook rebuilds every environment.
+          restore-keys: pre-commit-
       - run: uv sync --all-extras --locked
       - run: just lint
 
@@ -102,6 +104,9 @@ jobs:
     # Fork pull requests get no secrets, and a preview cannot run without them.
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     env:
       PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
       # Keep in step with deploy.yml.
@@ -114,12 +119,51 @@ jobs:
         with:
           enable-cache: true
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.pulumi/plugins
+          key: pulumi-plugins-${{ hashFiles('infra/uv.lock', 'infra/Pulumi.yaml') }}
+          restore-keys: pulumi-plugins-
       - name: Install the Pulumi CLI
         run: |
           curl -fsSL https://get.pulumi.com | sh -s -- --version "$PULUMI_VERSION"
           echo "$HOME/.pulumi/bin" >>"$GITHUB_PATH"
 
-      - run: just infra-preview
+      - name: Preview
+        run: |
+          set -o pipefail
+          just infra-preview 2>&1 | tee preview.txt
+
+      - name: Report the plan
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          sed -E -e '/^(Downloading|Installing) plugin /d' -e '/^@ /d' \
+            -e '/^Logging in using/d' -e '/^Duration:/d' preview.txt | cat -s >clean.txt
+
+          # The preview URL is fresh every run, so the digest ignores it and a push
+          # that changes no plan leaves the comment untouched.
+          digest=$(sed -E '/previews\/[0-9a-f-]+/d' clean.txt | sha256sum | cut -d' ' -f1)
+
+          {
+            echo "<!-- plan:$digest -->"
+            echo '### Pulumi preview'
+            echo '```'
+            tail -c 60000 clean.txt
+            echo '```'
+          } >report.md
+          cat report.md >>"$GITHUB_STEP_SUMMARY"
+
+          [ -n "$PR" ] || exit 0
+          if gh pr view "$PR" --json comments --jq '.comments[].body' \
+            | grep -qF "plan:$digest"; then
+            echo "plan unchanged; leaving the comment alone"
+            exit 0
+          fi
+          gh pr comment "$PR" --body-file report.md --edit-last --create-if-none \
+            || gh pr comment "$PR" --body-file report.md
 
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: just infra-apply
