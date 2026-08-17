@@ -5,7 +5,7 @@ from typing import Any
 import httpx2
 
 from old_news.config.http import HttpSettings
-from old_news.observability import span
+from old_news.observability import instrument_http_client, span
 
 
 class FetchError(Exception):
@@ -57,6 +57,7 @@ class Fetcher:
             follow_redirects=True,
             max_redirects=settings.max_redirects,
         )
+        instrument_http_client(self._client)
 
     async def get(
         self,

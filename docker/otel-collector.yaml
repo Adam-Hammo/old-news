@@ -43,6 +43,11 @@ receivers:
         enabled: true
       container.cpu.throttling_data.throttled_time:
         enabled: true
+      container.cpu.logical.count:
+        enabled: true
+    container_labels_to_metric_labels:
+      com.docker.compose.project: com.docker.compose.project
+      com.docker.compose.service: com.docker.compose.service
 
   postgresql:
     endpoint: db:5432
@@ -78,19 +83,58 @@ processors:
   batch:
     timeout: 10s
 
-  resource:
-    attributes:
-      # Matches what the app reports, so one environment filter covers everything.
-      - key: deployment.environment.name
-        value: production
-        action: upsert
-
+  # One resource block per source: they differ only in service.name, and leaving
+  # that unset is what renders every legend as "unknown_service". host.name is on
+  # all three — it is one box, and Logfire's Docker view counts hosts by it.
   # resourcedetection is no help: the collector's own hostname is its container id.
   resource/host:
     attributes:
+      - key: deployment.environment.name
+        value: production
+        action: upsert
       - key: host.name
         value: ${env:OTEL_HOST_NAME}
         action: upsert
+      - key: service.name
+        value: old-news-host
+        action: upsert
+
+  resource/docker:
+    attributes:
+      - key: deployment.environment.name
+        value: production
+        action: upsert
+      - key: host.name
+        value: ${env:OTEL_HOST_NAME}
+        action: upsert
+      - key: service.name
+        value: old-news-docker
+        action: upsert
+
+  resource/postgres:
+    attributes:
+      - key: deployment.environment.name
+        value: production
+        action: upsert
+      - key: host.name
+        value: ${env:OTEL_HOST_NAME}
+        action: upsert
+      - key: service.name
+        value: old-news-postgres
+        action: upsert
+
+  # docker_stats reports this one 0-100 while declaring unit "1", which OpenTelemetry
+  # defines as a 0-1 ratio. Anything reading the unit multiplies by 100 and shows
+  # 1492% for a container using 149 MiB of a gigabyte. Scaling here makes the metric
+  # mean what it says it means.
+  metricstransform/docker:
+    transforms:
+      - include: container.memory.percent
+        match_type: strict
+        action: update
+        operations:
+          - action: experimental_scale_value
+            experimental_scale: 0.01
 
 exporters:
   otlphttp:
@@ -100,16 +144,20 @@ exporters:
 
 service:
   pipelines:
-    # Split so host.name lands only on host metrics. Tagging container and
-    # database metrics with it would invent hosts in Logfire that do not exist.
+    # One per source, because each carries a different service.name.
     metrics/host:
       receivers: [hostmetrics]
-      processors: [resource, resource/host, batch]
+      processors: [resource/host, batch]
       exporters: [otlphttp]
 
-    metrics:
-      receivers: [docker_stats, postgresql]
-      processors: [resource, batch]
+    metrics/docker:
+      receivers: [docker_stats]
+      processors: [resource/docker, metricstransform/docker, batch]
+      exporters: [otlphttp]
+
+    metrics/postgres:
+      receivers: [postgresql]
+      processors: [resource/postgres, batch]
       exporters: [otlphttp]
   telemetry:
     logs:
