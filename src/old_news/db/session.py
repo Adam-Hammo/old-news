@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from old_news import observability
 from old_news.config import DatabaseSettings
 
 _engine: AsyncEngine | None = None
@@ -31,6 +32,10 @@ def configure(settings: DatabaseSettings) -> AsyncEngine:
     # expire_on_commit would re-fetch every attribute after a commit, which turns
     # a returned object into a lazy-load minefield once the session is closed.
     _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
+
+    # The engine has to be handed over rather than discovered: instrumentation
+    # patches sqlalchemy's factory, and the name imported above is not it.
+    observability.instrument_engine(_engine)
     return _engine
 
 

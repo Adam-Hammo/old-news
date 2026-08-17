@@ -1,5 +1,8 @@
-# Feeds Logfire's Hosts, Docker and PostgreSQL views. No dashboards to author.
+# Feeds Logfire's Hosts and Docker views, and queue-and-host.json.
 # 60s everywhere: the collection interval is the only real lever on ingest volume.
+#
+# The `utilization` metrics are all opt-in — by default the scrapers emit only the
+# raw `time` and `usage` counters, and every percentage panel comes up blank.
 
 receivers:
   hostmetrics:
@@ -8,20 +11,38 @@ receivers:
     collection_interval: 60s
     scrapers:
       cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
       load:
       memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
       paging:
       network:
       filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
         exclude_mount_points:
-          # Every container layer is a mount point: most of the series, none of
-          # the signal.
-          mount_points: ["/hostfs/var/lib/docker/*", "/hostfs/snap/*"]
-          match_type: glob
+          # One series per squashfs image, and snapd churns them on every refresh.
+          # Mount points come back host-relative — root_path is not a prefix here.
+          mount_points: ["/snap/.*"]
+          match_type: regexp
 
   docker_stats:
     endpoint: unix:///var/run/docker.sock
     collection_interval: 60s
+    metrics:
+      container.restarts:
+        enabled: true
+      container.uptime:
+        enabled: true
+      container.memory.usage.max:
+        enabled: true
+      container.cpu.throttling_data.throttled_time:
+        enabled: true
 
   postgresql:
     endpoint: db:5432
@@ -31,6 +52,27 @@ receivers:
     collection_interval: 60s
     tls:
       insecure: true
+    metrics:
+      postgresql.deadlocks:
+        enabled: true
+      postgresql.database.locks:
+        enabled: true
+      postgresql.sequential_scans:
+        enabled: true
+      postgresql.temp_files:
+        enabled: true
+      postgresql.temp.io:
+        enabled: true
+      postgresql.tup_inserted:
+        enabled: true
+      postgresql.tup_updated:
+        enabled: true
+      postgresql.tup_deleted:
+        enabled: true
+      postgresql.tup_fetched:
+        enabled: true
+      postgresql.tup_returned:
+        enabled: true
 
 processors:
   batch:
@@ -43,6 +85,13 @@ processors:
         value: production
         action: upsert
 
+  # resourcedetection is no help: the collector's own hostname is its container id.
+  resource/host:
+    attributes:
+      - key: host.name
+        value: ${env:OTEL_HOST_NAME}
+        action: upsert
+
 exporters:
   otlphttp:
     endpoint: ${env:OTEL_LOGFIRE_ENDPOINT}
@@ -51,8 +100,15 @@ exporters:
 
 service:
   pipelines:
+    # Split so host.name lands only on host metrics. Tagging container and
+    # database metrics with it would invent hosts in Logfire that do not exist.
+    metrics/host:
+      receivers: [hostmetrics]
+      processors: [resource, resource/host, batch]
+      exporters: [otlphttp]
+
     metrics:
-      receivers: [hostmetrics, docker_stats, postgresql]
+      receivers: [docker_stats, postgresql]
       processors: [resource, batch]
       exporters: [otlphttp]
   telemetry:

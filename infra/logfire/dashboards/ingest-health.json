@@ -15,12 +15,23 @@
         "spec": {
           "display": {
             "name": "Poll outcomes",
-            "description": "A healthy feed reader is mostly not_modified."
+            "description": "not_modified dominating is the feeds behaving; failed climbing is not."
           },
           "plugin": {
-            "kind": "TimeSeries",
+            "kind": "TimeSeriesChart",
             "spec": {
-              "query": ""
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "label": "Events"
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
             }
           },
           "queries": [
@@ -30,9 +41,53 @@
                 "plugin": {
                   "kind": "LogfireTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS x,\n       metric_name AS series,\n       sum(scalar_value) AS y\nFROM metrics\nWHERE metric_name IN (\n    'ingest.polls.not_modified',\n    'ingest.polls.failed',\n    'ingest.items.new',\n    'ingest.items.edited'\n)\nGROUP BY x, series\nORDER BY x\n",
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       replace(metric_name, 'ingest.', '') AS series,\n       SUM(metric_sum(value)) AS events\nFROM metrics\nWHERE metric_name IN ('ingest.polls.not_modified',\n                      'ingest.polls.failed',\n                      'ingest.items.new',\n                      'ingest.items.edited')\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["events"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "poll_duration": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Poll duration",
+            "description": "Average against worst: a slow feed hides in the mean."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "format": {
+                  "unit": "seconds",
+                  "decimalPlaces": 2
+                }
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, start_timestamp) AS time,\n       AVG(duration) AS avg_seconds,\n       MAX(duration) AS max_seconds\nFROM records\nWHERE span_name = 'poll feed'\n  AND start_timestamp < time_bucket($resolution, now())\nGROUP BY time\nORDER BY time DESC;",
                     "groupBy": "",
-                    "metrics": []
+                    "metrics": ["avg_seconds", "max_seconds"]
                   }
                 }
               }
@@ -44,7 +99,7 @@
         "kind": "Panel",
         "spec": {
           "display": {
-            "name": "HTTP status mix"
+            "name": "Feed HTTP status"
           },
           "plugin": {
             "kind": "Table",
@@ -59,9 +114,7 @@
                 "plugin": {
                   "kind": "LogfireNonTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT attributes->>'http.response.status_code' AS status, count(*) AS requests\nFROM records\nWHERE span_name = 'GET feed'\nGROUP BY status\nORDER BY requests DESC\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT attributes->>'http.response.status_code' AS status,\n       count(*) AS requests\nFROM records\nWHERE span_name = 'GET feed'\nGROUP BY status\nORDER BY requests DESC;"
                   }
                 }
               }
@@ -88,9 +141,7 @@
                 "plugin": {
                   "kind": "LogfireNonTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT attributes->>'feed.id' AS feed,\n       count(*) AS polls,\n       avg(duration) AS avg_seconds,\n       max(duration) AS max_seconds\nFROM records\nWHERE span_name = 'poll feed'\nGROUP BY feed\nORDER BY max_seconds DESC\nLIMIT 20\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT attributes->>'feed.id' AS feed,\n       count(*) AS polls,\n       avg(duration) AS avg_seconds,\n       max(duration) AS max_seconds\nFROM records\nWHERE span_name = 'poll feed'\nGROUP BY feed\nORDER BY max_seconds DESC\nLIMIT 20;"
                   }
                 }
               }
@@ -117,9 +168,7 @@
                 "plugin": {
                   "kind": "LogfireNonTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT attributes->>'feed' AS feed, sum(scalar_value) AS failures\nFROM metrics\nWHERE metric_name = 'ingest.polls.failed'\nGROUP BY feed\nORDER BY failures DESC\nLIMIT 20\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT attributes->>'feed' AS feed,\n       SUM(metric_sum(value)) AS failures\nFROM metrics\nWHERE metric_name = 'ingest.polls.failed'\nGROUP BY feed\nORDER BY failures DESC\nLIMIT 20;"
                   }
                 }
               }
@@ -132,7 +181,7 @@
         "spec": {
           "display": {
             "name": "Suspended feeds",
-            "description": "A suspended feed is silent data loss."
+            "description": "Silent data loss otherwise: nothing else says a feed stopped being read."
           },
           "plugin": {
             "kind": "Table",
@@ -147,9 +196,7 @@
                 "plugin": {
                   "kind": "LogfireNonTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT start_timestamp, message\nFROM records\nWHERE level >= 'warn' AND message LIKE 'suspending feed%'\nORDER BY start_timestamp DESC\nLIMIT 50\n",
-                    "groupBy": "",
-                    "metrics": []
+                    "query": "SELECT start_timestamp, message\nFROM records\nWHERE level >= 'warn' AND message LIKE 'suspending feed%'\nORDER BY start_timestamp DESC\nLIMIT 50;"
                   }
                 }
               }
@@ -172,10 +219,19 @@
             {
               "x": 0,
               "y": 0,
-              "width": 24,
+              "width": 12,
               "height": 8,
               "content": {
                 "$ref": "#/spec/panels/poll_outcomes"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/poll_duration"
               }
             },
             {
@@ -231,19 +287,7 @@
         }
       }
     ],
-    "variables": [
-      {
-        "kind": "TextVariable",
-        "spec": {
-          "name": "resolution",
-          "display": {
-            "name": "resolution",
-            "hidden": true
-          },
-          "value": "1 minute"
-        }
-      }
-    ],
+    "variables": [],
     "duration": "6h",
     "refreshInterval": "0s",
     "datasources": {}

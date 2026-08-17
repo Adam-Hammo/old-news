@@ -21,6 +21,8 @@ UNTRACED_PATHS = ["/health", "/schema", "/admin"]
 
 SENSITIVE_FIELDS = ["password", "passwd", "token", "secret", "authorization", "auth"]
 
+_instrument_database = False
+
 
 def configure(settings: TelemetrySettings, *, environment: str, component: str) -> None:
     """Installs the global OTel provider. The rest of the app talks to OTel, not Logfire.
@@ -49,12 +51,19 @@ def configure(settings: TelemetrySettings, *, environment: str, component: str) 
     # happened in rather than sitting in a separate stream.
     logging.getLogger().addHandler(logfire.LogfireLoggingHandler())
 
-    if settings.instrument_database:
-        logfire.instrument_sqlalchemy()
-        logfire.instrument_asyncpg()
-        logfire.instrument_psycopg()
+    # Not instrumented here: db.configure hands the engine to instrument_engine.
+    global _instrument_database
+    _instrument_database = settings.instrument_database
+
     if settings.system_metrics:
         logfire.instrument_system_metrics()
+
+
+def instrument_engine(engine: Any) -> None:
+    """Called by `db.configure` with the engine it just built."""
+    if not _instrument_database:
+        return
+    logfire.instrument_sqlalchemy(engine=engine, skip_dep_check=True)
 
 
 def litestar_config() -> OpenTelemetryConfig:

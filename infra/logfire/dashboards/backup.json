@@ -1,0 +1,173 @@
+{
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "Backup",
+    "project": "old-news"
+  },
+  "spec": {
+    "display": {
+      "name": "Backup",
+      "description": "Whether the nightly backup ran, what it holds, and what Backblaze is storing."
+    },
+    "panels": {
+      "backup_size": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Backup size",
+            "description": "The dump is what pg_restore would read back; stored is what restic keeps after dedup, and what Backblaze bills for. A dump that falls off a cliff is a backup that succeeded and saved nothing."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "format": {
+                  "unit": "bytes"
+                }
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       CASE metric_name WHEN 'backup.snapshot.size' THEN 'dump'\n                        ELSE 'stored in b2' END AS series,\n       MAX(metric_avg(value)) AS bytes\nFROM metrics\nWHERE metric_name IN ('backup.snapshot.size', 'backup.repository.size')\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["bytes"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "backup_snapshots": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Snapshots kept",
+            "description": "Retention is 7 daily, 4 weekly, 12 monthly, so this settles rather than climbs."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "yAxis": {
+                "show": true,
+                "min": 0,
+                "label": "Snapshots"
+              },
+              "visual": {
+                "display": "line",
+                "areaOpacity": 0.25
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       'snapshots' AS series,\n       MAX(metric_avg(value)) AS snapshots\nFROM metrics\nWHERE metric_name = 'backup.snapshots'\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time\nORDER BY time DESC;",
+                    "groupBy": "series",
+                    "metrics": ["snapshots"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "backup_runs": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Backup runs",
+            "description": "Both units: the nightly backup and the restore that proves it works."
+          },
+          "plugin": {
+            "kind": "Table",
+            "spec": {
+              "query": ""
+            }
+          },
+          "queries": [
+            {
+              "kind": "NonTimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "LogfireNonTimeSeriesQuery",
+                  "spec": {
+                    "query": "SELECT start_timestamp,\n       attributes->>'systemd.unit' AS unit,\n       attributes->>'systemd.result' AS result,\n       attributes->>'duration_ms' AS duration_ms\nFROM records\nWHERE service_name = 'old-news-host'\n  AND attributes->>'systemd.unit' LIKE 'old-news-backup%'\nORDER BY start_timestamp DESC\nLIMIT 50;"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "layouts": [
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Backup",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/backup_size"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/backup_snapshots"
+              }
+            },
+            {
+              "x": 0,
+              "y": 8,
+              "width": 24,
+              "height": 10,
+              "content": {
+                "$ref": "#/spec/panels/backup_runs"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "variables": [],
+    "duration": "30d",
+    "refreshInterval": "0s",
+    "datasources": {}
+  }
+}

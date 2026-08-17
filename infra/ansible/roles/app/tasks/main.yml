@@ -36,6 +36,13 @@
     mode: "0644"
   notify: Restart stack
 
+# Distro-assigned, so it cannot be hard-coded.
+- name: Read the docker group
+  ansible.builtin.getent:
+    database: group
+    key: docker
+  register: docker_group
+
 - name: Install the environment file
   ansible.builtin.template:
     src: env.j2
