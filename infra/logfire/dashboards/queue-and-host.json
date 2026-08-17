@@ -331,7 +331,7 @@
         "spec": {
           "display": {
             "name": "Container memory",
-            "description": "Which container is eating the box. The worker is the one with a 2g cap."
+            "description": "Which container is eating the box. The worker is the one with a 2g cap. Scaled by 100: the collector normalises this to a ratio, because docker_stats reports 0-100 under a unit that means 0-1."
           },
           "plugin": {
             "kind": "TimeSeriesChart",
@@ -362,7 +362,7 @@
                 "plugin": {
                   "kind": "LogfireTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       otel_resource_attributes->>'container.name' AS series,\n       ROUND(AVG(metric_avg(value))::numeric, 1) AS \"Memory %\"\nFROM metrics\nWHERE metric_name = 'container.memory.percent'\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       otel_resource_attributes->>'container.name' AS series,\n       ROUND(AVG(metric_avg(value))::numeric * 100, 1) AS \"Memory %\"\nFROM metrics\nWHERE metric_name = 'container.memory.percent'\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
                     "groupBy": "series",
                     "metrics": ["Memory %"]
                   }

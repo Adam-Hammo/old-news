@@ -744,6 +744,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+httpx = [
+    { name = "opentelemetry-instrumentation-httpx" },
+]
 sqlalchemy = [
     { name = "opentelemetry-instrumentation-sqlalchemy" },
 ]
@@ -974,7 +977,7 @@ dependencies = [
     { name = "httpx2" },
     { name = "itsdangerous" },
     { name = "litestar", extra = ["opentelemetry"] },
-    { name = "logfire", extra = ["sqlalchemy", "system-metrics"] },
+    { name = "logfire", extra = ["httpx", "sqlalchemy", "system-metrics"] },
     { name = "procrastinate" },
     { name = "psycopg" },
     { name = "pydantic-settings" },
@@ -1010,7 +1013,7 @@ requires-dist = [
     { name = "httpx2", specifier = ">=2.10" },
     { name = "itsdangerous", specifier = ">=2.2" },
     { name = "litestar", extras = ["opentelemetry"], specifier = ">=2.24" },
-    { name = "logfire", extras = ["sqlalchemy", "system-metrics"], specifier = ">=4.40" },
+    { name = "logfire", extras = ["httpx", "sqlalchemy", "system-metrics"], specifier = ">=4.40" },
     { name = "procrastinate", specifier = ">=3.9" },
     { name = "psycopg", specifier = ">=3.2" },
     { name = "pydantic-settings", specifier = ">=2.7" },
@@ -1103,6 +1106,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/17/83/8e8e83b7ac285281687c7be2fd305213ccccbb8c0a2dd4fb45a8ccaf12c7/opentelemetry_instrumentation_asgi-0.65b0.tar.gz", hash = "sha256:892bca67c56522ffa85a8a83cf934d7b50b3be2132e45cbee705825f0a5ba426", size = 26140, upload-time = "2026-07-16T15:25:54.544Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/9c/376962840b619d2d55fe8ee2285f8c70971c090e5fff614516fc654a6f3a/opentelemetry_instrumentation_asgi-0.65b0-py3-none-any.whl", hash = "sha256:3a845a8ebd1c4ef0d8263401e6545f5b219b2feee612090d50f578a87e71fd65", size = 15903, upload-time = "2026-07-16T15:24:57.198Z" },
+]
+
+[[package]]
+name = "opentelemetry-instrumentation-httpx"
+version = "0.65b0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-util-http" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/61/03/a529140241addd4d0acc73bafbd6f74691651b92fc0ae9b4513cf80f07fa/opentelemetry_instrumentation_httpx-0.65b0.tar.gz", hash = "sha256:4627aa9c6bb99bf4462c8b565b0ef6aeb9ffad95c6c92868be1ef7895de112ee", size = 26309, upload-time = "2026-07-16T15:26:07.973Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/0f/c6144096b4914bbf44b43ba21c962e8f333ff045770b50a3e79ed8bd455f/opentelemetry_instrumentation_httpx-0.65b0-py3-none-any.whl", hash = "sha256:400f1b78afa4ee2332b5debe58e1ed1b317913d58812c952576be76660aeadb1", size = 17436, upload-time = "2026-07-16T15:25:15.772Z" },
 ]
 
 [[package]]

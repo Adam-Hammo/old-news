@@ -61,6 +61,7 @@ def create_app(settings: Settings | None = None) -> Litestar:
         lifespan=[_lifespan],
         state=State({"settings": settings}),
         plugins=[OpenTelemetryPlugin(observability.litestar_config())],
+        before_request=observability.name_span_after_route,
         debug=settings.api.debug,
         openapi_config=OpenAPIConfig(title="old-news", version=__version__, path="/schema"),
     )

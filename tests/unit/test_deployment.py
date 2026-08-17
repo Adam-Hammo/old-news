@@ -39,3 +39,16 @@ def test_the_image_runs_our_api_entrypoint():
 
     assert OUR_API in dockerfile
     assert f'CMD ["{BARE_UVICORN}"' not in dockerfile
+
+
+def test_compose_sets_the_pydantic_plugin_record_level():
+    """Pydantic asks the plugin whether to record when a model builds its validator.
+    Every model imported at startup is built before the app can call anything, so
+    `logfire.instrument_pydantic()` would be too late for all of them and silently
+    do nothing. The environment is the only thing early enough."""
+    compose = (REPO / "compose.yaml").read_text()
+
+    assert "LOGFIRE_PYDANTIC_PLUGIN_RECORD" in compose
+    assert (
+        "instrument_pydantic(" not in (REPO / "src/old_news/observability/telemetry.py").read_text()
+    )

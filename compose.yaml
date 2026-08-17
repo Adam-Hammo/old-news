@@ -18,6 +18,10 @@ x-app: &app
     OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN: ${OLD_NEWS_TELEMETRY__LOGFIRE_TOKEN:-}
     OLD_NEWS_TELEMETRY__SYSTEM_METRICS: ${OLD_NEWS_TELEMETRY__SYSTEM_METRICS:-false}
     OLD_NEWS_TELEMETRY__INSTRUMENT_DATABASE: ${OLD_NEWS_TELEMETRY__INSTRUMENT_DATABASE:-false}
+    # Pydantic decides whether to record when a model builds its validator, which
+    # for anything imported at startup happens before the app can call anything.
+    # Only the environment is early enough. `failure` costs nothing until one.
+    LOGFIRE_PYDANTIC_PLUGIN_RECORD: ${LOGFIRE_PYDANTIC_PLUGIN_RECORD:-failure}
   depends_on:
     db:
       condition: service_healthy

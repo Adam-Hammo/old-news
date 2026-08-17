@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Generator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import cache
 from typing import Any
 
@@ -8,6 +9,7 @@ import logfire
 from litestar.plugins.opentelemetry import OpenTelemetryConfig
 from opentelemetry import metrics, trace
 from opentelemetry.context import Context
+from opentelemetry.semconv.attributes.http_attributes import HTTP_ROUTE
 
 from old_news import __version__
 from old_news.config import TelemetrySettings
@@ -21,6 +23,7 @@ UNTRACED_PATHS = ["/health", "/schema", "/admin"]
 
 SENSITIVE_FIELDS = ["password", "passwd", "token", "secret", "authorization", "auth"]
 
+_enabled = False
 _instrument_database = False
 
 
@@ -51,8 +54,14 @@ def configure(settings: TelemetrySettings, *, environment: str, component: str) 
     # happened in rather than sitting in a separate stream.
     logging.getLogger().addHandler(logfire.LogfireLoggingHandler())
 
-    # Not instrumented here: db.configure hands the engine to instrument_engine.
-    global _instrument_database
+    # Pydantic is not instrumented from here. Its plugin decides whether to record
+    # when a model builds its validator, which for anything imported at startup is
+    # long before this runs, so the switch has to arrive as LOGFIRE_PYDANTIC_PLUGIN_RECORD
+    # in the environment. compose.yaml sets it.
+    #
+    # The engine and the HTTP client are handed over by whoever builds them.
+    global _enabled, _instrument_database
+    _enabled = True
     _instrument_database = settings.instrument_database
 
     if settings.system_metrics:
@@ -66,8 +75,51 @@ def instrument_engine(engine: Any) -> None:
     logfire.instrument_sqlalchemy(engine=engine, skip_dep_check=True)
 
 
+def instrument_http_client(client: Any) -> None:
+    """Called by `Fetcher` with the client it just built.
+
+    The one client, not httpx2 globally: nothing else should start emitting spans
+    because it happened to import the same library.
+
+    Bodies stay uncaptured. A feed response is the whole point of the request and
+    routinely megabytes, and it would land in the backend verbatim.
+    """
+    if not _enabled:
+        return
+    logfire.instrument_httpx(client)
+
+
+@dataclass(frozen=True)
+class _Route:
+    """What the ASGI instrumentation looks for when parameterising its metrics: it
+    reads `scope["route"].path_format`, which Starlette sets and Litestar does not."""
+
+    path_format: str
+
+
+def _span_details(scope: Any) -> tuple[str, dict[str, str]]:
+    """The name a span is born with, before routing has happened."""
+    return str(scope.get("method", "")).strip() or "HTTP", {}
+
+
+async def name_span_after_route(request: Any) -> None:
+    """Litestar `before_request` hook: the first point at which the route is known."""
+    template = str(request.scope.get("path_template") or "").strip()
+    if not template:
+        return
+
+    request.scope["route"] = _Route(path_format=template)
+
+    span = trace.get_current_span()
+    if span.is_recording():
+        span.update_name(f"{request.method} {template}")
+        span.set_attribute(HTTP_ROUTE, template)
+
+
 def litestar_config() -> OpenTelemetryConfig:
     return OpenTelemetryConfig(
+        scope_span_details_extractor=_span_details,
+        exclude_spans=["receive", "send"],
         exclude=UNTRACED_PATHS,
         http_capture_headers_server_request=["content-type", "user-agent"],
         http_capture_headers_server_response=["content-type"],
