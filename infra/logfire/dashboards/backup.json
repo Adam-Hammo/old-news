@@ -43,7 +43,7 @@
                 "plugin": {
                   "kind": "LogfireTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       CASE metric_name WHEN 'backup.snapshot.size' THEN 'dump'\n                        ELSE 'stored in b2' END AS series,\n       MAX(metric_avg(value)) AS bytes\nFROM metrics\nWHERE metric_name IN ('backup.snapshot.size', 'backup.repository.size')\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time, series\nORDER BY time DESC;",
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       CASE metric_name WHEN 'backup.snapshot.size' THEN 'dump'\n                        ELSE 'stored in b2' END AS series,\n       MAX(metric_avg(value)) AS bytes\nFROM metrics\nWHERE metric_name IN ('backup.snapshot.size', 'backup.repository.size')\nGROUP BY time, series\nORDER BY time DESC;",
                     "groupBy": "series",
                     "metrics": ["bytes"]
                   }
@@ -84,7 +84,7 @@
                 "plugin": {
                   "kind": "LogfireTimeSeriesQuery",
                   "spec": {
-                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       'snapshots' AS series,\n       MAX(metric_avg(value)) AS snapshots\nFROM metrics\nWHERE metric_name = 'backup.snapshots'\n  AND recorded_timestamp < time_bucket($resolution, now())\nGROUP BY time\nORDER BY time DESC;",
+                    "query": "SELECT time_bucket($resolution, recorded_timestamp) AS time,\n       'snapshots' AS series,\n       MAX(metric_avg(value)) AS snapshots\nFROM metrics\nWHERE metric_name = 'backup.snapshots'\nGROUP BY time\nORDER BY time DESC;",
                     "groupBy": "series",
                     "metrics": ["snapshots"]
                   }

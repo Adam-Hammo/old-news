@@ -10,22 +10,35 @@
 # own dedup and compression, which no B2-side metric would tell us any better.
 set -uo pipefail
 
-# Telemetry must never be the reason a good backup is reported as failed. Locally
-# there is no token, so this is also what keeps `just backup` quiet.
-[[ -n "${LOGFIRE_TOKEN:-}" && -n "${OTLP_ENDPOINT:-}" ]] || exit 0
-command -v jq >/dev/null || exit 0
+# Every exit here is 0: telemetry must never be the reason a good backup is
+# reported as failed. That makes what it says on the way out the only trace of why
+# the numbers never arrived, so it says it.
+skip() {
+  echo "report: skipped — $1" >&2
+  exit 0
+}
 
-snapshots=$(restic snapshots --tag old-news --json) || exit 0
-count=$(jq 'length' <<<"$snapshots") || exit 0
-[[ "$count" -gt 0 ]] || exit 0
+# Locally there is no token, so this is also what keeps `just backup` from
+# reporting a laptop.
+[[ -n "${LOGFIRE_TOKEN:-}" && -n "${OTLP_ENDPOINT:-}" ]] || skip "no LOGFIRE_TOKEN or OTLP_ENDPOINT"
+command -v jq >/dev/null || skip "no jq"
+
+snapshots=$(restic snapshots --tag old-news --json) || skip "restic snapshots failed"
+count=$(jq 'length' <<<"$snapshots") || skip "unreadable snapshot list"
+[[ "$count" -gt 0 ]] || skip "no snapshots tagged old-news"
 
 # restic sorts oldest first, so the newest is the last element.
-newest=$(jq -r '.[-1].time' <<<"$snapshots") || exit 0
-age=$(( $(date +%s) - $(date -d "$newest" +%s) ))
+newest=$(jq -r '.[-1].time' <<<"$snapshots") || skip "no time on the newest snapshot"
+newest_epoch=$(date -d "$newest" +%s) || skip "unparsable snapshot time ${newest}"
+age=$(($(date +%s) - newest_epoch))
 
 # restore-size is the dump as pg_restore would see it; raw-data is what B2 stores.
-dump_bytes=$(restic stats --json --mode restore-size --tag old-news latest | jq '.total_size') || exit 0
-repo_bytes=$(restic stats --json --mode raw-data --tag old-news | jq '.total_size') || exit 0
+# restic writes progress to stderr, so a pipeline's status is jq's, and jq is happy
+# with no input at all — hence checking the number rather than the exit code.
+dump_bytes=$(restic stats --json --mode restore-size --tag old-news latest | jq '.total_size')
+repo_bytes=$(restic stats --json --mode raw-data --tag old-news | jq '.total_size')
+[[ "$dump_bytes" =~ ^[0-9]+$ ]] || skip "no restore-size from restic stats"
+[[ "$repo_bytes" =~ ^[0-9]+$ ]] || skip "no raw-data size from restic stats"
 
 now_ns="$(date +%s)000000000"
 
@@ -41,7 +54,7 @@ $(gauge backup.snapshot.age s "$age")
 $(gauge backup.snapshot.size By "$dump_bytes")
 $(gauge backup.repository.size By "$repo_bytes")
 JSON
-) || exit 0
+) || skip "could not build the metric payload"
 
 payload=$(jq -n \
   --arg host "${OTEL_HOST_NAME:-unknown}" \
@@ -56,10 +69,14 @@ payload=$(jq -n \
        ]},
        scopeMetrics: [{scope: {name: "restic"}, metrics: $metrics}]
      }]
-   }') || exit 0
+   }') || skip "could not build the metric payload"
 
-curl -fsS -m 15 --retry 3 \
+if curl -fsS -m 15 --retry 3 \
   -X POST "${OTLP_ENDPOINT}/v1/metrics" \
   -H 'Content-Type: application/json' \
   -H "Authorization: ${LOGFIRE_TOKEN}" \
-  --data-binary "$payload" >/dev/null 2>&1 || true
+  --data-binary "$payload" >/dev/null; then
+  echo "report: ${count} snapshots, dump ${dump_bytes}B, stored ${repo_bytes}B, newest ${age}s old"
+else
+  echo "report: push to ${OTLP_ENDPOINT}/v1/metrics failed" >&2
+fi

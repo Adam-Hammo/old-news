@@ -56,7 +56,10 @@ rather than the raw `scalar_value` column. The app's own counters are delta and 
 way, but everything from the collector is cumulative, where summing raw values is meaningless.
 
 `AND recorded_timestamp < time_bucket($resolution, now())` drops the partial current bucket, which
-otherwise draws every series falling off a cliff at the right edge.
+otherwise draws every series falling off a cliff at the right edge. It belongs on anything sampled
+faster than the bucket and nowhere else: `backup.*` arrives once a day, so on a 30-day window the
+guard hid the newest point — the whole series, until there were two of them. Sparse metrics get no
+guard, because a bucket holding one sample is not partial.
 
 The metric and span names are this project's: `ingest.*` and `queue.*` from `observability`, the
 `poll feed` / `GET feed` / `task <name>` spans, and `service_name = 'old-news-host'` for the systemd
@@ -82,8 +85,9 @@ against the metrics we actually have.
 
 `docker/backup/report` runs at the end of `docker/backup/backup` and POSTs restic's own figures to
 `/v1/metrics` as `backup.*`, the same way `ansible/roles/otel` reports systemd units to `/v1/logs`.
-It is deliberately unable to fail a backup: no token, no `jq`, or an unreachable endpoint all exit 0
-quietly, which is also what keeps `just backup` from reporting a laptop.
+It is deliberately unable to fail a backup: no token, no `jq`, or an unreachable endpoint all exit
+0, which is also what keeps `just backup` from reporting a laptop. Each of those says so on the way
+out, so `journalctl -u old-news-backup` is where a blank panel gets answered.
 
 `backup.snapshot.size` is restic's `restore-size` — the dump as `pg_restore` would read it.
 `backup.repository.size` is `raw-data`, what the bucket holds after dedup and compression, and
