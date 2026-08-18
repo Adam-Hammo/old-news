@@ -8,7 +8,9 @@ from old_news.config import IngestSettings
 PERMANENTLY_GONE = 410
 
 
-def _clamp(seconds: float, settings: IngestSettings) -> int:
+def clamp_interval(seconds: float, settings: IngestSettings) -> int:
+    """Any wait, held inside the configured bounds. Public because `Retry-After`
+    needs the same clamping as a computed interval does."""
     return int(min(max(seconds, settings.min_interval_seconds), settings.max_interval_seconds))
 
 
@@ -34,7 +36,7 @@ def next_interval(
         )
         interval = base * multiplier
 
-    clamped = _clamp(interval, settings)
+    clamped = clamp_interval(interval, settings)
 
     # <ttl> is a request to poll *less* often, so it raises the floor and is
     # allowed to push past our own ceiling. Ignoring it is how you get blocked.

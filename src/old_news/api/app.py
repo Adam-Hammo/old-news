@@ -7,17 +7,15 @@ from litestar.handlers import asgi
 from litestar.openapi import OpenAPIConfig
 from litestar.plugins.opentelemetry import OpenTelemetryPlugin
 
-from old_news import __version__, db, observability
+from old_news import __version__, db, fetch, observability
 from old_news.api.routes import health_router
 from old_news.config import Settings, get_settings
-from old_news.fetch import Fetcher
 from old_news.tasks import app as queue_app
 
 
 @asynccontextmanager
 async def _lifespan(app: Litestar) -> AsyncGenerator[None]:
-    settings: Settings = app.state.settings
-    app.state.fetcher = Fetcher(settings.http)
+    app.state.fetcher = fetch.client()
 
     # The API reads queue state and will defer jobs from request handlers, both of
     # which need procrastinate's own connection open in this process too.
@@ -25,7 +23,7 @@ async def _lifespan(app: Litestar) -> AsyncGenerator[None]:
         try:
             yield
         finally:
-            await app.state.fetcher.aclose()
+            await fetch.dispose()
             await db.dispose()
 
 
@@ -38,6 +36,7 @@ def create_app(settings: Settings | None = None) -> Litestar:
     # is safe to build outside the loop, and the admin mount can have the engine
     # at construction time.
     engine = db.configure(settings.database)
+    fetch.configure(settings.http)
 
     handlers = [health_router()]
     if settings.admin.enabled:

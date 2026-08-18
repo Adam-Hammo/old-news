@@ -9,6 +9,7 @@ from old_news.config.api import ApiSettings
 from old_news.config.database import DatabaseSettings
 from old_news.config.http import HttpSettings
 from old_news.config.ingest import IngestSettings
+from old_news.config.robots import RobotsSettings
 from old_news.config.telemetry import TelemetrySettings
 
 
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
     api: ApiSettings = Field(default_factory=ApiSettings)
     admin: AdminSettings = Field(default_factory=AdminSettings)
     ingest: IngestSettings = Field(default_factory=IngestSettings)
+    robots: RobotsSettings = Field(default_factory=RobotsSettings)
 
 
 @lru_cache
@@ -41,6 +43,7 @@ __all__ = [
     "DatabaseSettings",
     "HttpSettings",
     "IngestSettings",
+    "RobotsSettings",
     "Settings",
     "TelemetrySettings",
     "get_settings",

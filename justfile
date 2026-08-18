@@ -10,12 +10,15 @@ set dotenv-load
 # deployed with `just deploy`, never built in place.
 host := ""
 remote_dir := "/opt/old-news"
+# The tailnet ACL grants SSH to `ubuntu` on the box and nothing else, so the local
+# username ssh would otherwise default to is refused. Matches ansible_user.
+remote_user := "ubuntu"
 
 # --project-directory rather than `cd … &&`, so the remote command needs no shell
 # quoting. Two forms because a pty and a pipe are mutually exclusive: -t breaks
 # stdin redirection, and no -t makes psql unusable.
-compose := if host == "" { "docker compose" } else { "ssh " + host + " docker compose --project-directory " + remote_dir }
-compose_tty := if host == "" { "docker compose" } else { "ssh -t " + host + " docker compose --project-directory " + remote_dir }
+compose := if host == "" { "docker compose" } else { "ssh " + remote_user + "@" + host + " docker compose --project-directory " + remote_dir }
+compose_tty := if host == "" { "docker compose" } else { "ssh -t " + remote_user + "@" + host + " docker compose --project-directory " + remote_dir }
 
 default:
     @just --list
@@ -112,6 +115,10 @@ test suite="" *args:
 
 cov:
     uv run pytest --cov --cov-report=term-missing
+
+# Dead code. Config, including what frameworks reach for by name, is in pyproject.toml.
+dead:
+    uv run vulture
 
 # Every hook against every file — the same set CI runs.
 lint *hooks:

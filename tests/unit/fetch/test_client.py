@@ -1,6 +1,4 @@
-import threading
-from collections.abc import AsyncIterator, Iterator
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from collections.abc import AsyncIterator
 
 import pytest
 from logfire.testing import CaptureLogfire
@@ -13,48 +11,21 @@ BODY = b"<html><body>hello</body></html>"
 ETAG = '"v1"'
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
-        if self.path == "/conditional":
-            if self.headers.get("If-None-Match") == ETAG:
-                self.send_response(304)
-                self.send_header("ETag", ETAG)
-                self.end_headers()
-                return
-            self._send(200, BODY, {"ETag": ETAG, "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT"})
-        elif self.path == "/huge":
-            self._send(200, b"x" * 5000)
-        elif self.path == "/redirect":
-            self.send_response(302)
-            self.send_header("Location", "/conditional")
-            self.end_headers()
-        elif self.path == "/boom":
-            self._send(500, b"nope")
-        else:
-            self._send(404, b"")
-
-    def _send(self, status: int, body: bytes, headers: dict[str, str] | None = None) -> None:
-        self.send_response(status)
-        for key, value in (headers or {}).items():
-            self.send_header(key, value)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format: str, *args: object) -> None:
-        pass
+ROUTES = {
+    "/conditional": lambda headers: (
+        (304, b"", {"ETag": ETAG})
+        if headers.get("if-none-match") == ETAG
+        else (200, BODY, {"ETag": ETAG, "Last-Modified": "Wed, 01 Jan 2025 00:00:00 GMT"})
+    ),
+    "/huge": (200, b"x" * 5000, {}),
+    "/redirect": (302, b"", {"Location": "/conditional"}),
+    "/boom": (500, b"nope", {}),
+}
 
 
-@pytest.fixture(scope="module")
-def server() -> Iterator[str]:
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{httpd.server_port}"
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
+@pytest.fixture
+def server(http_server) -> str:
+    return http_server(ROUTES)
 
 
 @pytest.fixture

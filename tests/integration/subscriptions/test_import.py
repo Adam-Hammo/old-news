@@ -1,6 +1,4 @@
-import threading
-from collections.abc import AsyncIterator, Iterator
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from collections.abc import AsyncIterator
 
 import pytest
 from sqlalchemy import select
@@ -16,35 +14,16 @@ SITE = b"""<!doctype html><html><head>
 </head><body>A blog</body></html>"""
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
-        if self.path == "/blog/":
-            self._send(200, SITE, "text/html")
-        elif self.path == "/nothing/":
-            self._send(200, b"<html><head></head></html>", "text/html")
-        else:
-            self._send(404, b"")
-
-    def _send(self, status: int, body: bytes, content_type: str = "text/plain") -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format: str, *args: object) -> None:
-        pass
+HTML = {"Content-Type": "text/html"}
+ROUTES = {
+    "/blog/": (200, SITE, HTML),
+    "/nothing/": (200, b"<html><head></head></html>", HTML),
+}
 
 
-@pytest.fixture(scope="module")
-def site() -> Iterator[str]:
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    try:
-        yield f"http://127.0.0.1:{httpd.server_port}"
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
+@pytest.fixture
+def site(http_server) -> str:
+    return http_server(ROUTES)
 
 
 @pytest.fixture
@@ -120,3 +99,23 @@ async def test_every_feed_gets_exactly_one_subscription(clean, site, fetcher):
         subscriptions = len((await session.execute(select(Subscription.id))).scalars().all())
 
     assert feeds == subscriptions == 2
+
+
+async def test_entries_with_nothing_to_poll_are_skipped(clean: None, fetcher, site: str):
+    """An OPML file lists what somebody subscribed to, not what can be fetched.
+    Exporters put email newsletters and worse in there."""
+    opml = b"""<?xml version="1.0"?><opml version="1.0"><body>
+      <outline text="A newsletter" xmlUrl="newsletter:0:someone@example.com"/>
+      <outline text="An address" xmlUrl="mailto:someone@example.com"/>
+      <outline text="Wrong scheme" xmlUrl="ftp://example.com/feed.xml"/>
+      <outline text="Real" xmlUrl="https://example.com/feed.xml"/>
+    </body></opml>"""
+
+    result = await import_opml(opml, fetcher)
+
+    assert result.added == 1
+    assert len(result.unfetchable) == 3
+
+    async with db.session() as session:
+        urls = (await session.execute(select(Feed.url))).scalars().all()
+    assert list(urls) == ["https://example.com/feed.xml"]

@@ -3,7 +3,9 @@ import asyncio
 from old_news.tasks.maintenance import heartbeat
 
 
-async def test_worker_runs_a_job_against_real_postgres(database: None, queue_app):
+async def test_worker_runs_a_job_against_real_postgres(no_jobs: None, queue_app):
+    """`no_jobs` rather than `database`: this asserts a property of the whole queue,
+    so a job left behind by any earlier test fails it."""
     async with queue_app.open_async():
         await heartbeat.defer_async(note="from-postgres")
 

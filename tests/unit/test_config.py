@@ -58,3 +58,12 @@ def test_credentials_never_appear_in_a_repr():
     assert "dbsecret1" not in rendered
     assert "adminsecret2" not in rendered
     assert "sessionsecret3" not in rendered
+
+
+def test_robots_matches_the_agent_we_actually_send():
+    """One name, not two. A second copy of the product token would silently keep
+    matching an agent we no longer identify as."""
+    settings = Settings(_env_file=None)
+
+    assert settings.http.user_agent.split("/")[0] == "old-news"
+    assert not hasattr(settings.robots, "user_agent")

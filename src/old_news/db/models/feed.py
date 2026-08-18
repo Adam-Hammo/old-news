@@ -1,8 +1,10 @@
 import datetime
+import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Integer, String, Text, text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
@@ -14,6 +16,10 @@ if TYPE_CHECKING:
 class Feed(UUIDPrimaryKey, Base):
     __tablename__ = "feeds"
 
+    # Foreign keys are not indexed automatically, and every poll groups by host.
+    host_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("hosts.id"), index=True
+    )
     url: Mapped[str] = mapped_column(Text, unique=True, index=True)
     site_url: Mapped[str] = mapped_column(Text, server_default="")
     title: Mapped[str] = mapped_column(Text, server_default="")

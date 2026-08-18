@@ -8,7 +8,7 @@ from procrastinate import PsycopgConnector
 from sqlalchemy import text
 from testcontainers.community.postgres import PostgresContainer
 
-from old_news import db
+from old_news import db, fetch
 from old_news.api.app import create_app
 from old_news.config import DatabaseSettings, Settings
 from old_news.db.migrate import upgrade
@@ -89,20 +89,50 @@ async def queue_schema(migrated: None, queue_app) -> None:
 
 @pytest.fixture
 async def database(migrated: None, settings: Settings) -> AsyncIterator[None]:
-    """An engine for tests that talk to Postgres directly rather than through the app."""
+    """An engine for tests that talk to Postgres directly rather than through the app.
+
+    Configures the shared HTTP client too, exactly as the worker entrypoint does —
+    otherwise a test that runs a real worker fails the moment a job wants to fetch.
+    """
     db.configure(settings.database)
+    fetch.configure(settings.http)
     try:
         yield
     finally:
+        await fetch.dispose()
         await db.dispose()
 
 
 @pytest.fixture
 async def clean(database: None) -> AsyncIterator[None]:
-    """Truncating feeds cascades to documents, items and versions."""
+    """From the root down: hosts cascades to feeds, and feeds to everything else."""
     async with db.session() as session:
-        await session.execute(text("TRUNCATE feeds CASCADE"))
+        await session.execute(text("TRUNCATE hosts CASCADE"))
     yield
+
+
+@pytest.fixture
+async def no_jobs(clean: None) -> AsyncIterator[None]:
+    """`clean` truncates feeds; the queue is a separate schema procrastinate owns.
+
+    Truncated afterwards as well: the database is session-scoped, so a test that
+    claims a job without finishing it would leave it `doing` for everything after.
+    """
+    await _truncate("procrastinate_jobs CASCADE")
+    yield
+    await _truncate("procrastinate_jobs CASCADE")
+
+
+@pytest.fixture
+async def no_policies(database: None) -> AsyncIterator[None]:
+    await _truncate("robots_policies")
+    yield
+    await _truncate("robots_policies")
+
+
+async def _truncate(target: str) -> None:
+    async with db.session() as session:
+        await session.execute(text(f"TRUNCATE {target}"))
 
 
 @pytest.fixture
