@@ -229,7 +229,7 @@ async def test_a_crash_still_moves_the_schedule(feed, fetcher, settings, monkeyp
 
     from old_news.ingest import parser
 
-    def explode(*args, **kwargs):
+    def explode(*_args, **_kwargs):
         raise ValueError("unparsable")
 
     monkeypatch.setattr(parser, "parse", explode)

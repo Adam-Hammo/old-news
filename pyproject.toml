@@ -93,6 +93,9 @@ ignore_names = [
   # Frameworks call these by name, or hand them arguments we do not use.
   "authenticate",
   "do_GET",
+  # Forced by BaseHTTPRequestHandler's signature: it can be passed by keyword, so
+  # renaming it would break the override.
+  "format",
   "log_message",
   "login",
   "logout",

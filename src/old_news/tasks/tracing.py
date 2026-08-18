@@ -42,7 +42,7 @@ def context_from(task_kwargs: dict[str, Any]) -> Context | None:
 
 
 async def trace_jobs(
-    call_next: Callable[[], Awaitable[Any]], context: JobContext, worker: Any
+    call_next: Callable[[], Awaitable[Any]], context: JobContext, _worker: Any
 ) -> Any:
     """Worker middleware: one span per job, parented to whatever deferred it."""
     job = context.job

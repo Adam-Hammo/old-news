@@ -60,7 +60,7 @@ async def test_a_job_gets_its_own_span(exporter: TestExporter):
     async def call_next() -> str:
         return "done"
 
-    result = await trace_jobs(call_next, job_context(), worker=None)
+    result = await trace_jobs(call_next, job_context(), None)
 
     assert result == "done"
     [job_span] = spans_named(exporter, "task heartbeat")
@@ -74,7 +74,7 @@ async def test_failures_are_recorded_and_re_raised(exporter: TestExporter):
         raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):
-        await trace_jobs(call_next, job_context(), worker=None)
+        await trace_jobs(call_next, job_context(), None)
 
     [job_span] = spans_named(exporter, "task heartbeat")
     assert any(event.name == "exception" for event in job_span.events)
@@ -99,7 +99,7 @@ async def test_the_job_span_is_a_child_of_whatever_deferred_it(exporter: TestExp
     with span("deferring"):
         stored = carrier()
 
-    await trace_jobs(call_next, job_context({TRACE_KEY: stored}), worker=None)
+    await trace_jobs(call_next, job_context({TRACE_KEY: stored}), None)
 
     [parent] = spans_named(exporter, "deferring")
     [child] = spans_named(exporter, "task heartbeat")
@@ -178,7 +178,7 @@ async def test_a_job_parents_to_the_send_span(exporter: TestExporter):
         return None
 
     await defer(FakeTask(captured), note="hi")
-    await trace_jobs(call_next, job_context({TRACE_KEY: captured[TRACE_KEY]}), worker=None)
+    await trace_jobs(call_next, job_context({TRACE_KEY: captured[TRACE_KEY]}), None)
 
     [send] = spans_named(exporter, "send ingest")
     [job_span] = spans_named(exporter, "task heartbeat")
@@ -192,7 +192,7 @@ async def test_housekeeping_tasks_emit_no_span(exporter: TestExporter):
     async def call_next() -> None:
         return None
 
-    await trace_jobs(call_next, job_context(task_name="queue_metrics"), worker=None)
+    await trace_jobs(call_next, job_context(task_name="queue_metrics"), None)
 
     assert spans_named(exporter, "task queue_metrics") == []
 
@@ -201,6 +201,6 @@ async def test_real_work_is_still_traced(exporter: TestExporter):
     async def call_next() -> None:
         return None
 
-    await trace_jobs(call_next, job_context(), worker=None)
+    await trace_jobs(call_next, job_context(), None)
 
     assert spans_named(exporter, "task heartbeat") != []

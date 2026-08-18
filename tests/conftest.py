@@ -43,7 +43,7 @@ def _handler(routes: Mapping[str, Route]) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, format: str, *args: object) -> None:
+        def log_message(self, format: str, *_args: object) -> None:
             pass
 
     return Handler
