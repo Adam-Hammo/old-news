@@ -6,17 +6,32 @@ How the code is laid out, and the reasoning behind it.
 
 ```text
 src/old_news/
+  # foundations
   config/            settings, one module per section
   observability/     telemetry — installs the global OTel provider
   db/                engine, models, alembic migrations
+  tasks/             procrastinate app and registered tasks
+
+  # talking to publishers
   fetch/             HTTP client
-  api/               Litestar app, routes, admin mount
+  politeness/        host grouping and request spacing
+  robots/            robots.txt: fetch, store, honour
+
+  # what we keep
   ingest/            polling: fetch, parse, normalise, store
   subscriptions/     what we follow: add, OPML, discovery
-  tasks/             procrastinate app and registered tasks
+
+  # edges
+  api/               Litestar app, routes, admin mount
 ```
 
-Everything is a package, each owning its own frozen dataclasses.
+Everything is a package, each owning its own frozen dataclasses. The groups above are comments, not
+directories — the layering is real but flat on disk, because a package that has to be reached
+through a parent is harder to move than one that doesn't.
+
+`tests/unit/test_architecture.py` asserts this list against the filesystem, so growing a new
+top-level package fails in the diff that grows it. That is the point: sprawl is cheapest to argue
+about at the moment it appears.
 
 ### There is no ports/adapters layer, deliberately
 
@@ -109,7 +124,45 @@ the name you supply, so a check constraint is named with the bare suffix.
 **Foreign keys are not indexed automatically.** Postgres indexes the referenced side, never the
 referencing one.
 
+**`robots_policies.host` is a natural key with no foreign key**, and nothing points at the table. A
+host is derived from a feed's URL whenever it is needed, so there is no stored copy to drift, and a
+durable table referencing a disposable cache could not be dropped and rebuilt — which is the one
+thing that table is for.
+
 **Everything else** — monthly partitions, the BM25 index, DiskANN — is raw DDL in a revision.
+
+## Politeness is job options, not a scheduler
+
+Nothing limits request rate inside `fetch/`. Doing it there would need a registry of hosts,
+last-request timestamps, semaphores and an eviction policy for a dict that grows forever — at which
+point `fetch/` has quietly become a scheduler.
+
+Instead it is two options on a deferred job. `lock=f"host:{host}"` makes Postgres hand out one job
+per host at a time, so a publisher with four feeds gets four visits in a row rather than four
+simultaneous connections. `schedule_in` staggers a batch so those visits are spaced rather than
+back-to-back. A failed job does not hold its lock, so one broken feed cannot stall the rest of its
+host.
+
+`robots.txt` reuses the same mechanism. Rules are refreshed by a periodic task into
+`robots_policies`, one row per host, overwritten in place — a cache, so the append-only rules do not
+apply. `Crawl-delay` comes back out as a longer `schedule_in`, and may only lengthen a wait, never
+shorten one. A host that cannot be reached is carried on past: a publisher that failed to state its
+rules has not prohibited anything, and refusing to fetch on a timeout would stop the archive every
+time a CDN hiccups.
+
+`politeness/` sits above `ingest/` because polling, robots refreshes and article fetches all need
+the same host grouping.
+
+### A queueing lock collision is not an error
+
+`queueing_lock` means "only one of these may be waiting", but procrastinate reports the collision by
+raising `AlreadyEnqueued` from `defer`. Unhandled in a sweep, that ends the sweep and silently
+leaves every remaining item undeferred — feeds stop being polled and nothing says so except `failed`
+climbing in the queue gauges. `tasks.tracing.defer_unless_queued()` is what both sweeps use instead,
+and the skips are counted rather than thrown.
+
+This matters more now than it used to: jobs wait on a per-host lock, so one still sitting in the
+queue a minute later is ordinary rather than a sign of trouble.
 
 ## Telemetry
 
@@ -187,6 +240,15 @@ get theirs from the app's own lifespan, exactly as in production.
 **Alembic runs its own event loop.** `env.py` calls `asyncio.run`, so anything that applies
 migrations has to stay synchronous — which is why the `migrated` fixture is a plain function and
 procrastinate's schema is applied by a separate async fixture.
+
+## Dead code fails the build
+
+`vulture` runs in pre-commit, configured in `pyproject.toml`. It cannot see code a framework reaches
+for by name — sqladmin's declarative attributes, procrastinate's task registry, pytest's fixture
+injection, columns read only through SQL — so those are named in `ignore_names` rather than hidden
+behind a confidence threshold that would also swallow real findings. Prefer `_name` for a parameter
+a framework's signature forces on you; vulture skips those, and it keeps generic names like `conn`
+out of the ignore list.
 
 ## Deployment
 

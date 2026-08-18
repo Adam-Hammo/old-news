@@ -113,6 +113,10 @@ test suite="" *args:
 cov:
     uv run pytest --cov --cov-report=term-missing
 
+# Dead code. Config, including what frameworks reach for by name, is in pyproject.toml.
+dead:
+    uv run vulture
+
 # Every hook against every file — the same set CI runs.
 lint *hooks:
     uv run pre-commit run --all-files {{ hooks }}

@@ -42,6 +42,7 @@ class Applied:
     new_versions: int = 0
     unchanged: int = 0
     guid_churn: int = 0
+    duplicate_identity: int = 0
 
 
 def identity_of(item: ParsedItem) -> tuple[str, str]:
@@ -165,10 +166,21 @@ async def apply_items(
     existing = await current_versions(session, feed.id)
     known_urls = {current.canonical_url for current in existing.values() if current.canonical_url}
 
-    new_items = new_versions = unchanged = churn = 0
+    new_items = new_versions = unchanged = churn = duplicates = 0
+    seen: set[str] = set()
 
     for parsed in parsed_items:
         key, source = identity_of(parsed)
+
+        # The same identity twice in one document. Nothing distinguishes them, so
+        # the first wins: a second insert breaks uq_items_feed_identity, and a
+        # second version would both break uq_item_versions_supersedes and invent an
+        # edit that no publisher made.
+        if key in seen:
+            duplicates += 1
+            continue
+        seen.add(key)
+
         fingerprint = fingerprint_of(parsed)
         found = existing.get(key)
 
@@ -201,8 +213,11 @@ async def apply_items(
         )
         new_versions += 1
 
+    if duplicates:
+        logger.warning("feed %s repeated %d identities in one document", feed.id, duplicates)
+
     await session.flush()
-    return Applied(new_items, new_versions, unchanged, churn)
+    return Applied(new_items, new_versions, unchanged, churn, duplicates)
 
 
 def _version(

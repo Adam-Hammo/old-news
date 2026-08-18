@@ -12,6 +12,7 @@ from typing import Any
 from opentelemetry.context import Context
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from procrastinate import App
+from procrastinate.exceptions import AlreadyEnqueued
 from procrastinate.job_context import JobContext
 
 from old_news.observability import count, span
@@ -119,3 +120,18 @@ async def defer(registered_task: Any, /, **kwargs: Any) -> Any:
     with span(f"send {queue}", **attributes):
         # Inside the span, so `carrier()` captures it and the job becomes its child.
         return await registered_task.defer_async(**kwargs, **{TRACE_KEY: carrier()})
+
+
+async def defer_unless_queued(registered_task: Any, /, **kwargs: Any) -> bool:
+    """Defer, unless the queueing lock says one is already waiting.
+
+    A queueing lock is a request to skip a duplicate, but procrastinate expresses
+    the collision as an exception — so an unhandled one kills the whole sweep and
+    every job it had not deferred yet. Jobs now wait on a per-host lock, so one
+    still queued a minute later is ordinary rather than exceptional.
+    """
+    try:
+        await defer(registered_task, **kwargs)
+    except AlreadyEnqueued:
+        return False
+    return True

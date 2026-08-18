@@ -3,9 +3,31 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx2
+from pydantic import AnyHttpUrl, TypeAdapter, ValidationError
 
 from old_news.config.http import HttpSettings
 from old_news.observability import instrument_http_client, span
+
+_HTTP_URL = TypeAdapter(AnyHttpUrl)
+
+
+def http_url(url: str) -> AnyHttpUrl | None:
+    """Parse a URL, or None if it isn't one we could fetch.
+
+    Pydantic rather than `urlsplit`: it requires an http scheme and a host, and it
+    punycodes an IDN host, so `münchen.de` and `xn--mnchen-3ya.de` come back the
+    same. `urlsplit` returns them as two different hosts.
+    """
+    try:
+        return _HTTP_URL.validate_python(url.strip())
+    except ValidationError:
+        return None
+
+
+def fetchable(url: str) -> bool:
+    """Whether there is anything to fetch here. An OPML file can name entries that
+    were never web resources at all."""
+    return http_url(url) is not None
 
 
 class FetchError(Exception):

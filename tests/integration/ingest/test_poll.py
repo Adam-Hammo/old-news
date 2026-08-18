@@ -1,6 +1,4 @@
-import threading
 from collections.abc import AsyncIterator, Iterator
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TypedDict
 
 import pytest
@@ -8,9 +6,10 @@ from sqlalchemy import event, func, select
 
 from old_news import db
 from old_news.config import Settings
-from old_news.db import Document, Feed, Item, ItemVersion, Subscription
+from old_news.db import Document, Feed, Item, ItemVersion, RobotsPolicy, Subscription
 from old_news.fetch import Fetcher
 from old_news.ingest.service import poll_feed
+from old_news.politeness import ensure, resolve
 
 
 def document(title: str, *, second: str = "Second article") -> bytes:
@@ -39,41 +38,23 @@ STATE: Serving = {
 }
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
-        if STATE["status"] != 200:
-            self.send_response(STATE["status"])
-            self.send_header("Retry-After", STATE["retry_after"])
-            self.end_headers()
-            return
-
-        if self.headers.get("If-None-Match") == STATE["etag"]:
-            self.send_response(304)
-            self.send_header("ETag", STATE["etag"])
-            self.end_headers()
-            return
-
-        body = STATE["body"]
-        self.send_response(200)
-        self.send_header("Content-Type", "application/rss+xml")
-        self.send_header("ETag", STATE["etag"])
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format: str, *args: object) -> None:
-        pass
+def _serve(headers: dict[str, str]):
+    """One route whose answer depends on STATE, so a test can change what the
+    publisher is doing without restarting anything."""
+    if STATE["status"] != 200:
+        return STATE["status"], b"", {"Retry-After": STATE["retry_after"]}
+    if headers.get("if-none-match") == STATE["etag"]:
+        return 304, b"", {"ETag": STATE["etag"]}
+    return (
+        200,
+        STATE["body"],
+        {"Content-Type": "application/rss+xml", "ETag": STATE["etag"]},
+    )
 
 
-@pytest.fixture(scope="module")
-def server() -> Iterator[str]:
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    try:
-        yield f"http://127.0.0.1:{httpd.server_port}/feed.xml"
-    finally:
-        httpd.shutdown()
-        httpd.server_close()
+@pytest.fixture
+def server(http_server) -> str:
+    return f"{http_server({'/feed.xml': _serve})}/feed.xml"
 
 
 @pytest.fixture
@@ -85,7 +66,7 @@ def feed_state() -> Iterator[Serving]:
 @pytest.fixture
 async def feed(clean: None, server: str, feed_state: Serving) -> AsyncIterator[Feed]:
     async with db.session() as session:
-        row = Feed(url=server, title="")
+        row = Feed(url=server, title="", host_id=await resolve(session, server))
         session.add(row)
         await session.flush()
         session.add(Subscription(feed_id=row.id))
@@ -196,7 +177,7 @@ async def test_a_poll_updates_only_the_feeds_table(feed, fetcher, settings):
     statements: list[str] = []
 
     @event.listens_for(db.engine().sync_engine, "before_cursor_execute")
-    def record(conn, cursor, statement, parameters, context, executemany):
+    def record(_conn, _cursor, statement, _parameters, _context, _executemany):
         statements.append(" ".join(statement.split()))
 
     await poll_feed(feed.id, fetcher, settings)
@@ -263,3 +244,79 @@ async def test_a_crash_still_moves_the_schedule(feed, fetcher, settings, monkeyp
     assert row.next_poll_at > row.last_polled_at
     assert row.consecutive_failures == 1
     assert "unparsable" in row.last_error
+
+
+async def _store_policy(host: str, body: str) -> None:
+    async with db.session() as session:
+        session.add(RobotsPolicy(host_id=await ensure(session, host), body=body, status=200))
+
+
+async def test_a_targeted_disallow_stops_the_poll(feed, fetcher, settings, no_policies):
+    """The feed is named in robots.txt, so it is left alone."""
+    await _store_policy("127.0.0.1", "User-agent: *\nDisallow: /feed.xml\n")
+
+    applied = await poll_feed(feed.id, fetcher, settings)
+
+    assert applied.new_items == 0
+    assert await counts() == {"documents": 0, "items": 0, "versions": 0}
+
+
+async def test_a_disallowed_feed_backs_off_without_being_suspended(
+    feed, fetcher, settings, no_policies
+):
+    """Dropping the rule has to bring the feed back on its own, so nothing is
+    suspended and no failure is counted."""
+    await _store_policy("127.0.0.1", "User-agent: *\nDisallow: /feed.xml\n")
+
+    await poll_feed(feed.id, fetcher, settings)
+
+    async with db.session() as session:
+        stored = await session.get(Feed, feed.id)
+        assert stored is not None
+        assert stored.suspended is False
+        assert stored.consecutive_failures == 0
+        assert "robots" in stored.last_error
+        assert stored.last_polled_at is not None
+        assert stored.next_poll_at > stored.last_polled_at
+
+
+async def test_a_blanket_ban_still_polls(feed, fetcher, settings, no_policies):
+    """RSS is published for readers; a site banning all bots hasn't withdrawn it."""
+    await _store_policy("127.0.0.1", "User-agent: *\nDisallow: /\n")
+
+    applied = await poll_feed(feed.id, fetcher, settings)
+
+    assert applied.new_items == 2
+
+
+async def test_one_document_repeating_an_identity_does_not_fail_the_poll(
+    clean: None, fetcher, settings, server: str, feed_state
+):
+    """Two entries with the same guid used to raise UniqueViolation on
+    uq_items_feed_identity, failing every poll of that feed forever and suspending
+    it after ten tries. The first entry wins; the repeat is counted."""
+    duplicated = b"""<?xml version="1.0"?>
+    <rss version="2.0"><channel><title>Broken</title>
+      <item><title>First</title><guid>same</guid><description>A</description></item>
+      <item><title>Second</title><guid>same</guid><description>B</description></item>
+    </channel></rss>"""
+    STATE.update(body=duplicated, etag='"dupe"')
+
+    async with db.session() as session:
+        feed = Feed(url=server, host_id=await resolve(session, server))
+        session.add(feed)
+        await session.flush()
+        session.add(Subscription(feed_id=feed.id))
+        feed_id = feed.id
+
+    applied = await poll_feed(feed_id, fetcher, settings)
+
+    assert applied.new_items == 1
+    assert applied.duplicate_identity == 1
+    assert (await counts())["items"] == 1
+
+    async with db.session() as session:
+        stored = await session.get(Feed, feed_id)
+        assert stored is not None
+        assert stored.suspended is False
+        assert stored.consecutive_failures == 0

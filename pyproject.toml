@@ -42,6 +42,7 @@ dev = [
   "ruff>=0.16",
   "ty>=0.0.71",
   "pre-commit>=4.0",
+  "vulture>=2.16",
 ]
 
 [tool.uv]
@@ -63,6 +64,77 @@ packages = ["src/old_news"]
 # "statistics".
 ignore-words-list = "statics"
 
+[tool.vulture]
+# Dead code is debt waiting to happen, so this runs in CI. What it cannot see is
+# code a framework reaches for by name: sqladmin's declarative attributes,
+# procrastinate's task registry, pytest's fixture injection, columns read only
+# through SQL. Those are named below rather than left to a --min-confidence knob
+# that would also hide real findings.
+paths = ["src", "tests"]
+min_confidence = 60
+sort_by_size = true
+exclude = ["src/old_news/db/migrations/"]
+ignore_decorators = [
+  "@app.periodic",
+  "@app.task",
+  "@event.listens_for",
+  "@get",
+  "@pytest.fixture",
+  "@task",
+  "@validates",
+]
+ignore_names = [
+  # sqladmin configures views with class-level attributes.
+  "can_*",
+  "column_*",
+  "form_*",
+  "icon",
+  "name_plural",
+  # Frameworks call these by name, or hand them arguments we do not use.
+  "authenticate",
+  "do_GET",
+  "log_message",
+  "login",
+  "logout",
+  "metadata",
+  "model_config",
+  "parent_names",
+  "slug",
+  "timestamp",
+  # Read through SQL, Admin or the ORM rather than from Python.
+  "added_at",
+  "created_at",
+  "current_version",
+  "first_seen_at",
+  "last_success_at",
+  "path_format",
+  "read_at",
+  "subscription",
+  "supersedes",
+  "suspended_reason",
+  "versions",
+  # pytest injects fixtures by parameter name.
+  "blanket_ban",
+  "clean",
+  "clean_client",
+  "client",
+  "database",
+  "database_url",
+  "feed_state",
+  "fetcher",
+  "http_server",
+  "migrated",
+  "no_jobs",
+  "no_policies",
+  "postgres",
+  "queue_app",
+  "queue_schema",
+  "server",
+  "settings",
+  "site",
+  "targeted_ban",
+]
+
 [tool.ruff]
 src = ["src", "tests"]
 extend-exclude = ["infra"]
@@ -79,15 +151,37 @@ select = [
   "B",     # bugbear
   "SIM",   # simplify
   "ASYNC", # async correctness
+  "TID",   # a library belongs to one package — see banned-api below
   "RUF",
 ]
 ignore = [
   "B008", # function call in default arg — Litestar/Piccolo idiom
 ]
 
+# ARCHITECTURE.md: a third-party library gets imported by exactly one package, so
+# replacing it stays a diff confined to that package. Prose until now; the
+# per-file-ignores below are the list of owners.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"httpx2".msg = "httpx2 belongs to fetch/"
+"logfire".msg = "logfire belongs to observability/"
+"feedparser".msg = "feedparser belongs to ingest/parser.py"
+"defusedxml".msg = "defusedxml belongs to subscriptions/opml.py"
+"trafilatura".msg = "trafilatura belongs to extract/"
+"sqladmin".msg = "sqladmin belongs to api/admin.py"
+"urllib.robotparser".msg = "urllib.robotparser belongs to robots/parse.py"
+
 [tool.ruff.lint.per-file-ignores]
 # sqladmin's ModelView is configured with plain class-level lists.
-"src/old_news/api/admin.py" = ["RUF012"]
+"src/old_news/api/admin.py" = ["RUF012", "TID251"]
+# Each library's one owning module.
+"src/old_news/fetch/client.py" = ["TID251"]
+"src/old_news/observability/telemetry.py" = ["TID251"]
+"src/old_news/ingest/parser.py" = ["TID251"]
+"src/old_news/subscriptions/opml.py" = ["TID251"]
+"src/old_news/robots/parse.py" = ["TID251"]
+"src/old_news/extract/*" = ["TID251"]
+# Tests reach for a library directly to assert the boundary holds.
+"tests/**" = ["TID251"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["old_news", "provider", "provider_oci"]

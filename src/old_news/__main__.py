@@ -26,17 +26,19 @@ async def _worker(settings: Settings) -> None:
     `procrastinate worker` on its own never calls db.configure(), so every task
     that touches Postgres would raise on its first statement.
     """
-    from old_news import db, observability
+    from old_news import db, fetch, observability
     from old_news.tasks import app as queue_app
 
     observability.configure(
         settings.telemetry, environment=settings.environment, component="worker"
     )
     db.configure(settings.database)
+    fetch.configure(settings.http)
     try:
         async with queue_app.open_async():
             await queue_app.run_worker_async()
     finally:
+        await fetch.dispose()
         await db.dispose()
 
 
@@ -60,21 +62,22 @@ def serve(settings: Settings) -> None:
 
 
 async def _import_opml(data: bytes, settings: Settings) -> int:
-    from old_news import db
-    from old_news.fetch import Fetcher
+    from old_news import db, fetch
     from old_news.subscriptions import service
 
     db.configure(settings.database)
-    fetcher = Fetcher(settings.http)
+    fetch.configure(settings.http)
     try:
-        result = await service.import_opml(data, fetcher)
+        result = await service.import_opml(data, fetch.client())
     finally:
-        await fetcher.aclose()
+        await fetch.dispose()
         await db.dispose()
 
     print(f"added {result.added}, already subscribed {result.already_present}")
     for url in result.undiscoverable:
         print(f"  no feed found: {url}", file=sys.stderr)
+    for url in result.unfetchable:
+        print(f"  not a fetchable URL, skipped: {url}", file=sys.stderr)
     return 1 if result.undiscoverable else 0
 
 

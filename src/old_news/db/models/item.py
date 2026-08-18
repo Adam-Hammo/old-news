@@ -24,8 +24,6 @@ from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
 if TYPE_CHECKING:
     from old_news.db.models.feed import Feed
 
-IDENTITY_SOURCES = ("guid", "link", "hash")
-
 
 def _current_version_join():
     successor = aliased(ItemVersion, name="successor")
