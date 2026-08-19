@@ -3,14 +3,33 @@
 import datetime
 import uuid
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, extract
 from old_news.config import ExtractSettings
-from old_news.db import Dimension, PageCapture, RobotsPolicy, RuleSource, TrainingRule
+from old_news.db import (
+    Dimension,
+    Host,
+    PageCapture,
+    RobotsPolicy,
+    RuleSource,
+    TrainingRule,
+)
 from old_news.politeness import ensure
 
 SETTINGS = ExtractSettings()
+
+
+@db.transactional
+async def _learned_www(session: AsyncSession, host: str, ago: datetime.timedelta) -> None:
+    """The host taught us its `www.` name that long ago."""
+    host_id = await ensure(session, host)
+    await session.execute(
+        update(Host)
+        .where(Host.id == host_id)
+        .values(www_learned_at=datetime.datetime.now(datetime.UTC) - ago)
+    )
 
 
 @db.transactional
@@ -194,3 +213,40 @@ async def test_a_host_whose_robots_txt_was_never_read_is_left_alone(clean: None,
 
     await _rules_read("unasked.example.com")
     assert await _due_urls() == ["https://unasked.example.com/a"]
+
+
+async def test_learning_the_www_name_forgives_the_refusals_that_came_before_it(
+    clean: None, feed_id, article
+):
+    """theclimatebrink.com links its articles at an apex with no DNS record. Those 15
+    versions were given up on before the `www.` retry could ever run against them, and
+    the retry only runs on a version the sweep still selects."""
+    await _rules_read()
+    versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
+    await _capture(
+        versions[0],
+        status=0,
+        times=SETTINGS.capture_retry.max_failures * 2,
+        ago=datetime.timedelta(hours=2),
+    )
+
+    assert await _due_urls() == []
+
+    await _learned_www("loopback.example.com", ago=datetime.timedelta(hours=1))
+
+    assert await _due_urls() == ["https://loopback.example.com/a"]
+
+
+async def test_refusals_after_the_name_was_learned_still_count(clean: None, feed_id, article):
+    """Otherwise the forgiveness is unbounded and the loop comes straight back."""
+    await _rules_read()
+    versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
+    await _learned_www("loopback.example.com", ago=datetime.timedelta(hours=3))
+    await _capture(
+        versions[0],
+        status=403,
+        times=SETTINGS.capture_retry.max_failures,
+        ago=datetime.timedelta(hours=1),
+    )
+
+    assert await _due_urls() == []

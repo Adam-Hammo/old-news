@@ -4,6 +4,7 @@ Capture only. What the page means is derived, disposable and lands in its own ta
 wrong extractor costs a rerun rather than the article.
 """
 
+import datetime
 import hashlib
 import logging
 import uuid
@@ -47,18 +48,26 @@ async def _host_state(session: AsyncSession, url: str) -> tuple[uuid.UUID, bool]
     if not name:
         return None
     host_id = await ensure(session, name)
-    requires_www = (
-        await session.execute(select(Host.requires_www).where(Host.id == host_id))
+    learned = (
+        await session.execute(select(Host.www_learned_at).where(Host.id == host_id))
     ).scalar_one()
-    return host_id, bool(requires_www)
+    return host_id, learned is not None
 
 
 @db.transactional
 async def _learn_www(session: AsyncSession, host_id: uuid.UUID) -> None:
     """Remember that only the `www.` name answers, so the next capture goes straight
     there. Observed, and reversed by nothing: if they add the record we simply keep
-    using a name that works."""
-    await session.execute(update(Host).where(Host.id == host_id).values(requires_www=True))
+    using a name that works.
+
+    Only ever written once. The timestamp is what the capture sweep counts refusals
+    from, so moving it would forgive the same failures again and retry without end.
+    """
+    await session.execute(
+        update(Host)
+        .where(Host.id == host_id, Host.www_learned_at.is_(None))
+        .values(www_learned_at=datetime.datetime.now(datetime.UTC))
+    )
 
 
 async def _fetch(

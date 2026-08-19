@@ -280,6 +280,17 @@ interval is let through, purely to find out whether the refusal still stands.
 Skipping writes no `page_captures` row. Deciding not to fetch is not an attempt, it matches what the
 two robots checks beside it already do, and a row would poison the window the breaker reads.
 
+### Our own mistakes do not count against a publisher
+
+`hosts.www_learned_at` is set by the one capture that only worked with `www.` put back, and it is
+also the line before which a refusal stops counting. Without that second job the fix could never
+reach the articles it was written for: a publisher whose apex has no DNS record burns through the
+retry limit in minutes, and the retry that would have worked only runs on a version the sweep still
+selects. Fifteen articles in this corpus were in exactly that state.
+
+Written once and never moved. Moving it would forgive the same failures on every learn, which is the
+retry loop again with extra steps.
+
 ### A queueing lock collision is not an error
 
 `queueing_lock` means "only one of these may be waiting", but procrastinate reports the collision by
