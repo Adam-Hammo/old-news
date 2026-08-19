@@ -14,17 +14,26 @@ SETTINGS = ExtractSettings()
 
 
 @db.transactional
-async def _capture(session: AsyncSession, version_id: uuid.UUID, *, status: int) -> None:
+async def _capture(
+    session: AsyncSession,
+    version_id: uuid.UUID,
+    *,
+    status: int,
+    ago: datetime.timedelta = datetime.timedelta(0),
+    times: int = 1,
+) -> None:
     host_id = await ensure(session, "loopback.example.com")
-    session.add(
-        PageCapture(
-            item_version_id=version_id,
-            host_id=host_id,
-            url="https://loopback.example.com/a",
-            status=status,
-            body_hash=b"0" * 32,
+    for _ in range(times):
+        session.add(
+            PageCapture(
+                item_version_id=version_id,
+                host_id=host_id,
+                url="https://loopback.example.com/a",
+                status=status,
+                body_hash=b"0" * 32,
+                fetched_at=datetime.datetime.now(datetime.UTC) - ago,
+            )
         )
-    )
     await session.flush()
 
 
@@ -106,13 +115,38 @@ async def test_a_captured_version_is_not_due_again(clean: None, feed_id, article
     assert await _due_urls() == []
 
 
-async def test_a_failed_capture_leaves_the_version_due(clean: None, feed_id, article):
-    """A 403 is worth recording and worth retrying. Only success stops the asking."""
+async def test_a_failed_capture_waits_before_being_asked_again(clean: None, feed_id, article):
+    """A 403 is worth recording and worth retrying, but not a minute later. Asking on
+    every sweep is what made 25 doomed versions 88% of all article fetching."""
     await _rules_read()
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
     await _capture(versions[0], status=403)
 
+    assert await _due_urls() == []
+
+
+async def test_a_failed_capture_is_due_once_its_backoff_elapses(clean: None, feed_id, article):
+    """Backing off is not giving up — a publisher having a bad afternoon gets asked again."""
+    await _rules_read()
+    versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
+    await _capture(versions[0], status=403, ago=datetime.timedelta(hours=2))
+
     assert await _due_urls() == ["https://loopback.example.com/a"]
+
+
+async def test_a_version_that_keeps_refusing_is_given_up_on(clean: None, feed_id, article):
+    """However long we wait. Medium 403s every article page it has, forever, and no
+    amount of patience turns that into a page."""
+    await _rules_read()
+    versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
+    await _capture(
+        versions[0],
+        status=403,
+        times=SETTINGS.capture_retry.max_failures,
+        ago=datetime.timedelta(days=30),
+    )
+
+    assert await _due_urls() == []
 
 
 async def test_an_item_over_the_version_cap_is_dropped(clean: None, feed_id, article):

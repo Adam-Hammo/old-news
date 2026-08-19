@@ -9,13 +9,13 @@ import dataclasses
 import datetime
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, training
 from old_news.config import ExtractSettings
 from old_news.db import Host, Item, ItemVersion, PageCapture, RobotsPolicy
-from old_news.politeness import host_of
+from old_news.politeness import backoff, host_of
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -37,14 +37,28 @@ async def due_captures(
     one waits for the settle window, so a rolling story does not cost a fetch per rewrite.
     The version cap and the blocking rule are what make a live blog cost nothing.
     """
-    settled_by = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-        seconds=settings.settle_seconds
-    )
+    now = datetime.datetime.now(datetime.UTC)
+    settled_by = now - datetime.timedelta(seconds=settings.settle_seconds)
+    policy = backoff.policy_for(settings.capture_retry)
 
     captured = select(PageCapture.item_version_id).where(PageCapture.succeeded).scalar_subquery()
+
+    # Every row left for an uncaptured version is a failed attempt, so counting them
+    # counts consecutive failures without needing to say so.
+    tried = (
+        select(
+            PageCapture.item_version_id.label("version_id"),
+            func.count().label("failures"),
+            func.max(PageCapture.fetched_at).label("last_attempt"),
+        )
+        .group_by(PageCapture.item_version_id)
+        .subquery()
+    )
+
     rows = await session.execute(
         select(ItemVersion.id, ItemVersion.url, ItemVersion.canonical_url)
         .join(Item, Item.id == ItemVersion.item_id)
+        .outerjoin(tried, tried.c.version_id == ItemVersion.id)
         .where(
             Item.subscribed,
             ItemVersion.is_head,
@@ -53,6 +67,15 @@ async def due_captures(
             ~training.blocked(ItemVersion, Item),
             # A version superseding nothing is the item's first, and is due at once.
             ItemVersion.supersedes_id.is_(None) | (ItemVersion.observed_at <= settled_by),
+            # Never tried, or refused and now off its backoff with tries still left.
+            # Without this a page that will never answer is asked once a minute forever.
+            or_(
+                tried.c.version_id.is_(None),
+                and_(
+                    tried.c.failures < policy.max_failures,
+                    backoff.due_at(tried.c.last_attempt, tried.c.failures, policy) <= now,
+                ),
+            ),
         )
         .order_by(ItemVersion.observed_at)
         .limit(limit)

@@ -264,3 +264,108 @@ async def test_a_same_host_redirect_is_not_treated_as_one(
 
     assert stored is not None
     assert await _body(stored) == PAGE
+
+
+@db.transactional
+async def _refusals(
+    session: AsyncSession,
+    host: str,
+    version_id: uuid.UUID,
+    count: int,
+    *,
+    ago: datetime.timedelta,
+    status: int = 403,
+) -> None:
+    """A run of refusals on a host, recorded against a different article than the one
+    being captured — which is the point: the breaker is about the publisher."""
+    host_id = await ensure(session, host)
+    for n in range(count):
+        session.add(
+            PageCapture(
+                item_version_id=version_id,
+                host_id=host_id,
+                url=f"https://{host}/other-{n}",
+                status=status,
+                body_hash=b"0" * 32,
+                fetched_at=datetime.datetime.now(datetime.UTC) - ago,
+            )
+        )
+    await session.flush()
+
+
+async def _other_article(feed_id: uuid.UUID, article) -> uuid.UUID:
+    """A second article on the same host, to hang the host's refusals on."""
+    return (await article(feed_id, ("Another article", "https://127.0.0.1/elsewhere")))[0]
+
+
+async def test_a_host_refusing_everything_stops_being_asked(
+    clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
+):
+    """Medium 403s every article page it serves. Per-version backoff would leave ten
+    independent clocks all still knocking; this is the one clock."""
+    version_id = await _version(feed_id, article, f"{site}/article")
+    await _refusals(
+        "127.0.0.1",
+        await _other_article(feed_id, article),
+        settings.extract.host_failure_threshold,
+        ago=datetime.timedelta(minutes=1),
+    )
+
+    assert await capture_page(version_id, fetcher, settings) is None
+    # Refusing to fetch is not an attempt, so nothing is recorded — a row here would
+    # also poison the window the breaker reads.
+    assert await _captures(version_id) == []
+
+
+async def test_a_host_below_the_threshold_is_still_asked(
+    clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
+):
+    """A run of failures short of the threshold is bad luck on individual articles."""
+    version_id = await _version(feed_id, article, f"{site}/article")
+    await _refusals(
+        "127.0.0.1",
+        await _other_article(feed_id, article),
+        settings.extract.host_failure_threshold - 1,
+        ago=datetime.timedelta(minutes=1),
+    )
+
+    stored = await capture_page(version_id, fetcher, settings)
+
+    assert stored is not None and stored.status == 200
+
+
+async def test_one_probe_is_let_through_once_the_interval_passes(
+    clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
+):
+    """Without this the breaker freezes the window it reads and never reopens, so a
+    publisher who unblocks us is never found out."""
+    version_id = await _version(feed_id, article, f"{site}/article")
+    await _refusals(
+        "127.0.0.1",
+        await _other_article(feed_id, article),
+        settings.extract.host_failure_threshold,
+        ago=datetime.timedelta(seconds=settings.extract.host_probe.minimum_seconds + 60),
+    )
+
+    stored = await capture_page(version_id, fetcher, settings)
+
+    assert stored is not None and stored.status == 200
+
+
+async def test_a_run_of_404s_does_not_close_a_host(
+    clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
+):
+    """A 404 is about one URL. A handful of dead links must not shut out a publisher
+    that is answering everything else."""
+    version_id = await _version(feed_id, article, f"{site}/article")
+    await _refusals(
+        "127.0.0.1",
+        await _other_article(feed_id, article),
+        settings.extract.host_failure_threshold * 2,
+        ago=datetime.timedelta(minutes=1),
+        status=404,
+    )
+
+    stored = await capture_page(version_id, fetcher, settings)
+
+    assert stored is not None and stored.status == 200

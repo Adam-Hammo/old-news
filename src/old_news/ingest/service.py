@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, robots
 from old_news.config import IngestSettings, Settings
-from old_news.db import Feed, Host
+from old_news.db import Feed, FeedPoll, Host, PollOutcome
 from old_news.fetch import Fetcher, FetchError, Response
 from old_news.ingest import parser, schedule, store
 from old_news.observability import count, span
@@ -46,13 +46,21 @@ class _FetchState:
 
 
 @db.transactional
-async def due_polls(session: AsyncSession, limit: int) -> list[DuePoll]:
+async def due_polls(session: AsyncSession, settings: IngestSettings, limit: int) -> list[DuePoll]:
+    """Feeds worth visiting now.
+
+    Giving up after N failures is applied here rather than stored on the feed: it is our
+    policy, not the publisher's statement, so it belongs with the setting that defines it
+    and changing the number takes effect at once instead of leaving rows stamped with the
+    old one. `gone` is the other half — a 410, which needs no threshold.
+    """
     rows = await session.execute(
         select(Feed.id, Host.name)
         .join(Host, Host.id == Feed.host_id)
         .where(
             Feed.subscribed,
-            Feed.suspended.is_(False),
+            ~Feed.gone,
+            Feed.consecutive_failures < settings.max_consecutive_failures,
             Feed.next_poll_at <= datetime.datetime.now(datetime.UTC),
         )
         .order_by(Feed.next_poll_at)
@@ -68,18 +76,22 @@ async def subscribed_hosts(session: AsyncSession) -> list[str]:
         select(Host.name)
         .distinct()
         .join(Feed, Feed.host_id == Host.id)
-        .where(Feed.subscribed, Feed.suspended.is_(False))
+        .where(Feed.subscribed, ~Feed.gone)
     )
     return sorted(name for (name,) in rows.all())
 
 
 @db.transactional
 async def _fetch_state(session: AsyncSession, feed_id: uuid.UUID) -> _FetchState | None:
-    """None when there is nothing to poll — the feed is gone or suspended."""
-    feed = await session.get(Feed, feed_id)
-    if feed is None or feed.suspended:
+    """None when there is nothing to poll — the row went, or the publisher said 410."""
+    row = (
+        await session.execute(
+            select(Feed.url, Feed.etag, Feed.last_modified).where(Feed.id == feed_id, ~Feed.gone)
+        )
+    ).first()
+    if row is None:
         return None
-    return _FetchState(feed.url, feed.etag, feed.last_modified)
+    return _FetchState(row.url, row.etag, row.last_modified)
 
 
 @db.transactional
@@ -101,9 +113,40 @@ async def _store_poll(
     if document is not None:
         applied = await store.apply_items(session, feed, document, parsed.items, observed_at=now)
 
+    _log(session, feed_id, PollOutcome.OK, status=response.status, new_items=applied.new_items)
     _refresh_feed(feed, parsed, response)
     _reschedule(feed, settings.ingest, now, new_items=applied.new_items)
     return applied
+
+
+def _log(
+    session: AsyncSession,
+    feed_id: uuid.UUID,
+    outcome: PollOutcome,
+    *,
+    status: int = 0,
+    error: str = "",
+    new_items: int = 0,
+) -> None:
+    """Append what this poll turned out to be. Called inside the caller's transaction:
+    the record of a poll and the schedule it moves land together or not at all."""
+    session.add(
+        FeedPoll(
+            feed_id=feed_id,
+            outcome=outcome,
+            status=status,
+            error=error[:500],
+            new_items=new_items,
+        )
+    )
+
+
+async def _consecutive_failures(session: AsyncSession, feed_id: uuid.UUID) -> int:
+    """The derived count, read back for the schedule. One definition of the number,
+    on the model, spelled as SQL because that is the only place it exists."""
+    return (
+        await session.execute(select(Feed.consecutive_failures).where(Feed.id == feed_id))
+    ).scalar_one()
 
 
 @db.transactional
@@ -115,8 +158,8 @@ async def _record_disallowed(
     feed = await session.get(Feed, feed_id)
     if feed is None:
         return
+    _log(session, feed_id, PollOutcome.DISALLOWED, error="disallowed by robots.txt")
     feed.last_polled_at = now
-    feed.last_error = "disallowed by robots.txt"
     feed.next_poll_at = now + datetime.timedelta(seconds=settings.max_interval_seconds)
 
 
@@ -128,8 +171,7 @@ async def _record_not_modified(
     feed = await session.get(Feed, feed_id)
     if feed is None:
         return
-    feed.consecutive_failures = 0
-    feed.last_error = ""
+    _log(session, feed_id, PollOutcome.NOT_MODIFIED, status=304)
     _reschedule(feed, settings, now, new_items=0)
 
 
@@ -148,21 +190,21 @@ async def _record_failure(
     if feed is None:
         return
 
-    feed.consecutive_failures += 1
-    feed.last_error = reason[:500]
+    _log(session, feed_id, PollOutcome.FAILED, status=status or 0, error=reason)
+    await session.flush()
+    failures = await _consecutive_failures(session, feed_id)
     feed.last_polled_at = now
 
-    if schedule.should_suspend(settings, failures=feed.consecutive_failures, status=status):
-        feed.suspended = True
-        feed.suspended_reason = reason[:500]
-        logger.warning("suspending feed %s after %s", feed_id, reason)
+    if failures >= settings.max_consecutive_failures:
+        # Nothing to write: `due_polls` reads the same number and stops choosing it.
+        logger.warning("giving up on feed %s after %s failures: %s", feed_id, failures, reason)
 
     if retry_after is not None:
         feed.next_poll_at = now + datetime.timedelta(seconds=retry_after)
         return
 
     feed.next_poll_at = schedule.next_poll_at(
-        now, settings, failures=feed.consecutive_failures, ttl_seconds=feed.ttl_seconds
+        now, settings, failures=failures, ttl_seconds=feed.ttl_seconds
     )
 
 
@@ -254,8 +296,6 @@ async def poll_feed(feed_id: uuid.UUID, fetcher: Fetcher, settings: Settings) ->
 def _refresh_feed(feed: Feed, parsed: parser.ParsedFeed, response: Response) -> None:
     feed.etag = response.etag or ""
     feed.last_modified = response.last_modified or ""
-    feed.last_error = ""
-    feed.consecutive_failures = 0
 
     # A feed that has never been named is worth naming; one that has is left
     # alone, because a title edited in Admin should survive a poll.

@@ -1,3 +1,4 @@
+import socket
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -44,6 +45,31 @@ class TooLarge(FetchError):
 
 class WrongContentType(FetchError):
     """Not what was asked for. Raised before the body is read, so nothing is downloaded."""
+
+
+class Unresolvable(FetchError):
+    """The host has no address at all.
+
+    Worth its own name because it is often not a dead publisher: several point the feed
+    at `www` and their article links at an apex nobody ever gave a record to.
+    """
+
+
+def _unresolvable(exc: BaseException) -> bool:
+    """Whether a transport failure was DNS.
+
+    The `gaierror` arrives wrapped as an argument rather than as `__cause__`, so both
+    are followed. Bounded because a cycle here would hang a worker.
+    """
+    seen: BaseException | None = exc
+    for _ in range(8):
+        if seen is None:
+            return False
+        if isinstance(seen, socket.gaierror):
+            return True
+        nested = seen.args[0] if seen.args and isinstance(seen.args[0], BaseException) else None
+        seen = seen.__cause__ or nested
+    return False
 
 
 # One name for every outbound GET — feeds, robots.txt and article pages all come through
@@ -149,6 +175,8 @@ class Fetcher:
                 raise Timeout(str(exc)) from exc
             except httpx2.HTTPError as exc:
                 current.record_exception(exc)
+                if _unresolvable(exc):
+                    raise Unresolvable(str(exc)) from exc
                 raise FetchError(str(exc)) from exc
 
     async def aclose(self) -> None:

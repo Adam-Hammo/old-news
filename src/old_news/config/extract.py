@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from old_news.config.retry import RetrySettings
 
 
 class ExtractSettings(BaseModel):
@@ -25,3 +27,24 @@ class ExtractSettings(BaseModel):
         "image/gif",
     )
     image_batch_size: int = 25
+
+    # A page that refused is asked again on a lengthening clock, then given up on.
+    # Steeper and shorter-lived than a feed's: a feed is the subscription, a page is
+    # one article, and 403 is usually a policy rather than a wobble.
+    capture_retry: RetrySettings = Field(
+        default_factory=lambda: RetrySettings(
+            minimum_seconds=15 * 60, maximum_seconds=24 * 60 * 60, factor=3.0, max_failures=5
+        )
+    )
+
+    # Consecutive host-scoped failures before the host itself is treated as refusing.
+    # Below this a run of failures is just bad luck on individual articles.
+    host_failure_threshold: int = 5
+
+    # Once tripped, one capture per interval is let through, purely to find out whether
+    # the host is still refusing. Without it the breaker freezes its own input.
+    host_probe: RetrySettings = Field(
+        default_factory=lambda: RetrySettings(
+            minimum_seconds=30 * 60, maximum_seconds=24 * 60 * 60, factor=2.0, max_failures=0
+        )
+    )

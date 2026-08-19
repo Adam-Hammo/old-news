@@ -1,17 +1,29 @@
-"""When to poll next. Pure functions — no database, no clock, no I/O."""
+"""When to poll next. Pure functions — no database, no clock, no I/O.
+
+Cadence is this module's; the failure half is `politeness.backoff`, shared with the
+capture sweeps because a feed and a page are refused in the same ways.
+"""
 
 import datetime
 
 from old_news.config import IngestSettings
+from old_news.politeness import backoff
 
-# 410 means the publisher has said the feed is gone for good.
-PERMANENTLY_GONE = 410
+
+def policy(settings: IngestSettings) -> backoff.Policy:
+    """A feed's retry bounds, in the shared shape."""
+    return backoff.Policy(
+        minimum_seconds=settings.min_interval_seconds,
+        maximum_seconds=settings.max_interval_seconds,
+        factor=settings.backoff_factor,
+        max_failures=settings.max_consecutive_failures,
+    )
 
 
 def clamp_interval(seconds: float, settings: IngestSettings) -> int:
     """Any wait, held inside the configured bounds. Public because `Retry-After`
     needs the same clamping as a computed interval does."""
-    return int(min(max(seconds, settings.min_interval_seconds), settings.max_interval_seconds))
+    return backoff.clamp(seconds, policy(settings))
 
 
 def next_interval(
@@ -27,16 +39,17 @@ def next_interval(
     Failures back off exponentially. A feed that published gets visited sooner,
     one that didn't drifts later, so a quiet feed costs less over time.
     """
+    bounds = policy(settings)
     if failures > 0:
-        interval = settings.default_interval_seconds * settings.backoff_factor**failures
+        clamped = backoff.interval(
+            bounds, failures=failures, base_seconds=settings.default_interval_seconds
+        )
     else:
         base = current_seconds or settings.default_interval_seconds
         multiplier = (
             settings.busy_interval_multiplier if new_items else settings.idle_interval_multiplier
         )
-        interval = base * multiplier
-
-    clamped = clamp_interval(interval, settings)
+        clamped = backoff.clamp(base * multiplier, bounds)
 
     # <ttl> is a request to poll *less* often, so it raises the floor and is
     # allowed to push past our own ceiling. Ignoring it is how you get blocked.
@@ -62,9 +75,3 @@ def next_poll_at(
         ttl_seconds=ttl_seconds,
     )
     return now + datetime.timedelta(seconds=seconds)
-
-
-def should_suspend(settings: IngestSettings, *, failures: int, status: int | None = None) -> bool:
-    if status == PERMANENTLY_GONE:
-        return True
-    return failures >= settings.max_consecutive_failures

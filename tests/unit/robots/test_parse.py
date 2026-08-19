@@ -82,3 +82,25 @@ def test_a_blanket_ban_with_the_feed_allowed_is_not_a_ban_on_the_feed():
 
     assert rules.blocks_everything
     assert rules.allows("/feed.xml")
+
+
+def test_a_wildcard_rule_matching_a_query_string_is_obeyed():
+    """Medium disallows `/*/*source=`, and every article link in its own feed carries
+    `?source=rss-…`. The stdlib parser percent-encodes the `=` in the rule and not the
+    one in the query, so this rule silently never fired."""
+    rules = parse("User-agent: *\nDisallow: /*/*source=\n", user_agent="old-news")
+
+    assert not rules.allows("https://medium.com/the-academic/dark-networks-abc?source=rss-x")
+    # One path segment, so the rule does not reach it. Not every Medium URL is blocked.
+    assert rules.allows("https://admiralcloudberg.medium.com/trial-by-fire-abc?source=rss-x")
+
+
+def test_an_anchored_wildcard_allow_is_a_known_protego_bug():
+    """scrapy/protego#51, open since 2024 and still present in 0.6.2: an `Allow` that
+    both contains a wildcard and ends in `$` is not applied. No host in this corpus
+    writes one — this fails the day one does, rather than quietly denying a page."""
+    rules = parse("User-agent: *\nAllow: /*/filter/page=*/$\nDisallow: /\n", user_agent="old-news")
+
+    assert not rules.allows("https://example.com/1/filter/page=5/"), (
+        "protego#51 appears to be fixed — this expectation should be inverted"
+    )

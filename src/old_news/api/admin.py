@@ -19,6 +19,7 @@ from old_news.db import (
     Document,
     Extraction,
     Feed,
+    FeedPoll,
     ImageCapture,
     Item,
     ItemVersion,
@@ -75,16 +76,27 @@ class SingleUserBackend(AuthenticationBackend):
 class FeedAdmin(ModelView, model=Feed):
     name_plural = "Feeds"
     icon = "fa-solid fa-rss"
-    column_list = [
-        Feed.title,
-        Feed.url,
-        Feed.next_poll_at,
-        Feed.consecutive_failures,
-        Feed.suspended,
-    ]
+    # Failure state is derived from `feed_polls` and so has no column to list or sort
+    # on. What went wrong is one screen along, in full, instead of the last line of it.
+    column_list = [Feed.title, Feed.url, Feed.next_poll_at, Feed.last_polled_at]
     column_searchable_list = [Feed.title, Feed.url]
-    column_sortable_list = [Feed.title, Feed.next_poll_at, Feed.consecutive_failures]
+    column_sortable_list = [Feed.title, Feed.next_poll_at, Feed.last_polled_at]
     column_default_sort = [(Feed.next_poll_at, False)]
+
+
+class FeedPollAdmin(ModelView, model=FeedPoll):
+    name_plural = "Feed polls"
+    icon = "fa-solid fa-clock-rotate-left"
+    column_list = [
+        FeedPoll.polled_at,
+        FeedPoll.outcome,
+        FeedPoll.status,
+        FeedPoll.new_items,
+        FeedPoll.error,
+    ]
+    column_sortable_list = [FeedPoll.polled_at, FeedPoll.outcome, FeedPoll.status]
+    column_default_sort = [(FeedPoll.polled_at, True)]
+    can_create = can_edit = can_delete = False
 
 
 class SubscriptionAdmin(ModelView, model=Subscription):
@@ -237,6 +249,7 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
     )
     views = (
         FeedAdmin,
+        FeedPollAdmin,
         SubscriptionAdmin,
         ItemAdmin,
         ItemVersionAdmin,
