@@ -9,14 +9,14 @@ import datetime
 import hashlib
 import logging
 import uuid
-from compression import zstd
 from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased
 
-from old_news.db import Document, Feed, Item, ItemVersion
+from old_news.config import StorageSettings
+from old_news.db import Document, Feed, Item, ItemVersion, dictionaries
+from old_news.db import bytes as codec
 from old_news.fetch import Response
 from old_news.ingest.normalise import content_fingerprint
 from old_news.ingest.parser import ParsedFeed, ParsedItem
@@ -24,16 +24,6 @@ from old_news.ingest.parser import ParsedFeed, ParsedItem
 logger = logging.getLogger(__name__)
 
 CAPTURED_HEADERS = ("etag", "last-modified", "content-type", "cache-control", "retry-after")
-
-# Postgres TOASTs these with pglz, which manages about 2x on feed XML. zstd gets
-# 5-6x, and documents are the great majority of the database.
-ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
-
-
-def decompress(body: bytes) -> bytes:
-    """The way back. Bodies stored before compression began start with `<` or a BOM,
-    never with the zstd magic, so both read the same way and nothing needs migrating."""
-    return zstd.decompress(body) if body.startswith(ZSTD_MAGIC) else body
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +85,11 @@ async def previous_document_hash(session: AsyncSession, feed_id: uuid.UUID) -> b
 
 
 async def record_document(
-    session: AsyncSession, feed: Feed, response: Response, parsed: ParsedFeed
+    session: AsyncSession,
+    feed: Feed,
+    response: Response,
+    parsed: ParsedFeed,
+    storage: StorageSettings,
 ) -> Document | None:
     """Store the body if it differs from the previous one. Written before parsing."""
     # Hashed raw: the hash answers "did this feed change", not "what did we store".
@@ -103,11 +97,17 @@ async def record_document(
     if body_hash == await previous_document_hash(session, feed.id):
         return None
 
+    current = await dictionaries.current_for_feed(session, feed.id)
     document = Document(
         feed_id=feed.id,
         status=response.status,
         body_hash=body_hash,
-        body=zstd.compress(response.body),
+        body=codec.compress(
+            response.body,
+            level=storage.compression_level,
+            dictionary=current.dictionary if current else None,
+        ),
+        dictionary_id=current.id if current else None,
         headers={name: value for name in CAPTURED_HEADERS if (value := response.header(name))},
         parse_ok=parsed.ok,
         parse_note=parsed.note,
@@ -136,7 +136,6 @@ async def current_versions(session: AsyncSession, feed_id: uuid.UUID) -> dict[st
     One query, not one per item. The anti-join is what "the tail of the chain"
     means — the version nothing supersedes.
     """
-    successor = aliased(ItemVersion)
     rows = await session.execute(
         select(
             Item.identity_key,
@@ -147,7 +146,7 @@ async def current_versions(session: AsyncSession, feed_id: uuid.UUID) -> dict[st
         )
         .join(ItemVersion, ItemVersion.item_id == Item.id)
         .where(Item.feed_id == feed_id)
-        .where(~select(successor.id).where(successor.supersedes_id == ItemVersion.id).exists())
+        .where(ItemVersion.is_head)
     )
     return {
         identity_key: Current(item_id, version_id, content_hash, canonical_url)

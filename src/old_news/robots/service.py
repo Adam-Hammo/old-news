@@ -65,7 +65,14 @@ async def refresh(
         try:
             response = await fetcher.get(url)
             status = response.status
-            if response.ok:
+            if response.ok and host_of(response.url) != host_of(url):
+                # A cross-host redirect would file another publisher's rules under this
+                # host — and those rules could *grant* what this one forbade. Treated as
+                # unreachable, which allows but keeps asking, rather than as an answer.
+                error = f"robots.txt redirected to {host_of(response.url)}"
+                status = UNREACHABLE_STATUS
+                count("robots.redirected_away", host=host)
+            elif response.ok:
                 # Truncated, not rejected: a body over the limit still has rules
                 # at the top, and everything past the cut is not a rule anyway.
                 body = response.body[: robots.max_body_bytes].decode("utf-8", errors="replace")
@@ -127,6 +134,41 @@ async def _rules_for(host: str, settings: Settings) -> Rules:
     if body is None:
         return allow_everything(settings.http.user_agent)
     return _rules(body, settings)
+
+
+@db.transactional
+async def _has_policy(session: AsyncSession, host: str) -> bool:
+    return (
+        await session.execute(
+            select(RobotsPolicy.id)
+            .join(Host, Host.id == RobotsPolicy.host_id)
+            .where(Host.name == host)
+        )
+    ).first() is not None
+
+
+async def allows_after_redirect(requested: str, final: str, settings: Settings) -> bool:
+    """Whether a fetch that ended somewhere else may be archived.
+
+    `follow_redirects` is on, so up to five hops happen inside one call and only the first
+    host was ever checked. Same host is the ordinary case — `theguardian.com` sending you
+    to `www.theguardian.com` is not a redirect worth the word. A different one has said
+    nothing about us, so it is asked the same two questions as any other.
+    """
+    if host_of(final) == host_of(requested):
+        return True
+    return await rules_known(final) and await allows(final, settings)
+
+
+async def rules_known(url: str) -> bool:
+    """Whether this host's robots.txt has been asked for, whatever it said.
+
+    `allows` treats unknown rules as permission, which is right for a feed published for
+    readers and wrong for crawling a publisher's pages. Anything doing the latter checks
+    this first.
+    """
+    host = host_of(url)
+    return not host or await _has_policy(host)
 
 
 async def allows(url: str, settings: Settings) -> bool:

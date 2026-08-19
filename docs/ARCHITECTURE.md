@@ -19,7 +19,11 @@ src/old_news/
 
   # what we keep
   ingest/            polling: fetch, parse, normalise, store
+  extract/           the page behind the teaser, and what we read out of it
   subscriptions/     what we follow: add, OPML, discovery
+
+  # what the reader wants
+  training/          rules about what is worth keeping
 
   # edges
   api/               Litestar app, routes, admin mount
@@ -49,6 +53,23 @@ will never perform. Query with SQLAlchemy directly.
 The one thing that behaves like a repository is `ingest/store.py`, and only because "ingestion
 appends, never overwrites" has to live in exactly one place or the third caller violates it.
 
+### The reading model is on the models
+
+Anything a reader asks that is _structural_ is a relationship, not a query written again at each
+call site: `Item.current_version`, `Item.current_extraction`, `ItemVersion.latest_capture`,
+`ItemVersion.latest_extraction`. Each is `viewonly` with a `primaryjoin` doing the anti-join, and
+each is `lazy="raise"` so a forgotten `joinedload` fails loudly instead of firing a query per row.
+
+Two of them are deliberately not scoped to the head version. `Item.current_extraction` and
+`Item.reading_body` span the whole chain, because an edit makes a new version the head and its page
+waits out the settle window before being fetched — head-scoped, they would blank an article for an
+hour every time a publisher touched it. `ItemVersion.reading_body` answers the narrower question
+about one version, which is what a history view wants.
+
+`reading_body` is a `hybrid_property`, so a river can select and sort on it without loading every
+body into Python. That puts one policy — which of two texts is fuller — in the model layer rather
+than a service, which is the exception to the rule below and is why it is written down here.
+
 ## Where services live
 
 Each feature package owns its own logic in `service.py`, growing to a `services/` subpackage if it
@@ -66,8 +87,20 @@ The call chain for a scheduled poll:
 ```text
 tasks/ingest.py  ──►  ingest/service.py  ──►  fetch/    (HTTP)
                              │                 db/      (persistence)
-                             └────────────────► extract/ (article text)
+                             └────────────────► db/      (documents, compressed)
 ```
+
+Extraction is not on that chain, deliberately. It is three sweeps of its own on their own queue,
+each finding work by what the archive is missing rather than by what a poll just wrote:
+
+```text
+tasks/extract.py ──► extract/due.py      what has no page      ──► extract/capture.py
+                 ──► extract/service.py  what has no text      ──► extract/article.py
+                 ──► extract/images.py   what has no picture
+```
+
+A failing extractor cannot fail a poll, retries are independent, and re-capturing a five-year-old
+article runs down exactly the same path as capturing one that arrived a minute ago.
 
 And for a request:
 
@@ -78,7 +111,7 @@ api/routes/greader.py  ──►  ingest/service.py  ──►  db/
 A service never imports from `api/` or `tasks/`. That's the only direction rule, and it's what keeps
 the same logic reachable from both a worker and an HTTP handler.
 
-Feature packages still to be built: `ingest/`, `extract/`, `enrich/`, `backfill/`, `blob/`.
+Feature packages still to be built: `enrich/`, `backfill/`, `blob/`.
 
 ## Configuration
 
@@ -129,7 +162,54 @@ host is derived from a feed's URL whenever it is needed, so there is no stored c
 durable table referencing a disposable cache could not be dropped and rebuilt — which is the one
 thing that table is for.
 
+**Enums live in Python, strings live in Postgres.** A closed set of values is a `StrEnum` and a
+`VARCHAR` with a check constraint built from its members by `db.base.one_of`, so the constraint
+cannot drift from the enum. `sa.Enum` is not used for either half: a native Postgres type cannot
+gain a value in the same transaction as the migration that needs it, and with `native_enum=False`
+alembic renders the member _names_ into the constraint where the application writes the _values_,
+which fails every insert. Columns are annotated `Mapped[str]`, because a string is what comes back —
+and a `StrEnum` member compares equal to its own value, so `==` still reads naturally.
+
+**Indexes follow the queries, not the columns.** A unique constraint's leading column already serves
+lookups on it, so there is no separate index for `extractions.item_version_id`,
+`extraction_images.extraction_id`, `image_captures.url_digest` or `zstd_dictionaries.dict_id`. What
+a constraint cannot serve gets its own: `(extractor, extractor_version)` answers "which versions has
+this extractor not done", and a partial index on `extraction_images.role` limited to slots with
+nothing fetched stays small as the archive fills.
+
 **Everything else** — monthly partitions, the BM25 index, DiskANN — is raw DDL in a revision.
+
+### Stored bodies are compressed, sometimes against a dictionary
+
+`db/bytes.py` is the only module that imports zstd. Everything stored as bytes — feed documents,
+article pages — goes through it at one level, which is config rather than a constant.
+
+Bodies that share a template compress about twice as well against a dictionary trained on their own
+kind: feed documents 88 KB to 44 KB, article pages 49 KB to 24 KB. Feed documents and article pages
+are separate scopes — two documents from one feed share almost everything, two pages from one host
+share a template — so `zstd_dictionaries` carries exactly one of `feed_id` or `host_id`.
+
+What decides whether a dictionary is any good is how many samples it saw, not how big it is. Eight
+buys 16%, twenty-eight buys 50%, and against held-out pages a 110 KB dictionary beats 512 KB, 1 MB
+and 4 MB on every host tried. So the training sweep runs hourly rather than nightly: a scope without
+one is storing at twice the size it needs to, and nothing already written is rewritten to fix that
+later.
+
+Three things make this safe to have done:
+
+- **A frame names its own dictionary.** `get_frame_info(body).dictionary_id` is 0 or an id, so
+  reading never depends on remembering what wrote it, and reading with the wrong one raises rather
+  than returning plausible rubbish.
+- **Nothing is ever rewritten.** A dictionary is immutable and outlives being current, because every
+  body compressed against it stays that way. `documents.dictionary_id` and
+  `page_captures.dictionary_id` are foreign keys, so Postgres refuses to drop one still in use and
+  it cannot go missing from a dump that holds the bodies.
+- **No dictionary is always correct.** A scope with too little to learn from — zstd's trainer
+  refuses below a handful of samples — stays on plain zstd. That is the cold start and the fallback.
+
+A retrain inserts rather than replaces. `dict_id` hashes the content, so an unchanged feed retrains
+to the same dictionary; that is a no-op that moves `trained_at`, not a failed nightly job, which is
+why the unique key is the dictionary and its scope together.
 
 ## Politeness is job options, not a scheduler
 

@@ -1,7 +1,7 @@
 # Every hook is pinned. `just lint` runs exactly what CI runs.
 default_install_hook_types: [pre-commit, commit-msg]
 # Generated code
-exclude: ^(src/old_news/db/migrations/|infra/sdks/)
+exclude: ^(src/old_news/db/migrations/|infra/sdks/|tests/pages/)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

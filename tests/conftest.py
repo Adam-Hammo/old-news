@@ -2,12 +2,19 @@ import os
 import threading
 from collections.abc import Callable, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 import pytest
 
 # Ryuk bind-mounts the docker socket, which Docker Desktop on macOS refuses.
 # testcontainers reads its config at import, so this must run first.
 os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+
+# Real publisher pages, checked in whole. Shared rather than sitting beside one suite:
+# the extractor is unit-tested against them and the extraction path integration-tested
+# against the same bytes, and trimming them to fit a directory would change what they
+# prove.
+PAGES = Path(__file__).parent / "pages"
 
 # A reply, or something that decides one from the request headers — which is what
 # conditional GETs need, since the answer depends on If-None-Match.
@@ -70,3 +77,13 @@ def http_server() -> Iterator[Callable[[Mapping[str, Route]], str]]:
     for httpd in running:
         httpd.shutdown()
         httpd.server_close()
+
+
+@pytest.fixture(scope="session")
+def page() -> Callable[[str], str]:
+    """One of the checked-in real pages, as text."""
+
+    def read(name: str) -> str:
+        return (PAGES / name).read_text(errors="replace")
+
+    return read

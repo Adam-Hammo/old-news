@@ -5,9 +5,11 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
+from old_news.db.models.subscription import subscribed
 
 if TYPE_CHECKING:
     from old_news.db.models.subscription import Subscription
@@ -57,3 +59,13 @@ class Feed(UUIDPrimaryKey, Base):
 
     def __str__(self) -> str:
         return self.title or self.url
+
+    @hybrid_property
+    def subscribed(self) -> bool:
+        """Whether we still follow this feed. `suspended` is the poller giving up instead."""
+        return self.subscription is not None and self.subscription.active
+
+    @subscribed.inplace.expression
+    @classmethod
+    def _subscribed_expression(cls):
+        return subscribed(cls.id)

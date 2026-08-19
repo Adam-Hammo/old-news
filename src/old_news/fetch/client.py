@@ -42,6 +42,17 @@ class TooLarge(FetchError):
     pass
 
 
+class WrongContentType(FetchError):
+    """Not what was asked for. Raised before the body is read, so nothing is downloaded."""
+
+
+# One name for every outbound GET — feeds, robots.txt and article pages all come through
+# here, and `url.redacted` says which is which. Deliberately not "GET": that is what the
+# httpx2 instrumentation calls its own span, and two spans with one name make the
+# redaction tests unable to tell them apart.
+SPAN_NAME = "fetch"
+
+
 @dataclass(frozen=True, slots=True)
 class Response:
     status: int
@@ -87,7 +98,13 @@ class Fetcher:
         *,
         etag: str | None = None,
         last_modified: str | None = None,
+        accept: tuple[str, ...] | None = None,
     ) -> Response:
+        """`accept` refuses a body by its declared type before any of it is read.
+
+        Checked here rather than by the caller because this is where the streaming is: an
+        article link pointing at a 40 MB video should cost one set of headers.
+        """
         headers = {}
         if etag:
             headers["If-None-Match"] = etag
@@ -103,9 +120,16 @@ class Fetcher:
             "url.redacted": str(target),
             "http.conditional": bool(headers),
         }
-        with span("GET feed", **attributes) as current:
+        with span(SPAN_NAME, **attributes) as current:
             try:
                 async with self._client.stream("GET", url, headers=headers) as response:
+                    if accept is not None and response.status_code < 300:
+                        declared = response.headers.get("content-type", "")
+                        # Split on `;` for the charset, which is not part of the type.
+                        kind = declared.split(";")[0].strip().lower()
+                        if kind not in accept:
+                            raise WrongContentType(f"{target} served {kind or 'no type'}")
+
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
                         body.extend(chunk)

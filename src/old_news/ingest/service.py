@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, robots
 from old_news.config import IngestSettings, Settings
-from old_news.db import Feed, Host, Subscription
+from old_news.db import Feed, Host
 from old_news.fetch import Fetcher, FetchError, Response
 from old_news.ingest import parser, schedule, store
 from old_news.observability import count, span
@@ -49,10 +49,9 @@ class _FetchState:
 async def due_polls(session: AsyncSession, limit: int) -> list[DuePoll]:
     rows = await session.execute(
         select(Feed.id, Host.name)
-        .join(Subscription, Subscription.feed_id == Feed.id)
         .join(Host, Host.id == Feed.host_id)
         .where(
-            Subscription.active.is_(True),
+            Feed.subscribed,
             Feed.suspended.is_(False),
             Feed.next_poll_at <= datetime.datetime.now(datetime.UTC),
         )
@@ -69,8 +68,7 @@ async def subscribed_hosts(session: AsyncSession) -> list[str]:
         select(Host.name)
         .distinct()
         .join(Feed, Feed.host_id == Host.id)
-        .join(Subscription, Subscription.feed_id == Feed.id)
-        .where(Subscription.active.is_(True), Feed.suspended.is_(False))
+        .where(Feed.subscribed, Feed.suspended.is_(False))
     )
     return sorted(name for (name,) in rows.all())
 
@@ -90,7 +88,7 @@ async def _store_poll(
     feed_id: uuid.UUID,
     response: Response,
     parsed: parser.ParsedFeed,
-    settings: IngestSettings,
+    settings: Settings,
     now: datetime.datetime,
 ) -> store.Applied | None:
     """The write half of a poll, in one transaction: it lands whole or not at all."""
@@ -98,13 +96,13 @@ async def _store_poll(
     if feed is None:
         return None
 
-    document = await store.record_document(session, feed, response, parsed)
+    document = await store.record_document(session, feed, response, parsed, settings.storage)
     applied = store.Applied()
     if document is not None:
         applied = await store.apply_items(session, feed, document, parsed.items, observed_at=now)
 
     _refresh_feed(feed, parsed, response)
-    _reschedule(feed, settings, now, new_items=applied.new_items)
+    _reschedule(feed, settings.ingest, now, new_items=applied.new_items)
     return applied
 
 
@@ -228,7 +226,7 @@ async def poll_feed(feed_id: uuid.UUID, fetcher: Fetcher, settings: Settings) ->
         try:
             parsed = parser.parse(response.body, url=response.url)
             current.set_attribute("feed.items", len(parsed.items))
-            applied = await _store_poll(feed_id, response, parsed, settings.ingest, now)
+            applied = await _store_poll(feed_id, response, parsed, settings, now)
         except Exception as exc:
             # Without this the schedule never moves, so the feed stays due and the
             # scheduler re-defers it every minute — a hot loop against a publisher
