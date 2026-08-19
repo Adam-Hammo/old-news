@@ -80,3 +80,18 @@ def test_a_url_already_on_www_is_left_alone():
 
 def test_something_that_is_not_a_url_is_left_alone():
     assert with_www("newsletter:0:someone@example.com") == "newsletter:0:someone@example.com"
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://EXAMPLE.com/x", "https://www.EXAMPLE.com/x"),
+        ("https://münchen.de/artikel", "https://www.münchen.de/artikel"),
+        ("https://example.com:8443/a", "https://www.example.com:8443/a"),
+        ("https://user:pass@example.com/x", "https://user:pass@www.example.com/x"),
+    ],
+)
+def test_the_host_is_replaced_in_the_netloc_and_not_in_the_string(url: str, expected: str):
+    """The parsed host is lowercased and punycoded. Replacing it as a substring finds
+    nothing in either of the first two and silently returns the URL unchanged."""
+    assert with_www(url) == expected

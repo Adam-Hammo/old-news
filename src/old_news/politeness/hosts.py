@@ -1,5 +1,7 @@
 """Which requests count as going to the same place."""
 
+from urllib.parse import urlsplit, urlunsplit
+
 from old_news.fetch import http_url
 
 LOCK_PREFIX = "host"
@@ -27,8 +29,17 @@ def with_www(url: str) -> str:
 
     `host_of` strips the prefix because it is not a different publisher. Which of the
     two names carries a DNS record is a separate question, and not always the apex.
+
+    Rebuilt through `urlsplit` rather than by replacing the host in the string: the
+    parsed host is lowercased and punycoded, so a substring replace finds nothing in
+    `EXAMPLE.com` or any IDN host and silently hands back the URL it was given.
     """
-    parsed = http_url(url)
-    if parsed is None or not parsed.host or parsed.host.startswith("www."):
+    if http_url(url) is None:
         return url
-    return url.replace(parsed.host, f"www.{parsed.host}", 1)
+    parsed = urlsplit(url)
+    if not parsed.hostname or parsed.hostname.startswith("www."):
+        return url
+    # Splitting on the last `@` keeps any userinfo where it was.
+    at = parsed.netloc.rfind("@")
+    userinfo, host_port = parsed.netloc[: at + 1], parsed.netloc[at + 1 :]
+    return urlunsplit(parsed._replace(netloc=f"{userinfo}www.{host_port}"))
