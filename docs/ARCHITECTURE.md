@@ -280,6 +280,34 @@ interval is let through, purely to find out whether the refusal still stands.
 Skipping writes no `page_captures` row. Deciding not to fetch is not an attempt, it matches what the
 two robots checks beside it already do, and a row would poison the window the breaker reads.
 
+### Feed text and page text are the same kind of object
+
+Both are a reading of stored bytes the network handed over, so both are rows in `extractions` with a
+`source`, stamped with the extractor that produced them, derived and disposable. They were not
+always the same shape: feed text sat inline on `item_versions.content` with no record of what parsed
+it, while page text was a versioned row that said exactly what made it. That asymmetry is the reason
+"which one do I read, index, embed" had no clean answer — the two were not comparable.
+
+`item_versions.content` is untouched and still authoritative: it is what the feed document said. A
+feed-sourced extraction is derived _from_ it, the same way a page-sourced one is derived from a
+capture, and can be thrown away and rebuilt on the same terms.
+
+`page_capture_id` is null for a feed reading, and a check constraint ties it to the source so
+neither shape can be stored wrong. A feed reading names no artefact because it does not need to: its
+document is behind `item_version_id`, and repeating that would be a second copy of
+`item_versions.document_id` to drift against.
+
+Deliberately not ORM inheritance, though the two are obvious subclasses. The payload is identical —
+body, title, quality, links — and one nullable foreign key is not a subtype. `Dimension` and
+`RuleSource` already established the house pattern for a closed set of kinds, and more to the point,
+the whole argument for this change is that the two are _the same kind of thing_. Two classes would
+say the opposite.
+
+Feed readings claim no metadata. Run against real feeds, `extract_metadata` on a fragment returns
+the first heading inside the body — "Support Bellingcat", "Today's links" — because there is no
+`<head>` to read a claim from. The feed states its own title and author, and those are already on
+the version.
+
 ### A refusal is a fact about how we asked
 
 `page_captures.capture_policy` records the way a page was asked for, and the capture sweep counts

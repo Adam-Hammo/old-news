@@ -29,31 +29,65 @@ class ImageRole(enum.StrEnum):
     BODY = "body"
 
 
-class Extraction(UUIDPrimaryKey, Base):
-    """What one extractor made of one captured page.
+class ExtractionSource(enum.StrEnum):
+    """Which stored artefact was read.
 
-    Derived and disposable, versioned on two axes — which item version it came from and
-    which extractor made it. Re-extracting with the same extractor is idempotent; a new
-    extractor version inserts alongside, and old output can be binned freely because the
-    page it came from is still there.
+    The feed document and the article page are both bytes the network handed over, and
+    what was read out of either is derived, disposable and rebuildable. They were not
+    always the same shape — feed text sat inline on `item_versions` with no record of
+    what parsed it — and that asymmetry is why "which one do I read, index, embed" had no
+    clean answer. Now it is one question about rows that differ by a column.
+    """
+
+    FEED = "feed"
+    PAGE = "page"
+
+
+class Extraction(UUIDPrimaryKey, Base):
+    """What one extractor made of one artefact.
+
+    Derived and disposable, versioned on three axes — which item version it came from,
+    which artefact it read, and which extractor made it. Re-extracting the same way
+    writes the same row; a new extractor version lands alongside, and old output can be
+    binned freely because what it was made from is still there.
     """
 
     __tablename__ = "extractions"
     __table_args__ = (
         # Also the index for looking one up by version: `item_version_id` leads it, so a
         # separate single-column index on that would be a second copy of the same b-tree.
-        UniqueConstraint("item_version_id", "extractor", "extractor_version"),
+        # Named explicitly: the convention's own template runs to 65 characters here and
+        # Postgres truncates at 63, so the name alembic renders and the name the database
+        # keeps would not match.
+        UniqueConstraint(
+            "item_version_id",
+            "source",
+            "extractor",
+            "extractor_version",
+            name="uq_extractions_version_source_extractor",
+        ),
         # What the extraction sweep asks: which versions has this extractor not done. The
         # unique constraint cannot serve it, because the extractor is not its leading
         # column.
         Index("ix_extractions_extractor", "extractor", "extractor_version"),
+        CheckConstraint(one_of("source", ExtractionSource), name="known_source"),
+        # A page extraction names the capture it read. A feed one has nothing to name:
+        # its artefact is the document behind `item_version_id`, and repeating that here
+        # would be a second copy of `item_versions.document_id` to drift against.
+        CheckConstraint(
+            "(source = 'page') = (page_capture_id IS NOT NULL)", name="capture_matches_source"
+        ),
     )
 
     item_version_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("item_versions.id", ondelete="CASCADE")
     )
-    page_capture_id: Mapped[uuid.UUID] = mapped_column(
-        PgUUID(as_uuid=True), ForeignKey("page_captures.id", ondelete="CASCADE"), index=True
+    source: Mapped[str] = mapped_column(String(8))
+    page_capture_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("page_captures.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
 
     extractor: Mapped[str] = mapped_column(String(32))

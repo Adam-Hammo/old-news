@@ -132,3 +132,36 @@ def parse(html: str, url: str) -> Article:
         links=tuple(Link(url=target, anchor=anchor) for anchor, target in LINK.findall(body)),
         images=tuple(images),
     )
+
+
+def parse_fragment(html: str, url: str) -> Article:
+    """Pull a readable article out of what a feed already gave us.
+
+    Same extractor, different input: `content:encoded` is article HTML without the page
+    around it. Deliberately no metadata. Run against real feeds, `extract_metadata` on a
+    fragment returns the first heading inside the body — "Support Bellingcat", "Today's
+    links" — because there is no `<head>` and nothing to read a claim from. The feed
+    states its own title and author properly, and those are already on the version.
+
+    No lead image either. A fragment has no `og:image` to nominate one, and guessing that
+    the first body image is the lead is exactly the kind of quiet wrong answer that makes
+    an extraction untrustworthy.
+    """
+    body = trafilatura.extract(
+        html,
+        url=url,
+        output_format="markdown",
+        include_links=True,
+        include_images=True,
+        include_comments=False,
+    )
+    if not body:
+        return Article()
+
+    return Article(
+        body=body,
+        links=tuple(Link(url=target, anchor=anchor) for anchor, target in LINK.findall(body)),
+        images=tuple(
+            Image(url=target, role=ImageRole.BODY, alt=alt) for alt, target in IMAGE.findall(body)
+        ),
+    )

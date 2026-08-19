@@ -2,7 +2,12 @@
 
 from old_news.db.models.dictionary import ZstdDictionary
 from old_news.db.models.document import Document
-from old_news.db.models.extraction import Extraction, ExtractionImage, ImageRole
+from old_news.db.models.extraction import (
+    Extraction,
+    ExtractionImage,
+    ExtractionSource,
+    ImageRole,
+)
 from old_news.db.models.feed import Feed
 from old_news.db.models.host import Host
 from old_news.db.models.image import ImageCapture
@@ -18,6 +23,7 @@ __all__ = [
     "Document",
     "Extraction",
     "ExtractionImage",
+    "ExtractionSource",
     "Feed",
     "FeedPoll",
     "Host",

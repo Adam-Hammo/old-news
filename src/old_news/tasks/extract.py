@@ -85,6 +85,32 @@ async def schedule_extractions(timestamp: int) -> None:
         count("extract.extractions.deferred", deferred)
 
 
+@task(app, name="extract_feed", queue=QUEUE)
+async def extract_feed(version_id: str) -> None:
+    await service.extract_feed(uuid.UUID(version_id), get_settings().extract)
+
+
+@app.periodic(cron="*/2 * * * *", periodic_id="schedule_feed_extractions")
+@app.task(name="schedule_feed_extractions", queue=QUEUE, priority=SCHEDULER_PRIORITY)
+async def schedule_feed_extractions(timestamp: int) -> None:
+    """Newest first, unlike the page sweep. The feed text arrives with the poll and costs
+    no request, so there is nothing to be fair about — the useful order is the one that
+    makes what just landed readable soonest."""
+    settings = get_settings()
+    due = await extract.due_feed_extractions(settings.extract.extract_batch_size)
+
+    deferred = 0
+    for version_id in due:
+        deferred += await defer_unless_queued(
+            extract_feed.configure(queueing_lock=f"extract-feed:{version_id}"),
+            version_id=str(version_id),
+        )
+
+    if due:
+        logger.info("deferred %d of %d due feed extractions", deferred, len(due))
+        count("extract.feed_extractions.deferred", deferred)
+
+
 @task(app, name="capture_image", queue=QUEUE)
 async def capture_image(slot_id: str) -> None:
     await images.capture_image(uuid.UUID(slot_id), fetch.client(), get_settings())

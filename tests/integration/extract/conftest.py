@@ -13,6 +13,7 @@ from old_news.db import (
     Document,
     Extraction,
     ExtractionImage,
+    ExtractionSource,
     Item,
     ItemVersion,
     PageCapture,
@@ -122,6 +123,7 @@ async def _extraction(
 
     extraction = Extraction(
         item_version_id=version_id,
+        source=ExtractionSource.PAGE,
         page_capture_id=capture.id,
         extractor="test",
         extractor_version="0",
