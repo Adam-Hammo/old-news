@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from old_news import db, training
 from old_news.config import ExtractSettings
 from old_news.db import Host, Item, ItemVersion, PageCapture, RobotsPolicy
+from old_news.extract import capture
 from old_news.politeness import backoff, host_of
 
 
@@ -46,18 +47,17 @@ async def due_captures(
     # Every row left for an uncaptured version is a failed attempt, so counting them
     # counts consecutive failures without needing to say so.
     #
-    # Except the ones made before we worked out how to reach the host at all. Those are
-    # a fact about our own mistake, so `www_learned_at` is the line they stop counting
-    # from — otherwise a publisher whose apex has no DNS record is given up on for good
-    # a few minutes before we learn the name that works, and stays that way.
+    # Only the ones made the way we ask now. A refusal is a fact about how we asked as
+    # much as about the publisher, so improving that — the `www.` retry is the first
+    # instance — forgives what came before rather than leaving articles written off by a
+    # limit they hit while we were getting it wrong.
     tried = (
         select(
             PageCapture.item_version_id.label("version_id"),
             func.count().label("failures"),
             func.max(PageCapture.fetched_at).label("last_attempt"),
         )
-        .join(Host, Host.id == PageCapture.host_id)
-        .where(Host.www_learned_at.is_(None) | (PageCapture.fetched_at > Host.www_learned_at))
+        .where(PageCapture.capture_policy == capture.CAPTURE_POLICY)
         .group_by(PageCapture.item_version_id)
         .subquery()
     )

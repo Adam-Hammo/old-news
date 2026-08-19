@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
 from old_news.db import Host, PageCapture, RobotsPolicy, dictionaries
-from old_news.extract.capture import _learn_www, capture_page
+from old_news.extract.capture import CAPTURE_POLICY, capture_page
 from old_news.fetch import Fetcher
 from old_news.politeness import ensure
 
@@ -371,23 +371,14 @@ async def test_a_run_of_404s_does_not_close_a_host(
     assert stored is not None and stored.status == 200
 
 
-async def test_the_learned_www_name_is_stamped_once_and_never_moved(clean: None):
-    """The timestamp is what the sweep counts refusals from. Moving it would forgive the
-    same failures again on every learn, and the retry loop would come straight back."""
-    async with db.session() as session:
-        host_id = await ensure(session, "apex.example.com")
+async def test_a_capture_records_the_policy_it_was_made_under(
+    clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
+):
+    """If `_store` ever stopped stamping this, every row would fall back to the default
+    and be forgiven by the sweep forever — a retry loop that looks like a fixed one."""
+    version_id = await _version(feed_id, article, f"{site}/article")
 
-    await _learn_www(host_id)
-    async with db.session() as session:
-        first = (
-            await session.execute(select(Host.www_learned_at).where(Host.id == host_id))
-        ).scalar_one()
+    stored = await capture_page(version_id, fetcher, settings)
 
-    await _learn_www(host_id)
-    async with db.session() as session:
-        second = (
-            await session.execute(select(Host.www_learned_at).where(Host.id == host_id))
-        ).scalar_one()
-
-    assert first is not None
-    assert second == first
+    assert stored is not None
+    assert stored.capture_policy == CAPTURE_POLICY

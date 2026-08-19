@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Text
+from sqlalchemy import Boolean, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
@@ -23,11 +23,6 @@ class Host(UUIDPrimaryKey, Base):
     first_seen_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
 
     # Some publishers serve the feed from `www` and link their articles at the apex,
-    # which then resolves nowhere. Set from the one capture that only worked with the
-    # prefix put back; null means no reason to think otherwise.
-    #
-    # A timestamp rather than a flag because it is also the line before which refusals
-    # stop counting: an attempt made while we were asking the wrong name is a fact about
-    # our own mistake, not about the publisher. Written once and never moved — moving it
-    # would zero the count again and retry forever.
-    www_learned_at: Mapped[datetime.datetime | None] = mapped_column(Timestamptz, nullable=True)
+    # which then resolves nowhere. Observed from the one capture that only worked with the
+    # prefix put back, so it costs a single wasted request per host, ever.
+    requires_www: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))

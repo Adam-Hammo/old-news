@@ -280,16 +280,21 @@ interval is let through, purely to find out whether the refusal still stands.
 Skipping writes no `page_captures` row. Deciding not to fetch is not an attempt, it matches what the
 two robots checks beside it already do, and a row would poison the window the breaker reads.
 
-### Our own mistakes do not count against a publisher
+### A refusal is a fact about how we asked
 
-`hosts.www_learned_at` is set by the one capture that only worked with `www.` put back, and it is
-also the line before which a refusal stops counting. Without that second job the fix could never
-reach the articles it was written for: a publisher whose apex has no DNS record burns through the
-retry limit in minutes, and the retry that would have worked only runs on a version the sweep still
-selects. Fifteen articles in this corpus were in exactly that state.
+`page_captures.capture_policy` records the way a page was asked for, and the capture sweep counts
+only the attempts made the way it asks now. So improving the asking — the `www.` retry, the agent we
+send, how redirects are handled — forgives what came before it, without deleting a row.
 
-Written once and never moved. Moving it would forgive the same failures on every learn, which is the
-retry loop again with extra steps.
+That is `extractions.extractor_version` again, and deliberately so: bumping the extractor already
+makes the whole archive due for re-extraction, and "the code changed, so old conclusions no longer
+bind" is one idea, not two. The first version of this was a timestamp on `hosts` doing double duty,
+which was a second mechanism for the same thing on a table that had no business holding it.
+
+It matters because without it the fix cannot reach the articles it was written for. A publisher
+whose apex has no DNS record burns through the retry limit in minutes, and the retry that would have
+worked only ever runs on a version the sweep still selects. Fifteen articles here were in exactly
+that state. `hosts.requires_www` stays, doing only its own job: which name to ask for next time.
 
 ### A queueing lock collision is not an error
 

@@ -4,7 +4,6 @@ Capture only. What the page means is derived, disposable and lands in its own ta
 wrong extractor costs a rerun rather than the article.
 """
 
-import datetime
 import hashlib
 import logging
 import uuid
@@ -27,6 +26,13 @@ logger = logging.getLogger(__name__)
 # A transport failure is not an HTTP status, and 0 is not one either.
 NO_STATUS = 0
 
+# Bumped when anything changes *how* a page is asked for — the `www.` retry, the agent we
+# send, how redirects are handled. Refusals are counted per policy, so a bump forgives
+# every attempt made before the change without deleting a row, which is what
+# `extractor_version` already does one module over. A publisher that refused the old way
+# of asking has not refused the new one.
+CAPTURE_POLICY = "2"
+
 
 @db.transactional
 async def _target(session: AsyncSession, version_id: uuid.UUID) -> str | None:
@@ -48,26 +54,18 @@ async def _host_state(session: AsyncSession, url: str) -> tuple[uuid.UUID, bool]
     if not name:
         return None
     host_id = await ensure(session, name)
-    learned = (
-        await session.execute(select(Host.www_learned_at).where(Host.id == host_id))
+    requires_www = (
+        await session.execute(select(Host.requires_www).where(Host.id == host_id))
     ).scalar_one()
-    return host_id, learned is not None
+    return host_id, bool(requires_www)
 
 
 @db.transactional
 async def _learn_www(session: AsyncSession, host_id: uuid.UUID) -> None:
     """Remember that only the `www.` name answers, so the next capture goes straight
-    there. Observed, and reversed by nothing: if they add the record we simply keep
-    using a name that works.
-
-    Only ever written once. The timestamp is what the capture sweep counts refusals
-    from, so moving it would forgive the same failures again and retry without end.
-    """
-    await session.execute(
-        update(Host)
-        .where(Host.id == host_id, Host.www_learned_at.is_(None))
-        .values(www_learned_at=datetime.datetime.now(datetime.UTC))
-    )
+    there rather than paying for the failure that taught us. Observed, and reversed by
+    nothing: if they add the apex record we simply keep using a name that works."""
+    await session.execute(update(Host).where(Host.id == host_id).values(requires_www=True))
 
 
 async def _fetch(
@@ -117,6 +115,7 @@ async def _store(
         body_hash=body_hash,
         headers=_headers(response),
         error=error[:500],
+        capture_policy=CAPTURE_POLICY,
     )
 
     if body:
