@@ -167,18 +167,44 @@ ALERTS = (
         notify_when="has_matches",
     ),
     Alert(
-        slug="feed-suspended",
-        name="feed-suspended",
-        description="A feed failed enough times to be given up on. Silent data loss otherwise.",
+        slug="feed-given-up",
+        name="feed-given-up",
+        description="A feed failed enough times to stop being polled. Silent data loss otherwise.",
         query="""
             select message, trace_id
             from records
-            where level >= 'warn' and message like 'suspending feed%'
+            where level >= 'warn' and message like 'giving up on feed%'
             order by start_timestamp desc
         """,
         time_window="24h",
         frequency="1h",
         notify_when="matches_changed",
+    ),
+    Alert(
+        slug="captures-failing",
+        name="captures-failing",
+        description="Article capture is running and never succeeding. Nothing else notices: "
+        "a 403 is a successful job, so the queue stays clean and every feed reads healthy.",
+        # Not "no captures at all" — a drained corpus is legitimately quiet, and quiet
+        # means no spans either. The failure worth catching is work being done and none
+        # of it landing, which is what ran for 24 hours behind a saturated batch.
+        #
+        # `like '2%'` rather than a cast: a span that decided not to fetch — robots,
+        # a closed host — carries no status at all, and a cast on null errors.
+        query="""
+            select
+              count(*) as attempts,
+              sum(case when attributes->>'http.response.status_code' like '2%' then 1 else 0 end)
+                as stored
+            from records
+            where span_name = 'capture page'
+            having count(*) > 0
+               and sum(case when attributes->>'http.response.status_code' like '2%' then 1 else 0 end)
+                   = 0
+        """,
+        time_window="1h",
+        frequency="15m",
+        notify_when="has_matches",
     ),
 )
 
