@@ -227,6 +227,40 @@ that set and read it rather than sitting empty.
 **Body image bytes.** Recorded as URLs and slots, fetched when asked. See above for what that costs
 and how to measure whether it was the wrong call.
 
+**Minifying a page before storing it.** Measured, because the answer was not the obvious one: script
+and style are 60% of a Guardian page's raw bytes and they are high-entropy, so neither zstd nor a
+per-host dictionary touches them. Stripping them takes a stored page from 48.0 KB to 22.3 KB, and
+from 40.5 KB to 15.6 KB alongside a dictionary — a 54% saving that compression genuinely does not
+already capture.
+
+Rejected anyway, on what the same measurement showed it costs. Stripping scripts lost the byline on
+two of nine pages, because trafilatura reads the author out of `<script type="application/ld+json">`
+— about 2.4 KB per page of schema.org metadata, headline and author and date, which is the richest
+structured data on the page and exactly what a better extractor would reach for. Keeping the page is
+what makes extraction disposable; minifying at capture freezes today's judgement about which bytes
+were worthless into an archive meant to outlive it. Same argument that rejected storing diffs.
+
+Scale settles the rest of it: pages are about 5 GB of a 25 GB year, so this optimises the
+third-largest line by half while images, at 14 GB, are the one already held back on purpose. If page
+storage ever does bind, the lever below gets 100% rather than 54% and is a decision taken once
+rather than a transform applied forever.
+
 **Raw pages are the one line that can be expired**, and nothing else is. Extractions survive; what
 would be lost is re-extracting old articles with a better extractor. Last resort, and the reason the
 page and its extraction are separate rows in the first place.
+
+## Worth knowing
+
+**There is clean structured metadata going unused.** Every page carries ~2.4 KB of schema.org
+JSON-LD — headline, author, date, sometimes the article body — and trafilatura only partly reads it.
+That is a better lead for the extractor's next revision than any amount of storage tuning, and it is
+already in the archive whenever someone wants it.
+
+**lxml is pinned to a prerelease and it has a rough edge.** 7.0.0a3 is the first release declaring
+free-thread safety, without which importing it re-enables the GIL for the whole worker. It also
+regressed: parsing many documents in one process trips an internal `RWLock.unlock_write` assertion,
+reproducibly, twelve times over eighteen parses in a synthetic loop. Attributed rather than guessed
+at — it happens with the GIL forced on as well as off, and 6.1.1 does not do it, so it is lxml and
+not free-threading. The assertion is swallowed and output stayed byte-identical, and neither the
+suite nor the live worker has produced one, because extraction parses one page per job rather than
+in a tight loop. Worth revisiting when 7.0 goes final.

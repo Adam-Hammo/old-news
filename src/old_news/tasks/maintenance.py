@@ -57,7 +57,11 @@ async def prune_jobs(context: JobContext, timestamp: int) -> None:
     )
 
 
-@app.periodic(cron="0 3 * * *", periodic_id="train_dictionaries")
+# Hourly rather than nightly: a scope with no dictionary yet is storing bodies at twice
+# the size it needs to, and nothing already written is rewritten to fix that later. The
+# sweep returns nothing once every scope has a fresh one, so asking often is close to
+# free.
+@app.periodic(cron="17 * * * *", periodic_id="train_dictionaries")
 @app.task(name="train_dictionaries")
 async def train_dictionaries(timestamp: int) -> None:
     """Teach compression what a feed's documents and a publisher's pages look like.

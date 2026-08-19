@@ -184,11 +184,16 @@ nothing fetched stays small as the archive fills.
 `db/bytes.py` is the only module that imports zstd. Everything stored as bytes — feed documents,
 article pages — goes through it at one level, which is config rather than a constant.
 
-Ten consecutive documents from one feed are near-identical, so a dictionary trained on them roughly
-halves what each costs: 88 KB at the old default, 81 KB at level 12, 44 KB with a per-feed
-dictionary. Article pages from one host gain less, because two pages share a template where two
-documents share almost everything, so the two scopes are separate and `zstd_dictionaries` carries
-exactly one of `feed_id` or `host_id`.
+Bodies that share a template compress about twice as well against a dictionary trained on their own
+kind: feed documents 88 KB to 44 KB, article pages 49 KB to 24 KB. Feed documents and article pages
+are separate scopes — two documents from one feed share almost everything, two pages from one host
+share a template — so `zstd_dictionaries` carries exactly one of `feed_id` or `host_id`.
+
+What decides whether a dictionary is any good is how many samples it saw, not how big it is. Eight
+buys 16%, twenty-eight buys 50%, and against held-out pages a 110 KB dictionary beats 512 KB, 1 MB
+and 4 MB on every host tried. So the training sweep runs hourly rather than nightly: a scope without
+one is storing at twice the size it needs to, and nothing already written is rewritten to fix that
+later.
 
 Three things make this safe to have done:
 

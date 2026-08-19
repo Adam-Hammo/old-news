@@ -35,6 +35,8 @@ def test_the_floor_beats_a_configured_minimum_below_it():
 
 
 def test_training_records_what_it_learned_from():
+    """One sample short of what it was given: the first is held out to judge the candidate
+    sizes against, so it is not part of what the dictionary learned."""
     settings = StorageSettings(dictionary_min_samples=10)
     samples = _documents(10)
 
@@ -42,8 +44,8 @@ def test_training_records_what_it_learned_from():
 
     assert trained is not None
     assert trained.dict_id != codec.NO_DICTIONARY
-    assert trained.sample_count == 10
-    assert trained.sample_bytes == sum(len(sample) for sample in samples)
+    assert trained.sample_count == len(samples) - 1
+    assert trained.sample_bytes == sum(len(sample) for sample in samples[1:])
 
 
 def test_a_dictionary_beats_plain_zstd_on_what_it_was_trained_on():

@@ -195,24 +195,46 @@ async def host_samples(session: AsyncSession, host_id: uuid.UUID, limit: int) ->
 
 
 def train(samples: list[bytes], settings: StorageSettings) -> Trained | None:
-    """Build a dictionary from expanded bodies. None when there is too little to learn."""
+    """Build the best dictionary these bodies support. None when none of them helps.
+
+    Every candidate size is judged on a sample held out of its own training set, because the
+    best size is a property of the scope — a Guardian page wants four times what zstd's
+    default offers — and because the trainer degrades badly when asked for more than it can
+    use, which a fixed number cannot detect and a measurement can.
+
+    Pure and deliberately outside a transaction: tens of megabytes and seconds of CPU.
+    """
     if len(samples) < max(settings.dictionary_min_samples, MIN_TRAINABLE_SAMPLES):
         return None
 
-    try:
-        body = zstd.train_dict(samples, settings.dictionary_max_bytes)
-    except zstd.ZstdError:
-        # A publisher whose bodies the trainer cannot make sense of must not fail the
-        # nightly sweep for every other feed. Plain zstd remains correct.
-        logger.warning("could not train a dictionary from %d samples", len(samples))
-        return None
+    held, training = samples[0], samples[1:]
+    level = settings.compression_level
+    best: Trained | None = None
+    # Anything that cannot beat plain zstd is not worth the row or the coupling.
+    smallest = len(codec.compress(held, level=level))
 
-    return Trained(
-        body=body.dict_content,
-        dict_id=body.dict_id,
-        sample_count=len(samples),
-        sample_bytes=sum(len(sample) for sample in samples),
-    )
+    for size in settings.dictionary_size_ladder:
+        try:
+            candidate = zstd.train_dict(training, size)
+        except zstd.ZstdError:
+            # Bodies the trainer cannot make sense of must not fail the sweep for every
+            # other scope. Plain zstd remains correct.
+            continue
+
+        stored = len(codec.compress(held, level=level, dictionary=candidate))
+        if stored >= smallest:
+            continue
+        smallest = stored
+        best = Trained(
+            body=candidate.dict_content,
+            dict_id=candidate.dict_id,
+            sample_count=len(training),
+            sample_bytes=sum(len(sample) for sample in training),
+        )
+
+    if best is None:
+        logger.info("no dictionary size beat plain zstd for %d samples", len(samples))
+    return best
 
 
 async def _store(

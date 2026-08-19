@@ -23,8 +23,6 @@ dependencies = [
   # vector. Confined to subscriptions/opml.py.
   "defusedxml>=0.7.1",
   "trafilatura>=2.2",
-  # trafilatura's parser. Pinned ahead of its own floor: earlier lxml does not declare
-  # free-thread safety, so importing it re-enables the GIL in the worker process.
   "lxml>=7.0.0a3",
   "logfire[httpx,sqlalchemy,system-metrics]>=4.40",
   "uvicorn[standard]>=0.52.1",
