@@ -4,18 +4,24 @@ import pytest
 from sqlalchemy import text
 
 from old_news import db
-from old_news.db import Feed, Subscription
+from old_news.db import Feed, FeedPoll, PollOutcome, Subscription
 from old_news.politeness import resolve
 from old_news.tasks.ingest import schedule_polls
 from old_news.tasks.maintenance import heartbeat
 
 
-async def _due_feed(url: str, *, active: bool = True, suspended: bool = False) -> Feed:
+async def _due_feed(url: str, *, active: bool = True, gone: bool = False) -> Feed:
     async with db.session() as session:
-        feed = Feed(url=url, suspended=suspended, host_id=await resolve(session, url))
+        feed = Feed(url=url, host_id=await resolve(session, url))
         session.add(feed)
         await session.flush()
         session.add(Subscription(feed_id=feed.id, active=active))
+        if gone:
+            # A 410 is the publisher withdrawing the feed, and the only answer that
+            # stops the polling on its own.
+            session.add(
+                FeedPoll(feed_id=feed.id, outcome=PollOutcome.FAILED, status=410, error="gone")
+            )
     return feed
 
 
@@ -53,12 +59,12 @@ async def test_a_due_feed_is_deferred_once(no_jobs: None, queue_app, settings, m
     assert queued[0][3] is None
 
 
-async def test_unsubscribed_and_suspended_feeds_are_skipped(
+async def test_unsubscribed_and_withdrawn_feeds_are_skipped(
     no_jobs: None, queue_app, settings, monkeypatch
 ):
     monkeypatch.setattr("old_news.tasks.ingest.get_settings", lambda: settings)
     await _due_feed("https://dropped.example.com/feed.xml", active=False)
-    await _due_feed("https://broken.example.com/feed.xml", suspended=True)
+    await _due_feed("https://broken.example.com/feed.xml", gone=True)
 
     async with queue_app.open_async():
         await schedule_polls(timestamp=0)

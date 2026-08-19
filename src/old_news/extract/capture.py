@@ -9,16 +9,17 @@ import logging
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, robots
 from old_news.config import Settings
-from old_news.db import ItemVersion, PageCapture, dictionaries
+from old_news.db import Host, ItemVersion, PageCapture, dictionaries
 from old_news.db import bytes as codec
-from old_news.fetch import Fetcher, FetchError, Response
+from old_news.extract import breaker
+from old_news.fetch import Fetcher, FetchError, Response, Unresolvable
 from old_news.observability import count, span
-from old_news.politeness import ensure, host_of
+from old_news.politeness import ensure, host_of, with_www
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,49 @@ async def _target(session: AsyncSession, version_id: uuid.UUID) -> str | None:
     if row is None:
         return None
     return row.canonical_url or row.url
+
+
+@db.transactional
+async def _host_state(session: AsyncSession, url: str) -> tuple[uuid.UUID, bool] | None:
+    """The host row for a URL — its id, and whether its apex is known not to resolve."""
+    name = host_of(url)
+    if not name:
+        return None
+    host_id = await ensure(session, name)
+    requires_www = (
+        await session.execute(select(Host.requires_www).where(Host.id == host_id))
+    ).scalar_one()
+    return host_id, bool(requires_www)
+
+
+@db.transactional
+async def _learn_www(session: AsyncSession, host_id: uuid.UUID) -> None:
+    """Remember that only the `www.` name answers, so the next capture goes straight
+    there. Observed, and reversed by nothing: if they add the record we simply keep
+    using a name that works."""
+    await session.execute(update(Host).where(Host.id == host_id).values(requires_www=True))
+
+
+async def _fetch(
+    url: str, fetcher: Fetcher, settings: Settings, *, host_id: uuid.UUID
+) -> tuple[Response, str]:
+    """The page, and the URL it actually came from.
+
+    A publisher whose apex has no DNS record is asked again on the `www.` name before
+    being written off — that is one feed in this corpus, not a hypothetical.
+    """
+    accept = settings.extract.capture_content_types
+    try:
+        return await fetcher.get(url, accept=accept), url
+    except Unresolvable:
+        fallback = with_www(url)
+        if fallback == url:
+            raise
+        response = await fetcher.get(fallback, accept=accept)
+
+    await _learn_www(host_id)
+    count("extract.captures.www_fallback", host=host_of(fallback))
+    return response, fallback
 
 
 @db.transactional
@@ -114,38 +158,53 @@ async def capture_page(
     if url is None:
         return None
 
+    state = await _host_state(url)
+    if state is None:
+        return None
+    host_id, requires_www = state
+    # Learned last time, so the attempt that taught us is not repeated per article.
+    target = with_www(url) if requires_www else url
+
     attributes: dict[str, Any] = {"version.id": str(version_id)}
     with span("capture page", **attributes) as current:
         # Checked here as well as in the sweep: a job queued before a rule existed, or
         # a re-capture asked for by hand, must not slip past it.
-        if not await robots.rules_known(url):
+        if not await robots.rules_known(target):
             current.set_attribute("page.rules_unknown", True)
-            count("extract.captures.rules_unknown", host=host_of(url))
+            count("extract.captures.rules_unknown", host=host_of(target))
             return None
 
-        if not await robots.allows(url, settings):
+        if not await robots.allows(target, settings):
             current.set_attribute("page.disallowed", True)
-            count("extract.captures.disallowed", host=host_of(url))
+            count("extract.captures.disallowed", host=host_of(target))
+            return None
+
+        # Deciding not to fetch is not an attempt, so nothing is stored — the same shape
+        # as the two checks above. A stored row here would also poison the window the
+        # breaker reads, which is the thing deciding whether to ask again at all.
+        if await breaker.refusing(host_id, settings.extract):
+            current.set_attribute("page.host_refusing", True)
+            count("extract.captures.host_refusing", host=host_of(target))
             return None
 
         try:
-            response = await fetcher.get(url, accept=settings.extract.capture_content_types)
+            response, target = await _fetch(target, fetcher, settings, host_id=host_id)
         except FetchError as exc:
             current.record_exception(exc)
-            count("extract.captures.failed", host=host_of(url))
-            return await _store(version_id, url, settings, error=str(exc))
+            count("extract.captures.failed", host=host_of(target))
+            return await _store(version_id, target, settings, error=str(exc))
 
         current.set_attribute("http.response.status_code", response.status)
 
         # Redirects are followed inside the fetch, so only the first host was checked. A
         # hop to somewhere else has said nothing about us, and its bytes are not archived
         # on the strength of a permission another publisher gave.
-        if not await robots.allows_after_redirect(url, response.url, settings):
+        if not await robots.allows_after_redirect(target, response.url, settings):
             current.set_attribute("page.redirect_disallowed", True)
             count("extract.captures.redirect_disallowed", host=host_of(response.url))
             return await _store(
-                version_id, url, settings, error=f"redirected to {host_of(response.url)}"
+                version_id, target, settings, error=f"redirected to {host_of(response.url)}"
             )
 
         count("extract.captures.stored" if response.ok else "extract.captures.failed")
-        return await _store(version_id, url, settings, response=response)
+        return await _store(version_id, target, settings, response=response)

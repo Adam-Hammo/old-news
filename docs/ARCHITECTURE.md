@@ -177,6 +177,26 @@ a constraint cannot serve gets its own: `(extractor, extractor_version)` answers
 this extractor not done", and a partial index on `extraction_images.role` limited to slots with
 nothing fetched stays small as the archive fills.
 
+**A counter beside the thing it counts is a second copy.** `feeds` used to carry
+`consecutive_failures`, `last_error`, `suspended` and `suspended_reason`, all maintained by hand on
+every poll. They are gone. `feed_polls` records one row per poll and `Feed.consecutive_failures` is
+a correlated subquery over it, so the number cannot disagree with the log, and the log is not
+overwritten by the next poll the way `last_error` was. `page_captures` needed no new table for the
+same job: it already wrote a row per attempt, so "how many times has this refused, and when" was
+always a query.
+
+Both derived properties are `hybrid_property` with an expression and a Python getter that raises —
+they exist only as SQL, so `select(Feed.consecutive_failures)` works and reading it off a loaded row
+fails loudly instead of returning a stale zero. The subqueries alias and `correlate_except`
+explicitly: both halves select from the same table, and without it SQLAlchemy folds the inner
+aggregate into the outer `WHERE`, which Postgres rejects.
+
+**Where a threshold lives decides whether changing it works.** Giving up on a feed after N failures
+is our policy, so it is applied in `due_polls` beside the setting that defines it, and lowering the
+number takes effect at once. `Feed.gone` — the publisher answering 410 — is their statement, needs
+no threshold, and reads off the log. Those were one column called `suspended`, which is why changing
+the limit used to leave rows stamped with the old one.
+
 **Everything else** — monthly partitions, the BM25 index, DiskANN — is raw DDL in a revision.
 
 ### Stored bodies are compressed, sometimes against a dictionary
@@ -232,6 +252,33 @@ time a CDN hiccups.
 
 `politeness/` sits above `ingest/` because polling, robots refreshes and article fetches all need
 the same host grouping.
+
+### Backing off is the same arithmetic everywhere
+
+`politeness/backoff.py` holds it: a `Policy` of four numbers and pure functions over it. A feed, an
+article page and an image are refused in the same ways and so wait in the same shape; only the
+numbers differ, and those come from config. `ingest/schedule.py` keeps what is genuinely a feed's
+own — the `<ttl>` floor and the busy/idle drift — and delegates the failure half.
+
+It carries two spellings of one formula. Sweeps pick their own work, so a backoff has to be
+expressible inside a `WHERE` clause: filtering in Python after a `LIMIT` would silently shrink every
+batch. `due_at` is the SQL form, and a test compares its numbers against the Python one across a
+range of failure counts rather than trusting that two copies stay in step.
+
+### A host refusing everything is one fact, not one per article
+
+Medium answers 403 to every article page it serves, to any user agent, from any address. Backing off
+per version leaves as many clocks as there are articles, all still knocking — 397 requests against 9
+URLs in the 48 minutes before this was noticed. `extract/breaker.py` counts a host's recent captures
+instead, and once the run of failures passes a threshold the fetch is skipped.
+
+Two things make that safe. A status about a URL rather than a publisher — 404, 410 — is stepped over
+rather than counted, or a handful of dead links would shut out a site answering everything else. And
+a breaker that stops attempts freezes the window it reads, so it would never reopen: one probe per
+interval is let through, purely to find out whether the refusal still stands.
+
+Skipping writes no `page_captures` row. Deciding not to fetch is not an attempt, it matches what the
+two robots checks beside it already do, and a row would poison the window the breaker reads.
 
 ### A queueing lock collision is not an error
 

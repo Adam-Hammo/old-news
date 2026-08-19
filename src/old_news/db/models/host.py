@@ -1,6 +1,6 @@
 import datetime
 
-from sqlalchemy import Text
+from sqlalchemy import Boolean, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
@@ -21,3 +21,7 @@ class Host(UUIDPrimaryKey, Base):
     # update to one row instead of a cascading key change.
     name: Mapped[str] = mapped_column(Text, unique=True, index=True)
     first_seen_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
+
+    # Some publishers serve the feed from `www` and link their articles at the apex,
+    # which then resolves nowhere.
+    requires_www: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))

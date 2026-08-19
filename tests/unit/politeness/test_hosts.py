@@ -1,7 +1,7 @@
 import pytest
 
 from old_news.fetch import fetchable
-from old_news.politeness import host_lock, host_of
+from old_news.politeness import host_lock, host_of, with_www
 
 
 @pytest.mark.parametrize(
@@ -63,3 +63,20 @@ def test_feeds_from_one_publisher_share_a_lock():
     hosts = [host_of(u) for u in ("https://www.bbc.co.uk/a/rss", "https://bbc.co.uk/b/rss")]
 
     assert len(set(map(host_lock, hosts))) == 1
+
+
+def test_the_www_name_is_the_same_url_under_a_different_host():
+    """theclimatebrink.com serves its feed from `www` and links its articles at an apex
+    with no DNS record at all."""
+    assert (
+        with_www("https://theclimatebrink.com/p/hot-days")
+        == "https://www.theclimatebrink.com/p/hot-days"
+    )
+
+
+def test_a_url_already_on_www_is_left_alone():
+    assert with_www("https://www.bbc.co.uk/news") == "https://www.bbc.co.uk/news"
+
+
+def test_something_that_is_not_a_url_is_left_alone():
+    assert with_www("newsletter:0:someone@example.com") == "newsletter:0:someone@example.com"

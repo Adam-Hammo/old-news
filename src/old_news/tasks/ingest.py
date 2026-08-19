@@ -29,7 +29,7 @@ async def poll_feed(feed_id: str) -> None:
 @app.task(name="schedule_polls", queue=QUEUE, priority=SCHEDULER_PRIORITY)
 async def schedule_polls(timestamp: int) -> None:
     settings = get_settings()
-    polls = await service.due_polls(settings.ingest.poll_batch_size)
+    polls = await service.due_polls(settings.ingest, settings.ingest.poll_batch_size)
     # Whatever these hosts asked for in robots.txt, honoured as a longer gap.
     crawl_delays = await robots.crawl_delays(poll.host for poll in polls)
     delays = politeness.stagger(

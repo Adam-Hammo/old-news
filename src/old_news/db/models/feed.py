@@ -2,13 +2,14 @@ import datetime
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, text
+from sqlalchemy import ForeignKey, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
+from old_news.db.models.poll import consecutive_failures, gone
 from old_news.db.models.subscription import subscribed
 
 if TYPE_CHECKING:
@@ -46,11 +47,6 @@ class Feed(UUIDPrimaryKey, Base):
         Timestamptz, server_default=NOW, index=True
     )
 
-    consecutive_failures: Mapped[int] = mapped_column(Integer, server_default="0")
-    last_error: Mapped[str] = mapped_column(Text, server_default="")
-    # The poller giving up, not a choice. Unsubscribing is Subscription.active.
-    suspended: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), index=True)
-    suspended_reason: Mapped[str] = mapped_column(Text, server_default="")
     created_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
 
     subscription: Mapped[Subscription | None] = relationship(
@@ -62,10 +58,30 @@ class Feed(UUIDPrimaryKey, Base):
 
     @hybrid_property
     def subscribed(self) -> bool:
-        """Whether we still follow this feed. `suspended` is the poller giving up instead."""
+        """Whether we still follow this feed. `gone` is the publisher withdrawing it."""
         return self.subscription is not None and self.subscription.active
 
     @subscribed.inplace.expression
     @classmethod
     def _subscribed_expression(cls):
         return subscribed(cls.id)
+
+    @hybrid_property
+    def consecutive_failures(self) -> int:
+        """Read off the log rather than stored, so there is one copy of the number."""
+        raise NotImplementedError("only queryable as SQL; select it rather than loading a row")
+
+    @consecutive_failures.inplace.expression
+    @classmethod
+    def _consecutive_failures_expression(cls):
+        return consecutive_failures(cls.id)
+
+    @hybrid_property
+    def gone(self) -> bool:
+        """The publisher answered 410. Nothing else is permanent on its own."""
+        raise NotImplementedError("only queryable as SQL; select it rather than loading a row")
+
+    @gone.inplace.expression
+    @classmethod
+    def _gone_expression(cls):
+        return gone(cls.id)

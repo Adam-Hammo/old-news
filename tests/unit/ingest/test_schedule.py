@@ -3,7 +3,7 @@ import datetime
 import pytest
 
 from old_news.config import IngestSettings
-from old_news.ingest.schedule import next_interval, next_poll_at, should_suspend
+from old_news.ingest.schedule import next_interval, next_poll_at
 
 
 @pytest.fixture
@@ -67,15 +67,6 @@ def test_next_poll_at_is_now_plus_the_interval(settings):
     assert next_poll_at(
         now, settings, current_seconds=1800, new_items=0
     ) == now + datetime.timedelta(seconds=2700)
-
-
-def test_gone_suspends_immediately(settings):
-    assert should_suspend(settings, failures=1, status=410)
-
-
-def test_repeated_failures_suspend(settings):
-    assert not should_suspend(settings, failures=settings.max_consecutive_failures - 1)
-    assert should_suspend(settings, failures=settings.max_consecutive_failures)
 
 
 def test_a_retry_after_beyond_our_ceiling_is_capped(settings):

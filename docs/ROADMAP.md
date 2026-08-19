@@ -286,9 +286,20 @@ A cache, so none of the append-only rules apply to it. `crawl-delay` comes back 
 `schedule_in`, and may only slow things down, never speed them up — same as a feed's `<ttl>`. A host
 that can't be reached is carried on past, and asked again sooner.
 
-The standard library turned out to be enough. Python 3.14's `robotparser` does wildcards and
-longest-match precedence properly, which older ones didn't, so no dependency. One trap: parsing
-alone leaves it refusing everything until it's been stamped as modified.
+The standard library turned out not to be enough, though not for the reason it looked like. Python
+3.14's `robotparser` does do wildcards and longest-match precedence properly — that part of the call
+was right. What it gets wrong is narrower and much harder to spot: it percent-encodes `=` when it
+normalises a rule pattern and leaves the `=` alone when it normalises the URL, so any rule carrying
+one silently never matches. Medium's `Disallow: /*/*source=` is exactly that rule, and every article
+link in Medium's own feed carries `?source=rss-…`. Replayed across the whole corpus the two parsers
+disagreed on one URL out of 1,482, and on that one the stdlib was wrong.
+
+So `protego` now, which is a dependency this project would rather not have and takes anyway, because
+a robots parser quietly allowing what a publisher forbade is the wrong way round to be wrong. It has
+its own open wildcard bug — scrapy/protego#51, an `Allow` that both contains a wildcard and ends in
+`$` — pinned by a test, because no host here writes one yet and the day one does should be loud.
+`robots/parse.py` also carries RFC 9309's implicit allow for `/robots.txt` itself, which the stdlib
+implements and protego does not.
 
 `Disallow` is obeyed for polls too, with one carve-out. A blanket `Disallow: /` gets ignored,
 because RSS is published for readers — a site that ships a feed and bans every bot is stating a

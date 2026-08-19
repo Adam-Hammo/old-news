@@ -6,7 +6,16 @@ from sqlalchemy import event, func, select
 
 from old_news import db
 from old_news.config import Settings
-from old_news.db import Document, Feed, Item, ItemVersion, RobotsPolicy, Subscription
+from old_news.db import (
+    Document,
+    Feed,
+    FeedPoll,
+    Item,
+    ItemVersion,
+    PollOutcome,
+    RobotsPolicy,
+    Subscription,
+)
 from old_news.fetch import Fetcher
 from old_news.ingest.service import poll_feed
 from old_news.politeness import ensure, resolve
@@ -242,8 +251,32 @@ async def test_a_crash_still_moves_the_schedule(feed, fetcher, settings, monkeyp
         assert row is not None and row.last_polled_at is not None
 
     assert row.next_poll_at > row.last_polled_at
-    assert row.consecutive_failures == 1
-    assert "unparsable" in row.last_error
+    assert await _failure_state(feed.id) == (1, False)
+    outcome, error = (await _polls(feed.id))[-1]
+    assert outcome == PollOutcome.FAILED
+    assert "unparsable" in error
+
+
+async def _failure_state(feed_id) -> tuple[int, bool]:
+    """The two derived properties, which only exist as SQL."""
+    async with db.session() as session:
+        row = (
+            await session.execute(
+                select(Feed.consecutive_failures, Feed.gone).where(Feed.id == feed_id)
+            )
+        ).one()
+        return row.consecutive_failures, row.gone
+
+
+async def _polls(feed_id) -> list[tuple[str, str]]:
+    """What the log recorded, newest last."""
+    async with db.session() as session:
+        rows = await session.execute(
+            select(FeedPoll.outcome, FeedPoll.error)
+            .where(FeedPoll.feed_id == feed_id)
+            .order_by(FeedPoll.polled_at)
+        )
+        return [(outcome, error) for outcome, error in rows.all()]
 
 
 async def _store_policy(host: str, body: str) -> None:
@@ -270,14 +303,15 @@ async def test_a_disallowed_feed_backs_off_without_being_suspended(
 
     await poll_feed(feed.id, fetcher, settings)
 
+    assert await _polls(feed.id) == [(PollOutcome.DISALLOWED, "disallowed by robots.txt")]
+
     async with db.session() as session:
         stored = await session.get(Feed, feed.id)
         assert stored is not None
-        assert stored.suspended is False
-        assert stored.consecutive_failures == 0
-        assert "robots" in stored.last_error
         assert stored.last_polled_at is not None
         assert stored.next_poll_at > stored.last_polled_at
+
+    assert await _failure_state(feed.id) == (0, False)
 
 
 async def test_a_blanket_ban_still_polls(feed, fetcher, settings, no_policies):
@@ -315,8 +349,4 @@ async def test_one_document_repeating_an_identity_does_not_fail_the_poll(
     assert applied.duplicate_identity == 1
     assert (await counts())["items"] == 1
 
-    async with db.session() as session:
-        stored = await session.get(Feed, feed_id)
-        assert stored is not None
-        assert stored.suspended is False
-        assert stored.consecutive_failures == 0
+    assert await _failure_state(feed_id) == (0, False)

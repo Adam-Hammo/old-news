@@ -20,3 +20,15 @@ def host_of(url: str) -> str:
 def host_lock(host: str) -> str | None:
     """The job lock Postgres serialises on. None for a hostless, unfetchable URL."""
     return f"{LOCK_PREFIX}:{host}" if host else None
+
+
+def with_www(url: str) -> str:
+    """The same URL under the `www.` name, unchanged if it is already there.
+
+    `host_of` strips the prefix because it is not a different publisher. Which of the
+    two names carries a DNS record is a separate question, and not always the apex.
+    """
+    parsed = http_url(url)
+    if parsed is None or not parsed.host or parsed.host.startswith("www."):
+        return url
+    return url.replace(parsed.host, f"www.{parsed.host}", 1)

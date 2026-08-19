@@ -1,3 +1,4 @@
+import socket
 from collections.abc import AsyncIterator
 
 import pytest
@@ -5,7 +6,7 @@ from logfire.testing import CaptureLogfire
 
 from old_news.config.http import HttpSettings
 from old_news.fetch import Fetcher, Response, TooLarge
-from old_news.fetch.client import SPAN_NAME
+from old_news.fetch.client import SPAN_NAME, _unresolvable
 from old_news.observability import telemetry
 
 BODY = b"<html><body>hello</body></html>"
@@ -152,3 +153,30 @@ async def test_the_client_span_does_carry_the_query_string(
 
     theirs = [s for s in capfire.exporter.exported_spans if s.name != SPAN_NAME]
     assert SECRET in str([s.attributes for s in theirs])
+
+
+def test_a_dns_failure_carried_as_an_argument_is_recognised():
+    """Which is how `httpcore` wraps it — not as `__cause__`, where you would look."""
+    assert _unresolvable(OSError(socket.gaierror(8, "nodename nor servname provided")))
+
+
+def test_a_dns_failure_carried_as_a_cause_is_recognised():
+    outer = OSError("connect failed")
+    outer.__cause__ = socket.gaierror(8, "nodename nor servname provided")
+
+    assert _unresolvable(outer)
+
+
+def test_other_transport_failures_are_not_dns():
+    """The `www.` retry is only earned by a name that does not resolve. A refused
+    connection means the name was fine."""
+    assert not _unresolvable(OSError("connection refused"))
+    assert not _unresolvable(TimeoutError())
+
+
+def test_the_cause_walk_is_bounded():
+    """A cycle here would hang a worker rather than raise."""
+    a, b = OSError("a"), OSError("b")
+    a.__cause__, b.__cause__ = b, a
+
+    assert not _unresolvable(a)

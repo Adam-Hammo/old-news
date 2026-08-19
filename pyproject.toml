@@ -22,6 +22,9 @@ dependencies = [
   # stdlib ElementTree expands entities, so an OPML file is a billion-laughs
   # vector. Confined to subscriptions/opml.py.
   "defusedxml>=0.7.1",
+  # The stdlib's robotparser percent-encodes `=` in a rule pattern but not in the
+  # query it matches against, so a rule like `Disallow: /*/*source=` can never fire.
+  "protego>=0.6.2",
   "trafilatura>=2.2",
   "lxml>=7.0.0a3",
   "logfire[httpx,sqlalchemy,system-metrics]>=4.40",
