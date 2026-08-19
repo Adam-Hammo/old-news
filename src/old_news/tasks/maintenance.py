@@ -3,7 +3,9 @@ import logging
 from procrastinate import builtin_tasks
 from procrastinate.job_context import JobContext
 
-from old_news.observability import gauge
+from old_news.config import get_settings
+from old_news.db import dictionaries
+from old_news.observability import count, gauge
 from old_news.tasks.app import app
 from old_news.tasks.tracing import task
 
@@ -53,3 +55,28 @@ async def prune_jobs(context: JobContext, timestamp: int) -> None:
         remove_cancelled=True,
         remove_aborted=True,
     )
+
+
+@app.periodic(cron="0 3 * * *", periodic_id="train_dictionaries")
+@app.task(name="train_dictionaries")
+async def train_dictionaries(timestamp: int) -> None:
+    """Teach compression what a feed's documents and a publisher's pages look like.
+
+    Halves what a document costs, which is the largest thing in the database. Nothing
+    already written is rewritten: a body keeps pointing at whatever dictionary compressed
+    it, and a scope with none stays on plain zstd, which always reads.
+    """
+    settings = get_settings().storage
+    batch = settings.dictionary_batch_size
+
+    for feed_id in await dictionaries.feeds_wanting_a_dictionary(settings, batch):
+        samples = await dictionaries.feed_samples(feed_id, settings.dictionary_sample_limit)
+        if (trained := dictionaries.train(samples, settings)) is not None:
+            await dictionaries.store_for_feed(feed_id, trained)
+            count("storage.dictionaries.trained", scope="feed")
+
+    for host_id in await dictionaries.hosts_wanting_a_dictionary(settings, batch):
+        samples = await dictionaries.host_samples(host_id, settings.dictionary_sample_limit)
+        if (trained := dictionaries.train(samples, settings)) is not None:
+            await dictionaries.store_for_host(host_id, trained)
+            count("storage.dictionaries.trained", scope="host")

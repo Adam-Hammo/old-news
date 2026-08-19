@@ -5,6 +5,7 @@ from logfire.testing import CaptureLogfire
 
 from old_news.config.http import HttpSettings
 from old_news.fetch import Fetcher, Response, TooLarge
+from old_news.fetch.client import SPAN_NAME
 from old_news.observability import telemetry
 
 BODY = b"<html><body>hello</body></html>"
@@ -105,7 +106,7 @@ async def test_the_client_itself_is_traced(traced_fetcher: Fetcher, server: str,
     await traced_fetcher.get(f"{server}/conditional")
 
     names = _finished(capfire)
-    assert "GET feed" in names
+    assert SPAN_NAME in names
     assert len(names) > 1, f"no client span beneath the feed span: {names}"
 
 
@@ -120,7 +121,7 @@ async def test_only_this_client_is_instrumented(capfire: CaptureLogfire, server:
     finally:
         await quiet.aclose()
 
-    assert _finished(capfire) == ["GET feed"]
+    assert _finished(capfire) == [SPAN_NAME]
 
 
 SECRET = "SUPERSECRET"
@@ -133,7 +134,7 @@ async def test_the_feed_span_never_carries_the_query_string(
     scrubbed, so the query string must never be put in one."""
     await traced_fetcher.get(f"{server}/conditional?api_key={SECRET}")
 
-    ours = [s for s in capfire.exporter.exported_spans if s.name == "GET feed"]
+    ours = [s for s in capfire.exporter.exported_spans if s.name == SPAN_NAME]
     emitted = str([s.attributes for s in ours])
 
     assert SECRET not in emitted
@@ -149,5 +150,5 @@ async def test_the_client_span_does_carry_the_query_string(
     """
     await traced_fetcher.get(f"{server}/conditional?api_key={SECRET}")
 
-    theirs = [s for s in capfire.exporter.exported_spans if s.name != "GET feed"]
+    theirs = [s for s in capfire.exporter.exported_spans if s.name != SPAN_NAME]
     assert SECRET in str([s.attributes for s in theirs])

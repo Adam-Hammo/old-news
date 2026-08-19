@@ -4,6 +4,7 @@ from old_news.fetch.client import (
     Response,
     Timeout,
     TooLarge,
+    WrongContentType,
     fetchable,
     http_url,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "Response",
     "Timeout",
     "TooLarge",
+    "WrongContentType",
     "client",
     "configure",
     "dispose",

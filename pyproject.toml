@@ -23,6 +23,9 @@ dependencies = [
   # vector. Confined to subscriptions/opml.py.
   "defusedxml>=0.7.1",
   "trafilatura>=2.2",
+  # trafilatura's parser. Pinned ahead of its own floor: earlier lxml does not declare
+  # free-thread safety, so importing it re-enables the GIL in the worker process.
+  "lxml>=7.0.0a3",
   "logfire[httpx,sqlalchemy,system-metrics]>=4.40",
   "uvicorn[standard]>=0.52.1",
 ]
@@ -60,8 +63,6 @@ build-backend = "hatchling.build"
 packages = ["src/old_news"]
 
 [tool.codespell]
-# "statics" is sqladmin's static-assets URL segment, not a misspelling of
-# "statistics".
 ignore-words-list = "statics"
 
 [tool.vulture]
@@ -104,6 +105,12 @@ ignore_names = [
   "parent_names",
   "slug",
   "timestamp",
+  # SQLAlchemy calls a hybrid's expression half through its descriptor, never by name.
+  "_*_expression",
+  # Enum members reach Postgres through `db.base.one_of`, which iterates the class, and
+  # through the seed SQL in a migration. Never named individually from Python.
+  "SEED",
+  "OBSERVED",
   # Read through SQL, Admin or the ORM rather than from Python.
   "added_at",
   "created_at",

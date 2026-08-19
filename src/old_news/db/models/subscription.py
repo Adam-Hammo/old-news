@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Text, text
+from sqlalchemy import Boolean, ColumnElement, ForeignKey, Text, select, text
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,3 +36,17 @@ class Subscription(UUIDPrimaryKey, Base):
 
     def __str__(self) -> str:
         return self.category or "uncategorised"
+
+
+def subscribed(feed_id) -> ColumnElement[bool]:
+    """Whether an active subscription exists for this feed.
+
+    Written once and reached from both `Feed.subscribed` and `Item.subscribed`, because
+    every sweep needs it and an inner join to `subscriptions` for one boolean reads worse
+    at four call sites than the predicate does.
+    """
+    return (
+        select(Subscription.id)
+        .where(Subscription.feed_id == feed_id, Subscription.active.is_(True))
+        .exists()
+    )

@@ -1,3 +1,4 @@
+import enum
 import uuid
 
 from sqlalchemy import DateTime, MetaData, text
@@ -35,3 +36,15 @@ class UUIDPrimaryKey:
 
 
 NOW = text("CURRENT_TIMESTAMP")
+
+
+def one_of(column: str, allowed: type[enum.StrEnum]) -> str:
+    """A check constraint spelled from an enum's members.
+
+    Enums in Python, strings in Postgres. `sa.Enum` does neither half well: a native type
+    cannot gain a value in the same transaction as the migration needing it, and with
+    `native_enum=False` alembic renders the member *names* into the constraint where the
+    application writes the *values*, so every insert fails.
+    """
+    values = ", ".join(f"'{member.value}'" for member in allowed)
+    return f"{column} IN ({values})"

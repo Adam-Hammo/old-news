@@ -15,7 +15,17 @@ from starlette.responses import RedirectResponse, Response
 from old_news import passwords
 from old_news.config import AdminSettings
 from old_news.config.admin import DEVELOPMENT_PASSWORD
-from old_news.db import Document, Feed, Item, ItemVersion, Subscription
+from old_news.db import (
+    Document,
+    Extraction,
+    Feed,
+    ImageCapture,
+    Item,
+    ItemVersion,
+    PageCapture,
+    Subscription,
+    TrainingRule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +135,96 @@ class DocumentAdmin(ModelView, model=Document):
     can_edit = False
 
 
+class PageCaptureAdmin(ModelView, model=PageCapture):
+    name = "Page capture"
+    name_plural = "Page captures"
+    icon = "fa-solid fa-file-arrow-down"
+    # `body` is a compressed article page; listing it makes the page unusable, and that
+    # is the default without this. Status and error are how a failing site is spotted.
+    column_list = [
+        PageCapture.fetched_at,
+        PageCapture.status,
+        PageCapture.url,
+        PageCapture.final_url,
+        PageCapture.error,
+    ]
+    column_searchable_list = [PageCapture.url]
+    column_sortable_list = [PageCapture.fetched_at, PageCapture.status]
+    column_default_sort = [(PageCapture.fetched_at, True)]
+    can_create = False
+    can_edit = False
+
+
+class ExtractionAdmin(ModelView, model=Extraction):
+    name_plural = "Extractions"
+    icon = "fa-solid fa-align-left"
+    # The quality signal, which is the point of this view: a signal nobody can see is not
+    # a signal, and the failure that matters is a cookie banner marked done.
+    column_list = [
+        Extraction.ok,
+        Extraction.char_count,
+        Extraction.paragraph_count,
+        Extraction.link_density,
+        Extraction.feed_body_ratio,
+        Extraction.site_name,
+        Extraction.title,
+        Extraction.note,
+        Extraction.extractor_version,
+        Extraction.page_capture_id,
+    ]
+    column_searchable_list = [Extraction.title, Extraction.site_name]
+    column_sortable_list = [
+        Extraction.ok,
+        Extraction.char_count,
+        Extraction.link_density,
+        Extraction.feed_body_ratio,
+        Extraction.created_at,
+    ]
+    column_default_sort = [(Extraction.char_count, False)]
+    can_create = False
+    can_edit = False
+
+
+class ImageCaptureAdmin(ModelView, model=ImageCapture):
+    name = "Image capture"
+    name_plural = "Image captures"
+    icon = "fa-solid fa-image"
+    # `byte_size` is the whole reason images are held to one per article, so it is what
+    # this view is for.
+    column_list = [
+        ImageCapture.fetched_at,
+        ImageCapture.status,
+        ImageCapture.byte_size,
+        ImageCapture.content_type,
+        ImageCapture.url,
+        ImageCapture.error,
+    ]
+    column_searchable_list = [ImageCapture.url]
+    column_sortable_list = [ImageCapture.byte_size, ImageCapture.fetched_at]
+    column_default_sort = [(ImageCapture.byte_size, True)]
+    can_create = False
+    can_edit = False
+
+
+class TrainingRuleAdmin(ModelView, model=TrainingRule):
+    name = "Training rule"
+    name_plural = "Training rules"
+    icon = "fa-solid fa-filter"
+    # Full CRUD deliberately: these are hand-made and unrecoverable, so this is where
+    # they get made. A rule with no feed is global.
+    column_list = [
+        TrainingRule.dimension,
+        TrainingRule.pattern,
+        TrainingRule.blocks,
+        TrainingRule.feed_id,
+        TrainingRule.source,
+        TrainingRule.note,
+    ]
+    column_searchable_list = [TrainingRule.pattern, TrainingRule.note]
+    column_sortable_list = [TrainingRule.dimension, TrainingRule.created_at]
+    column_default_sort = [(TrainingRule.created_at, True)]
+
+
 def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
     """sqladmin is a Starlette app; Litestar mounts it as a plain ASGI sub-application."""
     host = Starlette()
@@ -135,7 +235,18 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
         title="old-news",
         authentication_backend=SingleUserBackend(settings),
     )
-    for view in (FeedAdmin, SubscriptionAdmin, ItemAdmin, ItemVersionAdmin, DocumentAdmin):
+    views = (
+        FeedAdmin,
+        SubscriptionAdmin,
+        ItemAdmin,
+        ItemVersionAdmin,
+        DocumentAdmin,
+        PageCaptureAdmin,
+        ExtractionAdmin,
+        ImageCaptureAdmin,
+        TrainingRuleAdmin,
+    )
+    for view in views:
         admin.add_view(view)
 
     # Litestar and Starlette spell the ASGI protocol with different types. This

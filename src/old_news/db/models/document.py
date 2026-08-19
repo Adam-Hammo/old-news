@@ -27,6 +27,10 @@ class Document(UUIDPrimaryKey, Base):
     body: Mapped[bytes] = mapped_column(LargeBinary)
     headers: Mapped[dict[str, str]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
 
+    dictionary_id: Mapped[uuid.UUID | None] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("zstd_dictionaries.id"), nullable=True, index=True
+    )
+
     # Whether the parser of the day coped. Re-parsing later may disagree.
     parse_ok: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     parse_note: Mapped[str] = mapped_column(Text, server_default="")
