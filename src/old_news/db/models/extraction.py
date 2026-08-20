@@ -29,6 +29,13 @@ class ImageRole(enum.StrEnum):
     BODY = "body"
 
 
+# What makes a reading the same reading. The upsert in `extract/service.py` matches on
+# this constraint and must not rewrite the columns it matched, so both are declared here
+# and the constraint is built from the tuple.
+READING_KEY = "uq_extractions_version_source_extractor"
+READING_IDENTITY = ("item_version_id", "source", "extractor", "extractor_version")
+
+
 class ExtractionSource(enum.StrEnum):
     """Which stored artefact was read."""
 
@@ -47,13 +54,7 @@ class Extraction(UUIDPrimaryKey, Base):
     __table_args__ = (
         # Also serves lookups by version, which leads it. Named explicitly because the
         # convention's template runs to 65 characters and Postgres truncates at 63.
-        UniqueConstraint(
-            "item_version_id",
-            "source",
-            "extractor",
-            "extractor_version",
-            name="uq_extractions_version_source_extractor",
-        ),
+        UniqueConstraint(*READING_IDENTITY, name=READING_KEY),
         # What the extraction sweep asks: which versions has this extractor not done. The
         # unique constraint cannot serve it, because the extractor is not its leading
         # column.

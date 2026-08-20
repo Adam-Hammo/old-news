@@ -18,6 +18,8 @@ from sqlalchemy.orm import joinedload
 from old_news import db
 from old_news.config import ExtractSettings
 from old_news.db import (
+    READING_IDENTITY,
+    READING_KEY,
     Extraction,
     ExtractionImage,
     ExtractionSource,
@@ -150,12 +152,6 @@ async def pending(session: AsyncSession, version_id: uuid.UUID) -> Pending | Non
     )
 
 
-# Rewriting any of this on conflict would move the row it just matched. Kept in step with
-# the constraint by `test_store_identity.py`.
-_UNIQUE = "uq_extractions_version_source_extractor"
-_IDENTITY = ("item_version_id", "source", "extractor", "extractor_version")
-
-
 @db.transactional
 async def store(session: AsyncSession, found: Pending, parsed: article.Article) -> Extraction:
     """Insert a reading and, for a page, what that page claimed about itself.
@@ -180,8 +176,8 @@ async def store(session: AsyncSession, found: Pending, parsed: article.Article) 
             insert(Extraction)
             .values(**base)
             .on_conflict_do_update(
-                constraint=_UNIQUE,
-                set_={key: base[key] for key in base if key not in _IDENTITY},
+                constraint=READING_KEY,
+                set_={key: base[key] for key in base if key not in READING_IDENTITY},
             )
             .returning(Extraction.id)
         )

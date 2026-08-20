@@ -3,6 +3,8 @@
 from old_news.db.models.dictionary import ZstdDictionary
 from old_news.db.models.document import Document
 from old_news.db.models.extraction import (
+    READING_IDENTITY,
+    READING_KEY,
     Extraction,
     ExtractionImage,
     ExtractionSource,
@@ -21,6 +23,8 @@ from old_news.db.models.subscription import Subscription
 from old_news.db.models.training import Dimension, RuleSource, TrainingRule
 
 __all__ = [
+    "READING_IDENTITY",
+    "READING_KEY",
     "Dimension",
     "Document",
     "Extraction",
