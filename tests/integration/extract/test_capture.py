@@ -10,8 +10,8 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
-from old_news.db import Host, PageCapture, RobotsPolicy, dictionaries
-from old_news.extract.capture import CAPTURE_POLICY, capture_page
+from old_news.db import CAPTURE_POLICY, Host, PageCapture, RobotsPolicy, dictionaries
+from old_news.extract.capture import capture_page
 from old_news.fetch import Fetcher
 from old_news.politeness import ensure
 
@@ -288,6 +288,7 @@ async def _refusals(
                 status=status,
                 body_hash=b"0" * 32,
                 fetched_at=datetime.datetime.now(datetime.UTC) - ago,
+                capture_policy=CAPTURE_POLICY,
             )
         )
     await session.flush()
