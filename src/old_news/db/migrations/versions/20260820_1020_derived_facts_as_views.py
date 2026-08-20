@@ -57,7 +57,6 @@ def upgrade() -> None:
     )
     op.create_entity(public_item_reading)
 
-
     # ### end Alembic commands ###
 
 
