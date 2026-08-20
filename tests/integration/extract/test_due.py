@@ -21,26 +21,6 @@ SETTINGS = ExtractSettings()
 
 
 @db.transactional
-async def _refusals(
-    session: AsyncSession, host: str, version_id: uuid.UUID, count: int, *, status: int = 403
-) -> None:
-    """Enough failures on one host that it counts as refusing everyone."""
-    host_id = await ensure(session, host)
-    for n in range(count):
-        session.add(
-            PageCapture(
-                item_version_id=version_id,
-                host_id=host_id,
-                url=f"https://{host}/other-{n}",
-                status=status,
-                body_hash=b"0" * 32,
-                capture_policy=capture.CAPTURE_POLICY,
-            )
-        )
-    await session.flush()
-
-
-@db.transactional
 async def _capture(
     session: AsyncSession,
     version_id: uuid.UUID,
@@ -254,35 +234,3 @@ async def test_refusals_under_the_current_policy_still_count(clean: None, feed_i
     )
 
     assert await _due_urls() == []
-
-
-async def test_a_version_on_a_refusing_host_is_not_selected(clean: None, feed_id, article):
-    """Declining at fetch time writes no row, so the version would stay due and take the
-    same slot on every sweep. Twenty-five of those filled the batch in production and
-    nothing else was captured for three hours."""
-    await _rules_read()
-    versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _refusals("loopback.example.com", versions[0], SETTINGS.host_failure_threshold)
-
-    assert await _due_urls() == []
-
-
-async def test_a_refusing_host_does_not_consume_the_batch(clean: None, feed_id, article):
-    """The regression that matters, and the shape of the outage it caused.
-
-    Nine older versions on a refusing host must not crowd out the one that would succeed.
-    Selecting them and declining at fetch time wrote no row, so they stayed due and took
-    the same slots every minute for three hours while nothing was captured.
-    """
-    await _rules_read()
-    await _rules_read("healthy.example.com")
-
-    # Separate items, so each is a head of its own and all of them compete for the batch.
-    doomed = [
-        (await article(feed_id, (f"Blocked {n}", f"https://loopback.example.com/b{n}")))[0]
-        for n in range(9)
-    ]
-    await _refusals("loopback.example.com", doomed[0], SETTINGS.host_failure_threshold)
-    await article(feed_id, ("Fine", "https://healthy.example.com/fine"))
-
-    assert await _due_urls() == ["https://healthy.example.com/fine"]

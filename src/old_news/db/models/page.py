@@ -9,11 +9,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
 
-# Bumped when anything changes *how* a page is asked for. Refusals are counted per
-# policy, so a bump forgives what came before without deleting a row — `extractor_version`
-# makes the same bargain. Refusing the old way of asking is not refusing the new one.
-CAPTURE_POLICY = "2"
-
 
 class PageCapture(UUIDPrimaryKey, Base):
     """The article page behind one version, as served."""

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, robots
 from old_news.config import Settings
-from old_news.db import CAPTURE_POLICY, Host, ItemVersion, PageCapture, dictionaries
+from old_news.db import Host, ItemVersion, PageCapture, dictionaries
 from old_news.db import bytes as codec
 from old_news.extract import breaker
 from old_news.fetch import Fetcher, FetchError, Response, Unresolvable
@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 # A transport failure is not an HTTP status, and 0 is not one either.
 NO_STATUS = 0
+
+# Bumped when anything changes *how* a page is asked for. Refusals are counted per
+# policy, so a bump forgives what came before without deleting a row — `extractor_version`
+# one module over makes the same bargain. Refusing the old way of asking is not refusing
+# the new one.
+CAPTURE_POLICY = "2"
 
 
 @db.transactional

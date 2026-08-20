@@ -14,12 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, training
 from old_news.config import ExtractSettings
-from old_news.db import CAPTURE_POLICY, Host, Item, ItemVersion, PageCapture, RobotsPolicy
-from old_news.extract import breaker
+from old_news.db import Host, Item, ItemVersion, PageCapture, RobotsPolicy
+from old_news.extract import capture
 from old_news.politeness import backoff, host_of
-
-# How much slack the claim query leaves for rows the loop below discards.
-OVERSCAN = 4
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -44,26 +41,8 @@ async def due_captures(
     now = datetime.datetime.now(datetime.UTC)
     settled_by = now - datetime.timedelta(seconds=settings.settle_seconds)
     policy = backoff.policy_for(settings.capture_retry)
-    refusing = await breaker.refusing_hosts(session, settings)
 
     captured = select(PageCapture.item_version_id).where(PageCapture.succeeded).scalar_subquery()
-
-    # Versions already tried on a host that is refusing everyone. Excluded here rather
-    # than only at fetch time: declining writes no row, so the version stays due and takes
-    # the same slot on the next sweep. Twenty-five of them filled the batch and nothing
-    # else was captured for three hours.
-    #
-    # Only the tried ones. A never-tried version on a refusing host is skipped by the loop
-    # below instead, within whatever `OVERSCAN` leaves room for — so the guarantee is
-    # bounded, not absolute, and a refusing host with more untried versions than that
-    # would crowd the batch again. Recording the decline is what makes it unbounded, and
-    # that needs a column to tell a decline from an attempt.
-    on_refusing = (
-        select(PageCapture.item_version_id)
-        .join(Host, Host.id == PageCapture.host_id)
-        .where(Host.name.in_(refusing))
-        .scalar_subquery()
-    )
 
     # Every row left for an uncaptured version is a failed attempt, so counting them
     # counts consecutive failures without needing to say so.
@@ -78,7 +57,7 @@ async def due_captures(
             func.count().label("failures"),
             func.max(PageCapture.fetched_at).label("last_attempt"),
         )
-        .where(PageCapture.capture_policy == CAPTURE_POLICY)
+        .where(PageCapture.capture_policy == capture.CAPTURE_POLICY)
         .group_by(PageCapture.item_version_id)
         .subquery()
     )
@@ -91,7 +70,6 @@ async def due_captures(
             Item.subscribed,
             ItemVersion.is_head,
             ItemVersion.id.not_in(captured),
-            ItemVersion.id.not_in(on_refusing),
             Item.version_count <= settings.max_versions_per_item,
             ~training.blocked(ItemVersion, Item),
             # A version superseding nothing is the item's first, and is due at once.
@@ -107,14 +85,12 @@ async def due_captures(
             ),
         )
         .order_by(ItemVersion.observed_at)
-        .limit(limit * OVERSCAN)
+        .limit(limit)
     )
 
     known = await _hosts_with_rules(session)
     due = []
     for version_id, url, canonical_url in rows:
-        if len(due) == limit:
-            break
         target = canonical_url or url
         host = host_of(target)
         # A link that is not fetchable at all — an aggregator naming a `newsletter:`
@@ -123,7 +99,7 @@ async def due_captures(
         # codebase, which is right for a feed published for readers and wrong for
         # crawling a publisher's pages. The refresh sweep writes a row for every host it
         # visits, reachable or not, so this delays a new host rather than blocking it.
-        if host and host in known and host not in refusing:
+        if host and host in known:
             due.append(DueCapture(version_id, target, host))
     return due
 
