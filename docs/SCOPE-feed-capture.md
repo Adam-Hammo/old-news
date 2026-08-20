@@ -143,7 +143,21 @@ psycopg. Use a `__main__` subcommand or a procrastinate task that batches.
   survives an edit that makes a new version the head.
 - Re-run the gate query and report what was actually saved.
 
-## Not in this scope
+## Not in this scope, but decided
 
-Filtering only ever sees the feed's title, so a rule misses an article whose page title would have
-matched. That is a `_matches` change, not a schema one. Worth doing, separately.
+Filtering happens in two positions and they are different questions, not two implementations of one.
+
+|              | subject                                         | purpose                        |
+| ------------ | ----------------------------------------------- | ------------------------------ |
+| pre-capture  | `item_versions` — title, urls                   | do not spend a fetch           |
+| post-capture | extractions — both titles, bodies, measurements | do not show the reader rubbish |
+
+Today only the first exists, so a rule misses an article whose page title would have matched —
+publishers truncate and prefix feed titles constantly. Adding the second is a `_matches` change plus
+a predicate in the river query, not a schema change.
+
+**Neither verdict gets stored, and there is no `blocked` column.** Training rules are hand-made and
+edited constantly, and a rule added today has to hide an article ingested last year. A stored
+verdict needs every version recomputed on every edit, which is the counter-beside-the-log that came
+off `feeds`. The template is `judge()`: extractions store the measurements, because those cannot go
+stale, and the question is asked when it is asked.
