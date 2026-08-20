@@ -282,31 +282,50 @@ two robots checks beside it already do, and a row would poison the window the br
 
 ### Feed text and page text are the same kind of object
 
-Both are a reading of stored bytes the network handed over, so both are rows in `extractions` with a
-`source`, stamped with the extractor that produced them, derived and disposable. They were not
-always the same shape: feed text sat inline on `item_versions.content` with no record of what parsed
-it, while page text was a versioned row that said exactly what made it. That asymmetry is the reason
-"which one do I read, index, embed" had no clean answer — the two were not comparable.
+Both are a reading of stored bytes the network handed over, so both are rows in `extractions`,
+stamped with the extractor that produced them, derived and disposable. They were not always the same
+shape: feed text sat inline on `item_versions.content` with no record of what parsed it, while page
+text was a versioned row that said exactly what made it. That asymmetry is why "which one do I read,
+index, embed" had no clean answer — the two were not comparable.
 
 `item_versions.content` is untouched and still authoritative: it is what the feed document said. A
-feed-sourced extraction is derived _from_ it, the same way a page-sourced one is derived from a
-capture, and can be thrown away and rebuilt on the same terms.
+feed reading is derived _from_ it, the same way a page reading is derived from a capture, and can be
+thrown away and rebuilt on the same terms.
 
-`page_capture_id` is null for a feed reading, and a check constraint ties it to the source so
-neither shape can be stored wrong. A feed reading names no artefact because it does not need to: its
-document is behind `item_version_id`, and repeating that would be a second copy of
-`item_versions.document_id` to drift against.
+Joined-table inheritance, after two attempts without it. `Extraction` is the base and holds what
+every reading has; `FeedExtraction` adds nothing and has no table of its own; `PageExtraction` holds
+the two things only a page brings — the capture it was read from, and what the page claimed about
+itself. So no column is meaningless for half the rows, and the check constraint tying
+`page_capture_id` to `source` is gone: it existed only to hand-roll the invariant inheritance states
+structurally.
 
-Deliberately not ORM inheritance, though the two are obvious subclasses. The payload is identical —
-body, title, quality, links — and one nullable foreign key is not a subtype. `Dimension` and
-`RuleSource` already established the house pattern for a closed set of kinds, and more to the point,
-the whole argument for this change is that the two are _the same kind of thing_. Two classes would
-say the opposite.
+The first two designs were wrong in opposite directions. Inheritance over the original table would
+have produced subclasses whose only difference was which columns were dead, because the table was
+doing four jobs. Splitting those jobs without inheritance left one nullable foreign key and a 1:1
+sibling table, which is joined-table inheritance with worse parts. The decomposition had to come
+first.
 
-Feed readings claim no metadata. Run against real feeds, `extract_metadata` on a fragment returns
+`FeedExtraction` earns its keep by not being the default. A bare `Extraction` meaning "feed" by
+omission is the same overload as a column that means two things depending on the row, and the base
+declares no identity, so `source` being NOT NULL makes the database refuse a reading that will not
+say which kind it is.
+
+A page reading claims metadata; a feed reading does not. On a fragment `extract_metadata` returns
 the first heading inside the body — "Support Bellingcat", "Today's links" — because there is no
-`<head>` to read a claim from. The feed states its own title and author, and those are already on
-the version.
+`<head>` to read a claim from. The feed states its own title and author, and those are on the
+version: append-only, unrecoverable if lost, which is the opposite of a claim that can be
+re-derived.
+
+**A verdict is not a measurement.** `char_count`, `paragraph_count` and `link_density` are stored
+because they are pure functions of `body` and cannot go stale. `ok` and `note` were deleted because
+they were a verdict against `min_body_chars` and `min_paragraphs`, which live in config — so a
+stored answer is wrong the moment either moves and says nothing about it. Twenty-five of 1058 rows
+were already in that state. Same reasoning that removed `feeds.suspended`: a threshold judgement
+belongs where the threshold is.
+
+**`feed_body_ratio` was a symptom.** It existed only because the feed reading was not a row you
+could join to. Both are rows now, so the ratio is `page.char_count / feed.char_count` across one
+table — a query, not a column, and one that cannot disagree with either side.
 
 ### A refusal is a fact about how we asked
 

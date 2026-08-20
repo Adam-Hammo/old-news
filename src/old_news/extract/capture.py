@@ -26,11 +26,10 @@ logger = logging.getLogger(__name__)
 # A transport failure is not an HTTP status, and 0 is not one either.
 NO_STATUS = 0
 
-# Bumped when anything changes *how* a page is asked for — the `www.` retry, the agent we
-# send, how redirects are handled. Refusals are counted per policy, so a bump forgives
-# every attempt made before the change without deleting a row, which is what
-# `extractor_version` already does one module over. A publisher that refused the old way
-# of asking has not refused the new one.
+# Bumped when anything changes *how* a page is asked for. Refusals are counted per
+# policy, so a bump forgives what came before without deleting a row — `extractor_version`
+# one module over makes the same bargain. Refusing the old way of asking is not refusing
+# the new one.
 CAPTURE_POLICY = "2"
 
 
@@ -62,20 +61,14 @@ async def _host_state(session: AsyncSession, url: str) -> tuple[uuid.UUID, bool]
 
 @db.transactional
 async def _learn_www(session: AsyncSession, host_id: uuid.UUID) -> None:
-    """Remember that only the `www.` name answers, so the next capture goes straight
-    there rather than paying for the failure that taught us. Observed, and reversed by
-    nothing: if they add the apex record we simply keep using a name that works."""
+    """Remember that only `www.` answers, so the next capture skips the failure."""
     await session.execute(update(Host).where(Host.id == host_id).values(requires_www=True))
 
 
 async def _fetch(
     url: str, fetcher: Fetcher, settings: Settings, *, host_id: uuid.UUID
 ) -> tuple[Response, str]:
-    """The page, and the URL it actually came from.
-
-    A publisher whose apex has no DNS record is asked again on the `www.` name before
-    being written off — that is one feed in this corpus, not a hypothetical.
-    """
+    """The page, and the URL it came from. A dead apex is retried once on `www.`."""
     accept = settings.extract.capture_content_types
     try:
         return await fetcher.get(url, accept=accept), url

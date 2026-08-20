@@ -8,7 +8,7 @@ down this same path.
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -23,6 +23,7 @@ from old_news.db import (
     ExtractionSource,
     ItemVersion,
     PageCapture,
+    PageExtraction,
     dictionaries,
 )
 from old_news.extract import article
@@ -31,19 +32,27 @@ from old_news.observability import count, span
 logger = logging.getLogger(__name__)
 
 
+class Readable(Protocol):
+    """What a judgement needs. A parse has it; so does a stored row."""
+
+    @property
+    def body(self) -> str: ...
+
+    @property
+    def char_count(self) -> int: ...
+
+    @property
+    def paragraph_count(self) -> int: ...
+
+
 @dataclass(frozen=True, slots=True)
 class Pending:
-    """An artefact waiting to be read, with what the feed said for comparison.
-
-    `capture_id` is None for a feed-sourced extraction: what it reads is the document
-    behind the version, which the version already names.
-    """
+    """An artefact waiting to be read. `capture_id` is None for a feed reading."""
 
     version_id: uuid.UUID
     source: ExtractionSource
     body: bytes
     final_url: str
-    feed_body_chars: int
     capture_id: uuid.UUID | None = None
 
 
@@ -83,11 +92,9 @@ async def due_extractions(
 
 @db.transactional
 async def due_feed_extractions(session: AsyncSession, limit: int) -> list[uuid.UUID]:
-    """Head versions whose feed text has not been read by the current extractor.
+    """Head versions whose feed text the current extractor has not read.
 
-    No capture needed, no network, and nothing to wait for: the bytes arrived with the
-    poll. So this runs ahead of capture rather than behind it, and every article has
-    something readable from the moment it is first seen.
+    No capture, no network, nothing to wait for — so this runs ahead of capture.
     """
     done = (
         select(Extraction.item_version_id)
@@ -113,7 +120,7 @@ async def due_feed_extractions(session: AsyncSession, limit: int) -> list[uuid.U
 
 @db.transactional
 async def pending_feed(session: AsyncSession, version_id: uuid.UUID) -> Pending | None:
-    """The version's own feed text, ready to read. None when the feed carried none."""
+    """The version's own feed text. None when the feed carried none."""
     row = (
         await session.execute(
             select(ItemVersion.content, ItemVersion.url, ItemVersion.canonical_url).where(
@@ -130,7 +137,6 @@ async def pending_feed(session: AsyncSession, version_id: uuid.UUID) -> Pending 
         body=row.content.encode(),
         # Relative links in feed content resolve against the article, not the feed.
         final_url=row.canonical_url or row.url,
-        feed_body_chars=len(row.content),
     )
 
 
@@ -154,63 +160,68 @@ async def pending(session: AsyncSession, version_id: uuid.UUID) -> Pending | Non
         capture_id=capture.id,
         body=await dictionaries.expand(session, capture.body),
         final_url=capture.final_url or capture.url,
-        feed_body_chars=len(version.feed_body),
     )
 
 
+# Rewriting any of this on conflict would move the row it just matched.
+_IDENTITY = ("item_version_id", "source", "extractor", "extractor_version")
+
+
 @db.transactional
-async def store(
-    session: AsyncSession,
-    found: Pending,
-    parsed: article.Article,
-    settings: ExtractSettings,
-) -> Extraction:
-    """Insert an extraction and its image slots.
+async def store(session: AsyncSession, found: Pending, parsed: article.Article) -> Extraction:
+    """Insert a reading and, for a page, what that page claimed about itself.
 
-    Re-running the same extractor over the same version writes the same row rather than a
-    second one; a new extractor version lands alongside and neither replaces the other.
+    Two statements because it is two tables. Re-reading the same way rewrites both.
     """
-    ratio = parsed.char_count / found.feed_body_chars if found.feed_body_chars else 0.0
-    ok, note = _judge(parsed, settings)
-
-    values = {
+    base = {
         "item_version_id": found.version_id,
         "source": found.source,
-        "page_capture_id": found.capture_id,
         "extractor": article.EXTRACTOR,
         "extractor_version": article.extractor_version(),
         "body": parsed.body,
-        "title": parsed.title,
-        "byline": parsed.byline,
-        "language": parsed.language[:32],
-        "site_name": parsed.site_name,
-        "page_type": parsed.page_type[:32],
-        "published_claim": parsed.published_claim[:32],
         "links": [{"url": link.url, "anchor": link.anchor} for link in parsed.links],
         "char_count": parsed.char_count,
         "paragraph_count": parsed.paragraph_count,
         "link_density": parsed.link_density,
-        "feed_body_ratio": round(ratio, 4),
-        "ok": ok,
-        "note": note,
     }
-    stored = (
+    # `insert(Model)` targets that model's own table, which for a hierarchy is what
+    # each half of this needs.
+    reading_id = (
         await session.execute(
             insert(Extraction)
-            .values(**values)
+            .values(**base)
             .on_conflict_do_update(
-                index_elements=["item_version_id", "source", "extractor", "extractor_version"],
-                set_={key: values[key] for key in values if key != "item_version_id"},
+                constraint="uq_extractions_version_source_extractor",
+                set_={key: base[key] for key in base if key not in _IDENTITY},
             )
-            .returning(Extraction)
+            .returning(Extraction.id)
         )
     ).scalar_one()
+
+    if found.source == ExtractionSource.PAGE:
+        claims = {
+            "id": reading_id,
+            "page_capture_id": found.capture_id,
+            "title": parsed.title,
+            "byline": parsed.byline,
+            "language": parsed.language[:32],
+            "site_name": parsed.site_name,
+            "page_type": parsed.page_type[:32],
+            "published_claim": parsed.published_claim[:32],
+        }
+        await session.execute(
+            insert(PageExtraction)
+            .values(**claims)
+            .on_conflict_do_update(
+                index_elements=["id"], set_={key: claims[key] for key in claims if key != "id"}
+            )
+        )
 
     for position, image in enumerate(parsed.images):
         await session.execute(
             insert(ExtractionImage)
             .values(
-                extraction_id=stored.id,
+                extraction_id=reading_id,
                 url=image.url,
                 role=image.role,
                 alt=image.alt[:2000],
@@ -220,14 +231,14 @@ async def store(
         )
 
     await session.flush()
-    return stored
+    return await session.get_one(Extraction, reading_id)
 
 
-def _judge(parsed: article.Article, settings: ExtractSettings) -> tuple[bool, str]:
-    """Whether this looks like an article. Measured against real pages and a consent wall.
+def judge(parsed: Readable, settings: ExtractSettings) -> tuple[bool, str]:
+    """Whether this reads like an article. Measured against real pages and a consent wall.
 
-    Never destructive: a row that fails is still stored, because the judgement is the
-    thing most likely to be wrong.
+    Asked, never stored: the thresholds live in config, so a stored verdict goes wrong
+    silently. Failing is never destructive — the reading is stored either way.
     """
     if not parsed.body:
         return False, "nothing extracted"
@@ -249,16 +260,17 @@ async def extract_page(version_id: uuid.UUID, settings: ExtractSettings) -> Extr
         parsed = article.parse(found.body.decode("utf-8", errors="replace"), found.final_url)
         current.set_attribute("extract.chars", parsed.char_count)
 
-        stored = await store(found, parsed, settings)
-        current.set_attribute("extract.ok", stored.ok)
-        count("extract.extractions.ok" if stored.ok else "extract.extractions.poor")
-        if not stored.ok:
-            logger.warning("poor extraction for version %s: %s", version_id, stored.note)
+        ok, note = judge(parsed, settings)
+        stored = await store(found, parsed)
+        current.set_attribute("extract.ok", ok)
+        count("extract.extractions.ok" if ok else "extract.extractions.poor")
+        if not ok:
+            logger.warning("poor extraction for version %s: %s", version_id, note)
         return stored
 
 
 async def extract_feed(version_id: uuid.UUID, settings: ExtractSettings) -> Extraction | None:
-    """Read the text the feed already gave us. No network, so nothing to fail but parsing."""
+    """Read the text the feed already gave us. Nothing to fail but the parse."""
     found = await pending_feed(version_id)
     if found is None:
         return None
@@ -270,9 +282,10 @@ async def extract_feed(version_id: uuid.UUID, settings: ExtractSettings) -> Extr
         )
         current.set_attribute("extract.chars", parsed.char_count)
 
-        stored = await store(found, parsed, settings)
-        current.set_attribute("extract.ok", stored.ok)
+        ok, _ = judge(parsed, settings)
+        stored = await store(found, parsed)
+        current.set_attribute("extract.ok", ok)
         # A teaser is not a defect — most of this corpus is teasers, and knowing which is
         # the point. So no warning here, unlike a page that came back unreadable.
-        count("extract.feed_extractions.ok" if stored.ok else "extract.feed_extractions.teaser")
+        count("extract.feed_extractions.ok" if ok else "extract.feed_extractions.teaser")
         return stored

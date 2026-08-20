@@ -1,12 +1,10 @@
 """The robots.txt parser boundary. Nothing else imports it.
 
-An absent or unreachable robots.txt is an empty body, which allows everything, so
-callers never branch on whether a policy exists.
+An absent or unreachable robots.txt is an empty body, which allows everything, so callers
+never branch on whether a policy exists.
 
-Protego rather than `urllib.robotparser`. The stdlib does handle wildcards and
-longest-match precedence, but it normalises a rule pattern and the URL it matches
-differently: `=` is percent-encoded in the pattern and left alone in the query, so
-`Disallow: /*/*source=` never matches `?source=rss`.
+Protego because the stdlib percent-encodes `=` in a rule pattern and not in the query it
+matches, so `Disallow: /*/*source=` never fires against `?source=rss`.
 """
 
 import dataclasses

@@ -1,12 +1,8 @@
 """Whether a publisher is refusing us, rather than one article being unavailable.
 
-A 403 on a page is a fact about that page. Every page on a host 403ing is a fact about
-the publisher, and per-version backoff leaves as many independent clocks as there are
-articles — all of them still knocking. This is the one clock.
-
-Derived from the capture rows rather than stored, like the per-version backoff. The
-trap that comes with deriving it: a breaker that stops attempts freezes the window it
-reads, so it would never reopen. Hence the probe.
+Per-version backoff leaves as many clocks as there are articles, all still knocking.
+This is the one clock. Derived from the capture rows, which is why it needs the probe:
+a breaker that stops attempts freezes the window it reads.
 """
 
 import datetime
@@ -20,12 +16,10 @@ from old_news.config import ExtractSettings
 from old_news.db import PageCapture
 from old_news.politeness import backoff
 
-# Enough rows to count a run of failures past any sane threshold. Undercounting only
-# shortens the probe interval, so there is nothing to gain from reading more.
+# Undercounting only shortens the probe interval, so there is nothing to gain from more.
 WINDOW = 50
 
-# 404 and 410 are about a URL, not a publisher. Counting them would let a handful of
-# dead links close a host that is answering everything else perfectly well.
+# About a URL, not a publisher: a few dead links must not close a healthy host.
 PER_URL_STATUS = frozenset({404, 410})
 
 
@@ -36,10 +30,9 @@ def _succeeded(status: int) -> bool:
 def consecutive_failures(
     recent: list[tuple[int, datetime.datetime]],
 ) -> tuple[int, datetime.datetime | None]:
-    """How many host-scoped failures since the last success, and when the newest was.
+    """Host-scoped failures since the last success, newest first, and when.
 
-    `recent` is newest first. A per-URL status is stepped over rather than counted or
-    treated as a success — it says nothing either way.
+    A per-URL status is stepped over: it is neither a failure nor a success here.
     """
     failures = 0
     latest = None
@@ -66,18 +59,14 @@ async def _recent(session: AsyncSession, host_id: uuid.UUID) -> list[tuple[int, 
 
 
 async def refusing(host_id: uuid.UUID, settings: ExtractSettings) -> bool:
-    """Whether to skip this fetch because the host is not answering anyone.
-
-    False while a probe is due, so one request per interval goes out to find out
-    whether that is still true.
-    """
+    """Whether to skip this fetch. False while a probe is due, so one gets through."""
     failures, latest = consecutive_failures(await _recent(host_id))
     if latest is None or failures < settings.host_failure_threshold:
         return False
 
     policy = backoff.policy_for(settings.host_probe)
-    # Counted from the threshold, so the first wait after tripping is the minimum
-    # rather than one already several doublings deep.
+    # From the threshold, so the first wait is the minimum rather than several
+    # doublings deep.
     probe_due = backoff.retry_at(
         latest, policy, failures=failures - settings.host_failure_threshold
     )

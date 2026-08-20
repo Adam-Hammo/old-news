@@ -36,10 +36,10 @@ class PollOutcome(enum.StrEnum):
 
 
 class FeedPoll(UUIDPrimaryKey, Base):
-    """One visit to one feed, as it happened.
+    """One visit to one feed, as it happened. Append-only.
 
-    Append-only. The feed row is a cursor saying what happens next; this is the record
-    of what already did, which `feeds.last_error` used to overwrite once per poll.
+    The feed row says what happens next; this says what already did, which
+    `feeds.last_error` used to overwrite once a poll.
     """
 
     __tablename__ = "feed_polls"
@@ -76,9 +76,8 @@ class FeedPoll(UUIDPrimaryKey, Base):
 def consecutive_failures(feed_id) -> ColumnElement[int]:
     """Failed polls since the last one that was not a failure.
 
-    Derived rather than counted up in a column: the log is the record, and a counter
-    beside it is a second copy that can only ever disagree. A 304 and a robots refusal
-    both end a run — neither says the publisher is broken.
+    Derived, because a counter beside the log is a second copy that can only disagree.
+    A 304 and a robots refusal both end a run — neither says the publisher is broken.
     """
     # Aliased and correlated explicitly. Both halves select from `feed_polls`, so
     # without this SQLAlchemy folds the inner `max` into the outer WHERE and Postgres
@@ -104,11 +103,10 @@ def consecutive_failures(feed_id) -> ColumnElement[int]:
 
 
 def gone(feed_id) -> ColumnElement[bool]:
-    """Whether the publisher has ever answered 410.
+    """Whether the publisher has ever answered 410 — their only permanent answer.
 
-    The one permanent answer a feed can give, so it needs no threshold and no config —
-    unlike giving up after N failures, which is our policy rather than their statement
-    and so is applied where the settings that define it already are.
+    Needs no threshold, unlike giving up after N failures, which is our policy and is
+    applied where the setting lives.
     """
     return (
         select(FeedPoll.id)

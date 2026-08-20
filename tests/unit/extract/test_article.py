@@ -3,7 +3,7 @@
 from old_news.config import ExtractSettings
 from old_news.db import ImageRole
 from old_news.extract import article
-from old_news.extract.service import _judge
+from old_news.extract.service import judge
 
 GUARDIAN_URL = "https://www.theguardian.com/society/2026/aug/19/benefits-disabled-young-people"
 
@@ -48,7 +48,7 @@ def test_a_consent_wall_fails_the_quality_signal(page):
     """The failure that matters. It extracts cleanly and is not an article."""
     got = article.parse(page("consent-wall.html"), "https://example.com/article")
 
-    ok, note = _judge(got, ExtractSettings())
+    ok, note = judge(got, ExtractSettings())
     assert not ok
     assert note
 
@@ -56,7 +56,7 @@ def test_a_consent_wall_fails_the_quality_signal(page):
 def test_a_real_article_passes_the_quality_signal(page):
     got = article.parse(page("guardian-article.html"), GUARDIAN_URL)
 
-    ok, note = _judge(got, ExtractSettings())
+    ok, note = judge(got, ExtractSettings())
     assert ok
     assert note == ""
 
@@ -65,4 +65,4 @@ def test_nothing_extractable_is_not_an_error():
     got = article.parse("<html><body></body></html>", "https://example.com/a")
 
     assert got.body == ""
-    assert not _judge(got, ExtractSettings())[0]
+    assert not judge(got, ExtractSettings())[0]

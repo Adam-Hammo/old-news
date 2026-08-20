@@ -27,12 +27,8 @@ def host_lock(host: str) -> str | None:
 def with_www(url: str) -> str:
     """The same URL under the `www.` name, unchanged if it is already there.
 
-    `host_of` strips the prefix because it is not a different publisher. Which of the
-    two names carries a DNS record is a separate question, and not always the apex.
-
-    Rebuilt through `urlsplit` rather than by replacing the host in the string: the
-    parsed host is lowercased and punycoded, so a substring replace finds nothing in
-    `EXAMPLE.com` or any IDN host and silently hands back the URL it was given.
+    Rebuilt through `urlsplit`, not a string replace: the parsed host is lowercased and
+    punycoded, so replacing it finds nothing in `EXAMPLE.com` or any IDN host.
     """
     if http_url(url) is None:
         return url

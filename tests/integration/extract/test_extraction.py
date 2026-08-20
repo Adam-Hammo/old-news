@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, extract
 from old_news.config import ExtractSettings
-from old_news.db import Extraction, ExtractionImage, ImageRole
+from old_news.db import Extraction, ExtractionImage, ImageRole, PageExtraction
 from old_news.extract import article as article_module
-from old_news.extract.service import extract_page
+from old_news.extract.service import extract_page, judge
 
 GUARDIAN_URL = "https://www.theguardian.com/society/2026/aug/19/benefits-disabled-young-people"
 
@@ -49,7 +49,8 @@ async def test_a_captured_page_becomes_a_readable_extraction(
     stored = await extract_page(version_id, SETTINGS)
 
     assert stored is not None
-    assert stored.ok
+    assert isinstance(stored, PageExtraction)
+    assert judge(stored, SETTINGS) == (True, "")
     assert stored.char_count > 3000
     assert stored.site_name == "The Guardian"
     assert stored.extractor == article_module.EXTRACTOR

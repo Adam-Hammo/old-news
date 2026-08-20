@@ -53,9 +53,7 @@ def upgrade() -> None:
     op.create_unique_constraint(
         UNIQUE_NEW, "extractions", ["item_version_id", "source", "extractor", "extractor_version"]
     )
-    op.create_check_constraint(
-        "known_source", "extractions", "source IN ('feed', 'page')"
-    )
+    op.create_check_constraint("known_source", "extractions", "source IN ('feed', 'page')")
     op.create_check_constraint(
         "capture_matches_source",
         "extractions",

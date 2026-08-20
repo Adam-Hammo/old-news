@@ -11,12 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from old_news import db
 from old_news.db import (
     Document,
-    Extraction,
     ExtractionImage,
-    ExtractionSource,
     Item,
     ItemVersion,
     PageCapture,
+    PageExtraction,
 )
 from old_news.db import bytes as codec
 from old_news.politeness import ensure
@@ -121,14 +120,12 @@ async def _extraction(
     session.add(capture)
     await session.flush()
 
-    extraction = Extraction(
+    extraction = PageExtraction(
         item_version_id=version_id,
-        source=ExtractionSource.PAGE,
         page_capture_id=capture.id,
         extractor="test",
         extractor_version="0",
         body="Words.",
-        ok=True,
     )
     session.add(extraction)
     await session.flush()

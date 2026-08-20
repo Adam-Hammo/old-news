@@ -30,35 +30,23 @@ class ImageRole(enum.StrEnum):
 
 
 class ExtractionSource(enum.StrEnum):
-    """Which stored artefact was read.
-
-    The feed document and the article page are both bytes the network handed over, and
-    what was read out of either is derived, disposable and rebuildable. They were not
-    always the same shape — feed text sat inline on `item_versions` with no record of
-    what parsed it — and that asymmetry is why "which one do I read, index, embed" had no
-    clean answer. Now it is one question about rows that differ by a column.
-    """
+    """Which stored artefact was read."""
 
     FEED = "feed"
     PAGE = "page"
 
 
 class Extraction(UUIDPrimaryKey, Base):
-    """What one extractor made of one artefact.
+    """What one extractor made of one artefact. Derived, disposable, rebuildable.
 
-    Derived and disposable, versioned on three axes — which item version it came from,
-    which artefact it read, and which extractor made it. Re-extracting the same way
-    writes the same row; a new extractor version lands alongside, and old output can be
-    binned freely because what it was made from is still there.
+    Abstract in practice: no identity of its own, and `source` is NOT NULL with no
+    default, so the database refuses a row that will not say which kind it is.
     """
 
     __tablename__ = "extractions"
     __table_args__ = (
-        # Also the index for looking one up by version: `item_version_id` leads it, so a
-        # separate single-column index on that would be a second copy of the same b-tree.
-        # Named explicitly: the convention's own template runs to 65 characters here and
-        # Postgres truncates at 63, so the name alembic renders and the name the database
-        # keeps would not match.
+        # Also serves lookups by version, which leads it. Named explicitly because the
+        # convention's template runs to 65 characters and Postgres truncates at 63.
         UniqueConstraint(
             "item_version_id",
             "source",
@@ -71,24 +59,12 @@ class Extraction(UUIDPrimaryKey, Base):
         # column.
         Index("ix_extractions_extractor", "extractor", "extractor_version"),
         CheckConstraint(one_of("source", ExtractionSource), name="known_source"),
-        # A page extraction names the capture it read. A feed one has nothing to name:
-        # its artefact is the document behind `item_version_id`, and repeating that here
-        # would be a second copy of `item_versions.document_id` to drift against.
-        CheckConstraint(
-            "(source = 'page') = (page_capture_id IS NOT NULL)", name="capture_matches_source"
-        ),
     )
 
     item_version_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("item_versions.id", ondelete="CASCADE")
     )
     source: Mapped[str] = mapped_column(String(8))
-    page_capture_id: Mapped[uuid.UUID | None] = mapped_column(
-        PgUUID(as_uuid=True),
-        ForeignKey("page_captures.id", ondelete="CASCADE"),
-        nullable=True,
-        index=True,
-    )
 
     extractor: Mapped[str] = mapped_column(String(32))
     extractor_version: Mapped[str] = mapped_column(String(32))
@@ -96,8 +72,51 @@ class Extraction(UUIDPrimaryKey, Base):
 
     body: Mapped[str] = mapped_column(Text, server_default="")
 
-    # What the page claims about itself, kept as claims rather than merged over what the
-    # feed said. Which of the two to believe is a question for a reader, later.
+    # Captured, not yet materialised: turning these into article-to-article rows needs
+    # URL-to-item resolution, which arrives with dedup in the search phase.
+    links: Mapped[list[dict[str, str]]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
+
+    # Measurements, not judgements: pure functions of `body`, so they cannot go stale.
+    # Whether they are good enough is a threshold question, and thresholds live in config.
+    char_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    paragraph_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    link_density: Mapped[float] = mapped_column(Float, server_default="0")
+
+    # RUF012 wants ClassVar; SQLAlchemy declares it as an instance attribute and `ty`
+    # rejects the override. Plain assignment is what SQLAlchemy's own docs use.
+    __mapper_args__ = {"polymorphic_on": source}  # noqa: RUF012
+
+    def __str__(self) -> str:
+        return f"{self.source}: {self.char_count} characters"
+
+
+class FeedExtraction(Extraction):
+    """A reading of the text a feed already carried.
+
+    Adds nothing on purpose, so neither source is the default one. No `__tablename__`,
+    so no second table and no join — just a name for the identity.
+    """
+
+    __mapper_args__ = {"polymorphic_identity": ExtractionSource.FEED}  # noqa: RUF012
+
+
+class PageExtraction(Extraction):
+    """A reading of an article page, plus what that page claimed about itself.
+
+    Claims stay claims rather than being merged over what the feed said — which to
+    believe is a question for a reader. A feed states its own on the version instead.
+    """
+
+    __tablename__ = "page_extractions"
+
+    # Not `UUIDPrimaryKey`: the child shares the parent's key rather than minting one.
+    id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("extractions.id", ondelete="CASCADE"), primary_key=True
+    )
+    page_capture_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("page_captures.id", ondelete="CASCADE"), index=True
+    )
+
     title: Mapped[str] = mapped_column(Text, server_default="")
     byline: Mapped[str] = mapped_column(Text, server_default="")
     language: Mapped[str] = mapped_column(String(32), server_default="")
@@ -105,22 +124,16 @@ class Extraction(UUIDPrimaryKey, Base):
     page_type: Mapped[str] = mapped_column(String(32), server_default="")
     published_claim: Mapped[str] = mapped_column(String(32), server_default="")
 
-    # Captured, not yet materialised: turning these into article-to-article rows needs
-    # URL-to-item resolution, which arrives with dedup in the search phase.
-    links: Mapped[list[dict[str, str]]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
-
-    # The quality signal. The failure that matters is not a 404, it is cheerfully
-    # extracting a cookie banner and marking it done.
-    char_count: Mapped[int] = mapped_column(Integer, server_default="0")
-    paragraph_count: Mapped[int] = mapped_column(Integer, server_default="0")
-    link_density: Mapped[float] = mapped_column(Float, server_default="0")
-    feed_body_ratio: Mapped[float] = mapped_column(Float, server_default="0")
-
-    ok: Mapped[bool] = mapped_column(server_default=text("false"))
-    note: Mapped[str] = mapped_column(Text, server_default="")
+    # Eager, or the child columns lazy-load and fail once a row outlives its transaction.
+    # Not `"inline"`: that outer-joins this table into the aliased subquery
+    # `Item.current_extraction` builds, which has no FROM clause to attach it to.
+    __mapper_args__ = {  # noqa: RUF012
+        "polymorphic_identity": ExtractionSource.PAGE,
+        "polymorphic_load": "selectin",
+    }
 
     def __str__(self) -> str:
-        return self.title or f"{self.char_count} characters"
+        return self.title or f"page: {self.char_count} characters"
 
 
 class ExtractionImage(UUIDPrimaryKey, Base):

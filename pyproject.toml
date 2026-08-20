@@ -64,7 +64,7 @@ build-backend = "hatchling.build"
 packages = ["src/old_news"]
 
 [tool.codespell]
-ignore-words-list = "statics"
+ignore-words-list = "statics,selectin"
 
 [tool.vulture]
 # Dead code is debt waiting to happen, so this runs in CI. What it cannot see is
@@ -118,11 +118,11 @@ ignore_names = [
   "current_version",
   "first_seen_at",
   "last_success_at",
+  "page_capture_id",
   "path_format",
   "read_at",
   "subscription",
   "supersedes",
-  "suspended_reason",
   "versions",
   # pytest injects fixtures by parameter name.
   "blanket_ban",

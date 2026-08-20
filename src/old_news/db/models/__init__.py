@@ -6,7 +6,9 @@ from old_news.db.models.extraction import (
     Extraction,
     ExtractionImage,
     ExtractionSource,
+    FeedExtraction,
     ImageRole,
+    PageExtraction,
 )
 from old_news.db.models.feed import Feed
 from old_news.db.models.host import Host
@@ -25,6 +27,7 @@ __all__ = [
     "ExtractionImage",
     "ExtractionSource",
     "Feed",
+    "FeedExtraction",
     "FeedPoll",
     "Host",
     "ImageCapture",
@@ -32,6 +35,7 @@ __all__ = [
     "Item",
     "ItemVersion",
     "PageCapture",
+    "PageExtraction",
     "PollOutcome",
     "RobotsPolicy",
     "RuleSource",

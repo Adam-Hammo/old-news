@@ -49,10 +49,9 @@ class _FetchState:
 async def due_polls(session: AsyncSession, settings: IngestSettings, limit: int) -> list[DuePoll]:
     """Feeds worth visiting now.
 
-    Giving up after N failures is applied here rather than stored on the feed: it is our
-    policy, not the publisher's statement, so it belongs with the setting that defines it
-    and changing the number takes effect at once instead of leaving rows stamped with the
-    old one. `gone` is the other half — a 410, which needs no threshold.
+    Giving up after N failures is applied here, not stored: it is our policy, so it
+    belongs with its setting and changing the number takes effect at once. `gone` — a
+    410 — is the publisher's half, and needs no threshold.
     """
     rows = await session.execute(
         select(Feed.id, Host.name)
@@ -128,8 +127,8 @@ def _log(
     error: str = "",
     new_items: int = 0,
 ) -> None:
-    """Append what this poll turned out to be. Called inside the caller's transaction:
-    the record of a poll and the schedule it moves land together or not at all."""
+    """Append what this poll turned out to be, inside the caller's transaction, so the
+    record and the schedule it moves land together or not at all."""
     session.add(
         FeedPoll(
             feed_id=feed_id,
@@ -142,8 +141,7 @@ def _log(
 
 
 async def _consecutive_failures(session: AsyncSession, feed_id: uuid.UUID) -> int:
-    """The derived count, read back for the schedule. One definition of the number,
-    on the model, spelled as SQL because that is the only place it exists."""
+    """The derived count, read back for the schedule. One definition, on the model."""
     return (
         await session.execute(select(Feed.consecutive_failures).where(Feed.id == feed_id))
     ).scalar_one()

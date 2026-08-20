@@ -24,6 +24,7 @@ from old_news.db import (
     Item,
     ItemVersion,
     PageCapture,
+    PageExtraction,
     Subscription,
     TrainingRule,
 )
@@ -170,29 +171,44 @@ class PageCaptureAdmin(ModelView, model=PageCapture):
 class ExtractionAdmin(ModelView, model=Extraction):
     name_plural = "Extractions"
     icon = "fa-solid fa-align-left"
-    # The quality signal, which is the point of this view: a signal nobody can see is not
-    # a signal, and the failure that matters is a cookie banner marked done.
+    # The measurements, which are the point of this view: a signal nobody can see is not a
+    # signal, and the failure that matters is a cookie banner marked done. Whether a given
+    # row passes is a question about thresholds in config, so it is not a column to list —
+    # sort by `char_count` and the short ones come to you.
     column_list = [
-        Extraction.ok,
+        Extraction.source,
         Extraction.char_count,
         Extraction.paragraph_count,
         Extraction.link_density,
-        Extraction.feed_body_ratio,
-        Extraction.site_name,
-        Extraction.title,
-        Extraction.note,
         Extraction.extractor_version,
-        Extraction.page_capture_id,
+        Extraction.created_at,
     ]
-    column_searchable_list = [Extraction.title, Extraction.site_name]
     column_sortable_list = [
-        Extraction.ok,
+        Extraction.source,
         Extraction.char_count,
         Extraction.link_density,
-        Extraction.feed_body_ratio,
         Extraction.created_at,
     ]
     column_default_sort = [(Extraction.char_count, False)]
+    can_create = False
+    can_edit = False
+
+
+class PageExtractionAdmin(ModelView, model=PageExtraction):
+    name_plural = "Page extractions"
+    icon = "fa-solid fa-newspaper"
+    # What a page claimed about itself, which only a page has. Kept as claims rather than
+    # merged over what the feed said, so both are visible side by side.
+    column_list = [
+        PageExtraction.title,
+        PageExtraction.byline,
+        PageExtraction.site_name,
+        PageExtraction.published_claim,
+        PageExtraction.char_count,
+        PageExtraction.extractor_version,
+    ]
+    column_searchable_list = [PageExtraction.title, PageExtraction.site_name]
+    column_sortable_list = [PageExtraction.title, PageExtraction.char_count]
     can_create = False
     can_edit = False
 
@@ -256,6 +272,7 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
         DocumentAdmin,
         PageCaptureAdmin,
         ExtractionAdmin,
+        PageExtractionAdmin,
         ImageCaptureAdmin,
         TrainingRuleAdmin,
     )

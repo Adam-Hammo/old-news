@@ -32,14 +32,12 @@ def policy_for(settings: RetrySettings) -> Policy:
 
 
 def clamp(seconds: float, policy: Policy) -> int:
-    """Any wait, held inside the bounds. Public because `Retry-After` needs the same
-    clamping a computed interval does."""
+    """Any wait, held inside the bounds. Public because `Retry-After` needs it too."""
     return int(min(max(seconds, policy.minimum_seconds), policy.maximum_seconds))
 
 
 def interval(policy: Policy, *, failures: int, base_seconds: float | None = None) -> int:
-    """Exponential in consecutive failures. `base_seconds` is for callers with a
-    cadence of their own — a feed's current interval — rather than a flat floor."""
+    """Exponential in consecutive failures. `base_seconds` for callers with a cadence."""
     base = policy.minimum_seconds if base_seconds is None else base_seconds
     return clamp(base * policy.factor**failures, policy)
 
@@ -60,10 +58,9 @@ def exhausted(policy: Policy, *, failures: int) -> bool:
 def due_at(
     last_attempt: ColumnClause | ColumnElement, failures: ColumnElement, policy: Policy
 ) -> ColumnElement:
-    """`retry_at` as SQL, for the sweeps that pick their own work.
+    """`retry_at` as SQL, so a batch can be ordered and limited by it.
 
-    Postgres does the arithmetic so a batch can be ordered and limited by it, which
-    filtering in Python after a `LIMIT` could not.
+    Filtering in Python after a `LIMIT` would silently shrink every batch.
     """
     seconds = func.least(
         func.greatest(
