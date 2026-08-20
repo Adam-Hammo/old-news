@@ -27,11 +27,7 @@ async def heartbeat(note: str = "") -> str:
 @app.periodic(cron="* * * * *", periodic_id="queue_metrics")
 @app.task(name="queue_metrics")
 async def queue_metrics(timestamp: int) -> None:
-    """Queue depth and stalled workers, once a minute.
-
-    `todo` climbing means the poller is falling behind. `stalled` above zero means
-    a worker died holding jobs. Those are the two ways this queue actually fails.
-    """
+    """Queue depth and stalled workers, once a minute."""
     manager = app.job_manager
 
     for queue in await manager.list_queues_async():
@@ -57,18 +53,14 @@ async def prune_jobs(context: JobContext, timestamp: int) -> None:
     )
 
 
-# Hourly rather than nightly: a scope with no dictionary yet is storing bodies at twice
-# the size it needs to, and nothing already written is rewritten to fix that later. The
-# sweep returns nothing once every scope has a fresh one, so asking often is close to
-# free.
+# Hourly, not nightly: an untrained scope stores at twice the size and is never rewritten.
+# Once every scope has a fresh dictionary the sweep returns nothing, so asking is cheap.
 @app.periodic(cron="17 * * * *", periodic_id="train_dictionaries")
 @app.task(name="train_dictionaries")
 async def train_dictionaries(timestamp: int) -> None:
     """Teach compression what a feed's documents and a publisher's pages look like.
 
-    Halves what a document costs, which is the largest thing in the database. Nothing
-    already written is rewritten: a body keeps pointing at whatever dictionary compressed
-    it, and a scope with none stays on plain zstd, which always reads.
+    Nothing already written is rewritten: a body keeps pointing at whatever compressed it.
     """
     settings = get_settings().storage
     batch = settings.dictionary_batch_size

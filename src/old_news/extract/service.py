@@ -1,9 +1,4 @@
-"""Turning a captured page into something readable.
-
-Capture is per settled version; extraction runs on head versions only, because superseded
-text is not what anyone reads. Re-extraction is a separate concern from re-capture and runs
-down this same path.
-"""
+"""Turning a captured page into something readable. Head versions only."""
 
 import logging
 import uuid
@@ -45,24 +40,25 @@ class Pending:
     capture_id: uuid.UUID | None = None
 
 
-@db.transactional
-async def due_extractions(
-    session: AsyncSession, settings: ExtractSettings, limit: int
-) -> list[uuid.UUID]:
-    """Head versions with a successful capture and no output from the current extractor.
-
-    Keyed on the extractor version, so bumping it makes the whole archive due again
-    without anything deleting a row.
-    """
-    done = (
+def _extracted(source: ExtractionSource):
+    """Versions the current extractor has already read from this kind of artefact."""
+    return (
         select(Extraction.item_version_id)
         .where(
-            Extraction.source == ExtractionSource.PAGE,
+            Extraction.source == source,
             Extraction.extractor == article.EXTRACTOR,
             Extraction.extractor_version == article.extractor_version(),
         )
         .scalar_subquery()
     )
+
+
+@db.transactional
+async def due_extractions(
+    session: AsyncSession, settings: ExtractSettings, limit: int
+) -> list[uuid.UUID]:
+    """Head versions with a successful capture and no output from the current extractor."""
+    done = _extracted(ExtractionSource.PAGE)
     rows = await session.execute(
         select(ItemVersion.id)
         .join(PageCapture, PageCapture.item_version_id == ItemVersion.id)
@@ -81,19 +77,8 @@ async def due_extractions(
 
 @db.transactional
 async def due_feed_extractions(session: AsyncSession, limit: int) -> list[uuid.UUID]:
-    """Head versions whose feed text the current extractor has not read.
-
-    No capture, no network, nothing to wait for — so this runs ahead of capture.
-    """
-    done = (
-        select(Extraction.item_version_id)
-        .where(
-            Extraction.source == ExtractionSource.FEED,
-            Extraction.extractor == article.EXTRACTOR,
-            Extraction.extractor_version == article.extractor_version(),
-        )
-        .scalar_subquery()
-    )
+    """Head versions whose feed text the current extractor has not read."""
+    done = _extracted(ExtractionSource.FEED)
     rows = await session.execute(
         select(ItemVersion.id)
         .where(
@@ -154,10 +139,7 @@ async def pending(session: AsyncSession, version_id: uuid.UUID) -> Pending | Non
 
 @db.transactional
 async def store(session: AsyncSession, found: Pending, parsed: article.Article) -> Extraction:
-    """Insert a reading and, for a page, what that page claimed about itself.
-
-    Two statements because it is two tables. Re-reading the same way rewrites both.
-    """
+    """Insert a reading and, for a page, what that page claimed about itself."""
     base = {
         "item_version_id": found.version_id,
         "source": found.source,
@@ -169,8 +151,7 @@ async def store(session: AsyncSession, found: Pending, parsed: article.Article) 
         "paragraph_count": parsed.paragraph_count,
         "link_density": parsed.link_density,
     }
-    # `insert(Model)` targets that model's own table, which for a hierarchy is what
-    # each half of this needs.
+    # `insert(Model)` targets that model's own table, which is what each half needs.
     reading_id = (
         await session.execute(
             insert(Extraction)
@@ -220,12 +201,7 @@ async def store(session: AsyncSession, found: Pending, parsed: article.Article) 
 
 
 def judge(chars: int, paragraphs: int, settings: ExtractSettings) -> tuple[bool, str]:
-    """Whether this reads like an article. Measured against real pages and a consent wall.
-
-    Takes the measurements rather than the thing measured, so a parse in flight and a row
-    read back are the same call. Asked, never stored: the thresholds live in config, so a
-    stored verdict goes wrong silently. Failing is never destructive either way.
-    """
+    """Whether this reads like an article. Asked, never stored — the thresholds move."""
     if not chars:
         return False, "nothing extracted"
     if chars < settings.min_body_chars:
@@ -271,7 +247,6 @@ async def extract_feed(version_id: uuid.UUID, settings: ExtractSettings) -> Extr
         ok, _ = judge(parsed.char_count, parsed.paragraph_count, settings)
         stored = await store(found, parsed)
         current.set_attribute("extract.ok", ok)
-        # A teaser is not a defect — most of this corpus is teasers, and knowing which is
-        # the point. So no warning here, unlike a page that came back unreadable.
+        # A teaser is not a defect, so no warning here as there is for a bad page.
         count("extract.feed_extractions.ok" if ok else "extract.feed_extractions.teaser")
         return stored

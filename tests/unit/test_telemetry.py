@@ -1,9 +1,8 @@
 """Credentials must not reach the telemetry backend.
 
-The `http.url` span attribute keeps the whole query string, and Logfire treats
-`http.url` as a SAFE_KEY and never scrubs it. So for any route that can carry a
-credential the only defence is not tracing it at all — which is what
-UNTRACED_PATHS is for. `/admin` is that route today.
+Logfire treats `http.url` as safe and never scrubs it, and the attribute keeps the
+whole query string — so for a route that can carry a credential the only defence is
+not tracing it. That is what UNTRACED_PATHS is for.
 """
 
 from pathlib import Path
@@ -63,9 +62,7 @@ async def article(feed_id: FromPath[int], slug: FromPath[str]) -> dict[str, bool
 
 
 def _finished(exporter: TestExporter) -> list[ReadableSpan]:
-    """Logfire emits a pending span when one starts, so the live view has something
-    to show. It carries the name from before the route was known — the finished span
-    is the one that matters."""
+    """Logfire emits a pending span at the start; the finished one is the span that matters."""
     return [
         span
         for span in exporter.exported_spans

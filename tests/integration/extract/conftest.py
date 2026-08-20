@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
 from old_news.db import (
+    CaptureOutcome,
     Document,
     ExtractionImage,
     Item,
@@ -67,11 +68,7 @@ async def _item(session: AsyncSession, feed_id: uuid.UUID) -> uuid.UUID:
 
 @pytest.fixture
 def article() -> Callable[..., Coroutine[Any, Any, list[uuid.UUID]]]:
-    """An item with one version per title given, chained newest last.
-
-    `aged` backdates every version so the settle window has elapsed; the default leaves
-    them just-observed, which is what an unsettled head looks like.
-    """
+    """An item with one version per title given, chained newest last. `aged` backdates them."""
 
     async def build(
         feed_id: uuid.UUID, *titles_and_urls: tuple[str, str], aged: bool = True
@@ -114,6 +111,7 @@ async def _extraction(
         host_id=await ensure(session, host),
         url=f"https://{host}/article",
         status=200,
+        outcome=CaptureOutcome.OK,
         body_hash=b"0" * 32,
         body=b"stored",
     )
@@ -160,6 +158,7 @@ async def _store_capture(
         url=url,
         final_url=url,
         status=200,
+        outcome=CaptureOutcome.OK,
         body_hash=body[:32],
         body=codec.compress(body, level=12),
     )

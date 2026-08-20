@@ -45,13 +45,32 @@ async def test_queue_schema_reports_installed(database: None, queue_schema: None
 async def test_both_clients_share_the_container_database(
     database: None, queue_schema: None, queue_app
 ):
-    """SQLAlchemy and procrastinate are configured independently, and procrastinate
-    reads OLD_NEWS_DATABASE__URL at import. If they ever point at different
-    databases the suite passes while testing a developer's machine.
-    """
+    """Configured independently, so two different databases would pass while testing nothing."""
     async with queue_app.open_async():
         await heartbeat.defer_async(note="same-database")
 
     rows = await _scalars("SELECT count(*) FROM procrastinate_jobs WHERE task_name = 'heartbeat'")
 
     assert rows[0] > 0
+
+
+async def test_every_view_matches_its_definition_in_code(database: None):
+    """A view is compiled from an expression the ORM also uses, so the two cannot disagree
+    in principle — but only a migration puts it in the database."""
+    from old_news.db import views
+
+    async with db.session() as session:
+        stored = {
+            name: text
+            for name, text in (
+                await session.execute(
+                    text("select viewname, definition from pg_views where schemaname='public'")
+                )
+            ).all()
+        }
+
+    missing = [entity.signature for entity in views.ENTITIES if entity.signature not in stored]
+
+    assert not missing, (
+        f"{missing} defined in db/views.py but not in the database — run just migration"
+    )

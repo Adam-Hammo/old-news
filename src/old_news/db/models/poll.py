@@ -9,18 +9,16 @@ from sqlalchemy import (
     Index,
     Integer,
     Text,
-    func,
     select,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Mapped, aliased, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
-from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of
+from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of, run_of
 
-# The publisher saying the feed is gone for good, which is the only answer that is
-# permanent on its own.
+# The only answer that is permanent on its own.
 PERMANENTLY_GONE = 410
 
 
@@ -28,19 +26,15 @@ class PollOutcome(enum.StrEnum):
     """What a poll turned out to be. Only `FAILED` backs a feed off."""
 
     OK = "ok"
-    # A 304. The feed answered and had nothing new, which is a healthy poll.
+    # A 304 is a healthy poll that happened to carry nothing.
     NOT_MODIFIED = "not_modified"
-    # robots.txt names this feed. Not a failure — dropping the rule brings it back.
+    # Not a failure: dropping the rule brings the feed back.
     DISALLOWED = "disallowed"
     FAILED = "failed"
 
 
 class FeedPoll(UUIDPrimaryKey, Base):
-    """One visit to one feed, as it happened. Append-only.
-
-    The feed row says what happens next; this says what already did, which
-    `feeds.last_error` used to overwrite once a poll.
-    """
+    """One visit to one feed, as it happened. Append-only; the feed row says what happens next."""
 
     __tablename__ = "feed_polls"
     __table_args__ = (
@@ -74,40 +68,19 @@ class FeedPoll(UUIDPrimaryKey, Base):
 
 
 def consecutive_failures(feed_id) -> ColumnElement[int]:
-    """Failed polls since the last one that was not a failure.
-
-    Derived, because a counter beside the log is a second copy that can only disagree.
-    A 304 and a robots refusal both end a run — neither says the publisher is broken.
-    """
-    # Aliased and correlated explicitly. Both halves select from `feed_polls`, so
-    # without this SQLAlchemy folds the inner `max` into the outer WHERE and Postgres
-    # rejects the aggregate.
-    earlier = aliased(FeedPoll)
-    last_good = (
-        select(func.max(earlier.polled_at))
-        .where(earlier.feed_id == feed_id, earlier.outcome != PollOutcome.FAILED)
-        .correlate_except(earlier)
-        .scalar_subquery()
-    )
-    return (
-        select(func.count())
-        .select_from(FeedPoll)
-        .where(
-            FeedPoll.feed_id == feed_id,
-            FeedPoll.outcome == PollOutcome.FAILED,
-            last_good.is_(None) | (FeedPoll.polled_at > last_good),
-        )
-        .correlate_except(FeedPoll)
-        .scalar_subquery()
-    )
+    """Failed polls since the last one that was not a failure."""
+    return run_of(
+        FeedPoll,
+        at=lambda poll: poll.polled_at,
+        scope=lambda poll: poll.feed_id == feed_id,
+        counts=lambda poll: poll.outcome == PollOutcome.FAILED,
+        # A 304 and a robots refusal both end a run. Neither says the publisher broke.
+        resets=lambda poll: poll.outcome != PollOutcome.FAILED,
+    ).length
 
 
 def gone(feed_id) -> ColumnElement[bool]:
-    """Whether the publisher has ever answered 410 — their only permanent answer.
-
-    Needs no threshold, unlike giving up after N failures, which is our policy and is
-    applied where the setting lives.
-    """
+    """Whether the publisher has ever answered 410. Needs no threshold, unlike giving up."""
     return (
         select(FeedPoll.id)
         .where(FeedPoll.feed_id == feed_id, FeedPoll.status == PERMANENTLY_GONE)

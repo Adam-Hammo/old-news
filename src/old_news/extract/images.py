@@ -1,11 +1,6 @@
-"""Fetching the images an extraction found.
+"""Fetching the images an extraction found. Eager for the lead, on request for the rest.
 
-Eager for the lead — the one image that represents an article, so no surface ever has a
-hole in it — and on request for the rest, which is the same task with a different argument
-rather than a second mechanism.
-
-Bytes are kept as received. The downscaled rendition a phone wants is derived from these
-later; one that replaced them could not be undone.
+Bytes are kept as received, so a rendition derived from them later can be undone.
 """
 
 import hashlib
@@ -66,11 +61,7 @@ async def _slot(session: AsyncSession, slot_id: uuid.UUID) -> str | None:
 
 @db.transactional
 async def link_existing(session: AsyncSession, slot_id: uuid.UUID, url: str) -> uuid.UUID | None:
-    """Point a slot at a capture already held for its URL, if there is one.
-
-    A publisher's series header appears across dozens of articles. Fetching it once and
-    pointing the rest at it is the difference between one copy and dozens.
-    """
+    """Point a slot at a capture already held for its URL, if there is one."""
     held = (
         await session.execute(
             select(ImageCapture.id)
@@ -96,10 +87,7 @@ async def _store(
     response: Response | None = None,
     error: str = "",
 ) -> ImageCapture:
-    """One row per distinct bytes at a URL, and the slot pointed at it.
-
-    Images are already compressed, so nothing here compresses them again.
-    """
+    """One row per distinct bytes at a URL, and the slot pointed at it. Already compressed."""
     body = response.body if response is not None else b""
     values = {
         "url": url,
@@ -117,8 +105,7 @@ async def _store(
         await session.execute(
             insert(ImageCapture)
             .values(**values)
-            # The same bytes at the same URL are one row. Refetching only records that
-            # the image was looked at again.
+            # The same bytes at the same URL are one row.
             .on_conflict_do_update(
                 index_elements=["url_digest", "body_hash"],
                 set_={"fetched_at": func.now()},

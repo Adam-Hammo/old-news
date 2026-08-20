@@ -17,9 +17,7 @@ async def test_deferring_records_a_job():
 
 
 def test_every_queue_a_task_declares_is_served():
-    """A queue missing from `WorkerSettings` is a queue no worker listens to, and its jobs
-    sit at `todo` forever. `default` holds the heartbeat and the nightly maintenance, so
-    the failure is quiet and total."""
+    """A queue no worker listens to leaves its jobs at `todo` forever, quietly."""
     import old_news.tasks.extract
     import old_news.tasks.ingest
     import old_news.tasks.maintenance

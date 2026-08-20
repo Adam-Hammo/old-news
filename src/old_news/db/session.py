@@ -23,10 +23,9 @@ _open: ContextVar[bool] = ContextVar("old_news_transaction_open", default=False)
 
 
 def configure(settings: DatabaseSettings) -> AsyncEngine:
-    """Build the engine. Called once per process, from a lifespan or a CLI entrypoint.
+    """Build the engine, once per process.
 
-    asyncpg binds a connection to the loop that opened it, so the engine must be
-    created on the loop that will use it — never at import time.
+    asyncpg binds a connection to the loop that opened it, so never at import time.
     """
     global _engine, _sessionmaker
 

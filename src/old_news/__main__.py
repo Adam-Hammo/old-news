@@ -22,13 +22,10 @@ def _hash_admin_password() -> str:
 
 
 async def _worker(settings: Settings) -> None:
-    """The worker owns its engine, exactly as the API owns one in its lifespan.
+    """The worker owns its engine, and one worker per queue owns its own slots.
 
-    `procrastinate worker` on its own never calls db.configure(), so every task
-    that touches Postgres would raise on its first statement.
-
-    One worker per queue, each with its own slots, so a few thousand queued extractions
-    cannot occupy the capacity the polls need.
+    `procrastinate worker` alone never calls `db.configure()`, so every task touching
+    Postgres would raise on its first statement.
     """
     from old_news import db, fetch, observability
     from old_news.tasks import app as queue_app
@@ -47,12 +44,7 @@ async def _worker(settings: Settings) -> None:
 
 
 def _stop_on_signal() -> asyncio.Event:
-    """One handler for the whole process, not one per worker.
-
-    `add_signal_handler` replaces whatever was registered before it, so letting each
-    worker install its own would leave only the last able to hear SIGTERM and the rest
-    running until Docker lost patience.
-    """
+    """One handler for the whole process: `add_signal_handler` replaces, it does not add."""
     stopping = asyncio.Event()
     loop = asyncio.get_running_loop()
     for signalled in (signal.SIGINT, signal.SIGTERM):
@@ -63,9 +55,8 @@ def _stop_on_signal() -> asyncio.Event:
 async def _run_workers(queue_app, settings: Settings, stopping: asyncio.Event) -> None:
     """Run one worker per queue until `stopping` is set.
 
-    Cancellation is how a procrastinate worker is asked to wind down, so the
-    `CancelledError` each one answers with is the expected reply and not a fault.
-    Anything else a worker raises is, and is re-raised once they have all stopped.
+    Cancellation is how procrastinate is asked to wind down, so `CancelledError` is the
+    expected reply; anything else is re-raised once every worker has stopped.
     """
     workers = [
         asyncio.create_task(
@@ -175,7 +166,6 @@ def main() -> None:
 
     if args.opml_command == "import":
         # Read before the loop starts: blocking I/O inside it stalls everything.
-        # "-" is how the file reaches a read-only container over ssh.
         data = sys.stdin.buffer.read() if args.path == "-" else Path(args.path).read_bytes()
         raise SystemExit(asyncio.run(_import_opml(data, settings)))
     raise SystemExit(asyncio.run(_export_opml(settings)))

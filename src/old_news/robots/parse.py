@@ -1,10 +1,7 @@
-"""The robots.txt parser boundary. Nothing else imports it.
-
-An absent or unreachable robots.txt is an empty body, which allows everything, so callers
-never branch on whether a policy exists.
+"""The robots.txt parser boundary. Nothing else imports it. An empty body allows everything.
 
 Protego because the stdlib percent-encodes `=` in a rule pattern and not in the query it
-matches, so `Disallow: /*/*source=` never fires against `?source=rss`.
+matches, so a rule carrying one silently never fires.
 """
 
 import dataclasses
@@ -12,17 +9,13 @@ from urllib.parse import urlsplit
 
 from protego import Protego
 
-# RFC 9309 §2.4. The stdlib parser implements this and protego does not, so it
-# lives here: a host that bans everything has still published its own rules.
+# RFC 9309 §2.4, which protego does not implement.
 ALWAYS_ALLOWED = "/robots.txt"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Rules:
-    """One host's robots.txt, as it applies to one user agent.
-
-    Records don't merge: a `*` block's rules don't apply to an agent with its own.
-    """
+    """One host's robots.txt, as it applies to one user agent. Records do not merge."""
 
     crawl_delay: float | None
     _rules: Protego
@@ -34,8 +27,7 @@ class Rules:
         return not self.allows("/")
 
     def allows(self, url: str) -> bool:
-        """Whether this agent may fetch a URL. Path and query are both matched —
-        `Disallow: /*/*source=` is about a query string and nothing else."""
+        """Whether this agent may fetch a URL. Path and query are both matched."""
         if urlsplit(url).path == ALWAYS_ALLOWED:
             return True
         return self._rules.can_fetch(url, self._user_agent)

@@ -52,10 +52,8 @@ class SingleUserBackend(AuthenticationBackend):
         form = await request.form()
         username, password = str(form.get("username", "")), str(form.get("password", ""))
 
-        # Both halves are checked even when the username is wrong, so a valid
-        # username can't be identified by how quickly the request comes back.
-        # Bytes, not str: compare_digest raises TypeError on non-ASCII text,
-        # which would turn a stray accent in the form into a 500.
+        # Both halves always compared, so timing cannot confirm a username. Bytes, not
+        # str: compare_digest raises TypeError on non-ASCII text.
         named = compare_digest(username.encode(), self._username.encode())
         known = passwords.verify(password, self._hash)
         if not (named and known):
@@ -77,8 +75,7 @@ class SingleUserBackend(AuthenticationBackend):
 class FeedAdmin(ModelView, model=Feed):
     name_plural = "Feeds"
     icon = "fa-solid fa-rss"
-    # Failure state is derived from `feed_polls` and so has no column to list or sort
-    # on. What went wrong is one screen along, in full, instead of the last line of it.
+    # Failure state is derived from `feed_polls`, so there is no column to list or sort on.
     column_list = [Feed.title, Feed.url, Feed.next_poll_at, Feed.last_polled_at]
     column_searchable_list = [Feed.title, Feed.url]
     column_sortable_list = [Feed.title, Feed.next_poll_at, Feed.last_polled_at]
@@ -110,8 +107,7 @@ class SubscriptionAdmin(ModelView, model=Subscription):
 class ItemAdmin(ModelView, model=Item):
     name_plural = "Items"
     icon = "fa-solid fa-fingerprint"
-    # Identity only. Content lives on the versions — that split is the schema
-    # working as intended, not something to paper over here.
+    # Identity only; the content lives on the versions.
     column_list = [Item.id, Item.identity_key, Item.identity_source, Item.first_seen_at, Item.read]
     column_sortable_list = [Item.first_seen_at]
     column_default_sort = [(Item.first_seen_at, True)]
@@ -139,8 +135,7 @@ class ItemVersionAdmin(ModelView, model=ItemVersion):
 class DocumentAdmin(ModelView, model=Document):
     name_plural = "Documents"
     icon = "fa-solid fa-file-code"
-    # `body` is a compressed feed document. Fifty of them in a list view is how
-    # this page becomes unusable, and it is the default without this.
+    # `body` is a compressed document, and listing fifty of them makes the page unusable.
     column_list = [Document.fetched_at, Document.status, Document.parse_ok, Document.parse_note]
     column_sortable_list = [Document.fetched_at, Document.status]
     column_default_sort = [(Document.fetched_at, True)]
@@ -152,8 +147,7 @@ class PageCaptureAdmin(ModelView, model=PageCapture):
     name = "Page capture"
     name_plural = "Page captures"
     icon = "fa-solid fa-file-arrow-down"
-    # `body` is a compressed article page; listing it makes the page unusable, and that
-    # is the default without this. Status and error are how a failing site is spotted.
+    # `body` is a compressed page, and listing it makes the page unusable.
     column_list = [
         PageCapture.fetched_at,
         PageCapture.status,
@@ -171,10 +165,7 @@ class PageCaptureAdmin(ModelView, model=PageCapture):
 class ExtractionAdmin(ModelView, model=Extraction):
     name_plural = "Extractions"
     icon = "fa-solid fa-align-left"
-    # The measurements, which are the point of this view: a signal nobody can see is not a
-    # signal, and the failure that matters is a cookie banner marked done. Whether a given
-    # row passes is a question about thresholds in config, so it is not a column to list —
-    # sort by `char_count` and the short ones come to you.
+    # The measurements. Whether a row passes is a threshold in config, so not a column.
     column_list = [
         Extraction.source,
         Extraction.char_count,
@@ -197,8 +188,7 @@ class ExtractionAdmin(ModelView, model=Extraction):
 class PageExtractionAdmin(ModelView, model=PageExtraction):
     name_plural = "Page extractions"
     icon = "fa-solid fa-newspaper"
-    # What a page claimed about itself, which only a page has. Kept as claims rather than
-    # merged over what the feed said, so both are visible side by side.
+    # What a page claimed about itself, kept beside what the feed said rather than merged.
     column_list = [
         PageExtraction.title,
         PageExtraction.byline,
@@ -217,8 +207,7 @@ class ImageCaptureAdmin(ModelView, model=ImageCapture):
     name = "Image capture"
     name_plural = "Image captures"
     icon = "fa-solid fa-image"
-    # `byte_size` is the whole reason images are held to one per article, so it is what
-    # this view is for.
+    # `byte_size` is why images are held to one per article.
     column_list = [
         ImageCapture.fetched_at,
         ImageCapture.status,
@@ -238,8 +227,7 @@ class TrainingRuleAdmin(ModelView, model=TrainingRule):
     name = "Training rule"
     name_plural = "Training rules"
     icon = "fa-solid fa-filter"
-    # Full CRUD deliberately: these are hand-made and unrecoverable, so this is where
-    # they get made. A rule with no feed is global.
+    # Full CRUD: these are hand-made and unrecoverable. A rule with no feed is global.
     column_list = [
         TrainingRule.dimension,
         TrainingRule.pattern,
@@ -279,25 +267,15 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
     for view in views:
         admin.add_view(view)
 
-    # Litestar and Starlette spell the ASGI protocol with different types. This
-    # is the only place the two meet, so the cast lives here rather than being
-    # spread over the call.
+    # The only place Litestar's and Starlette's ASGI types meet.
     downstream = cast("ASGIApp", host)
 
     async def mounted(scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] in {"http", "websocket"}:
-            # Litestar and Starlette disagree about what a mounted app receives.
-            # Litestar strips the prefix from `path` and leaves `root_path` empty;
-            # Starlette wants `path` whole with `root_path` naming the prefix,
-            # because it derives the route path by subtracting one from the other.
-            #
-            # Setting root_path alone satisfies neither: top-level pages route by
-            # falling through, but a nested Mount then subtracts a prefix `path`
-            # never had — which is how /admin/statics/* 404'd while /admin/login
-            # worked, leaving the UI with no CSS or JS.
-            #
-            # Litestar also appends a trailing slash, which sqladmin's routes
-            # don't carry.
+            # Litestar strips the mount prefix from `path` and leaves `root_path` empty;
+            # Starlette derives its route by subtracting one from the other, so it needs
+            # `path` whole. Restoring both is what keeps nested Mounts — the statics —
+            # routing. Litestar also appends a trailing slash sqladmin's routes lack.
             trimmed = scope["path"].rstrip("/") or "/"
             forwarded = {
                 **scope,

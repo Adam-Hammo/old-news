@@ -175,11 +175,7 @@ async def test_read_state_survives_an_edit(feed, fetcher, settings):
 
 
 async def test_a_poll_updates_only_the_feeds_table(feed, fetcher, settings):
-    """The invariant the archive rests on: ingestion appends everywhere else.
-
-    Asserted on the statements rather than the values, because the point is what
-    a poll is capable of, not what it happened to do this time.
-    """
+    """The invariant the archive rests on. Asserted on the statements, not the values."""
     await poll_feed(feed.id, fetcher, settings)
     STATE.update(body=document("First article, corrected"), etag='"v2"')
 
@@ -326,9 +322,7 @@ async def test_a_blanket_ban_still_polls(feed, fetcher, settings, no_policies):
 async def test_one_document_repeating_an_identity_does_not_fail_the_poll(
     clean: None, fetcher, settings, server: str, feed_state
 ):
-    """Two entries with the same guid used to raise UniqueViolation on
-    uq_items_feed_identity, failing every poll of that feed forever and suspending
-    it after ten tries. The first entry wins; the repeat is counted."""
+    """The repeat used to raise and fail every poll of that feed. The first entry wins."""
     duplicated = b"""<?xml version="1.0"?>
     <rss version="2.0"><channel><title>Broken</title>
       <item><title>First</title><guid>same</guid><description>A</description></item>

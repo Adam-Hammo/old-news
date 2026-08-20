@@ -1,9 +1,4 @@
-"""Which pages are worth fetching, as one query.
-
-The rule lives here whole rather than spread over a call chain, so it reads in one go and
-can be tested case by case. Modelled on `ingest.service.due_polls`, which is the same
-shape: claim a batch, group it by host, hand it to the queue.
-"""
+"""Which pages are worth fetching, as one query."""
 
 import dataclasses
 import datetime
@@ -14,8 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, training
 from old_news.config import ExtractSettings
-from old_news.db import Host, Item, ItemVersion, PageCapture, RobotsPolicy
-from old_news.extract import capture
+from old_news.db import (
+    CAPTURE_POLICY,
+    CaptureOutcome,
+    Host,
+    Item,
+    ItemVersion,
+    PageCapture,
+    RobotsPolicy,
+)
+from old_news.extract import breaker
 from old_news.politeness import backoff, host_of
 
 
@@ -32,32 +35,49 @@ class DueCapture:
 async def due_captures(
     session: AsyncSession, settings: ExtractSettings, limit: int
 ) -> list[DueCapture]:
-    """Head versions whose page we should have and do not.
-
-    The first version of an item is due at once, so every article has something; a later
-    one waits for the settle window, so a rolling story does not cost a fetch per rewrite.
-    The version cap and the blocking rule are what make a live blog cost nothing.
-    """
+    """Head versions whose page we should have and do not."""
     now = datetime.datetime.now(datetime.UTC)
     settled_by = now - datetime.timedelta(seconds=settings.settle_seconds)
     policy = backoff.policy_for(settings.capture_retry)
 
-    captured = select(PageCapture.item_version_id).where(PageCapture.succeeded).scalar_subquery()
+    # Excluded in SQL, not after the `LIMIT`: dropping rows from a claimed batch shrinks
+    # it, and the version stays due and leads the next one by age. A version never
+    # visited is not covered and needs no covering — the first sweep to reach it records
+    # the refusal, and from then on it is.
+    settled = (
+        select(PageCapture.item_version_id)
+        .outerjoin(RobotsPolicy, RobotsPolicy.host_id == PageCapture.host_id)
+        .where(
+            or_(
+                PageCapture.succeeded,
+                PageCapture.host_id.in_(
+                    select(Host.id).where(breaker.refusing(Host, settings, now))
+                ),
+                # A cache, so its refusal holds only until the rules are read again.
+                and_(
+                    PageCapture.outcome == CaptureOutcome.DISALLOWED,
+                    PageCapture.fetched_at > RobotsPolicy.fetched_at,
+                ),
+                and_(
+                    PageCapture.outcome == CaptureOutcome.UNKNOWN_RULES,
+                    RobotsPolicy.id.is_(None),
+                ),
+            )
+        )
+        .scalar_subquery()
+    )
 
-    # Every row left for an uncaptured version is a failed attempt, so counting them
-    # counts consecutive failures without needing to say so.
-    #
-    # Only the ones made the way we ask now. A refusal is a fact about how we asked as
-    # much as about the publisher, so improving that — the `www.` retry is the first
-    # instance — forgives what came before rather than leaving articles written off by a
-    # limit they hit while we were getting it wrong.
+    # Only visits actually sent. A decline must not spend one of a page's limited tries.
     tried = (
         select(
             PageCapture.item_version_id.label("version_id"),
             func.count().label("failures"),
             func.max(PageCapture.fetched_at).label("last_attempt"),
         )
-        .where(PageCapture.capture_policy == capture.CAPTURE_POLICY)
+        .where(
+            PageCapture.capture_policy == CAPTURE_POLICY,
+            PageCapture.outcome == CaptureOutcome.FAILED,
+        )
         .group_by(PageCapture.item_version_id)
         .subquery()
     )
@@ -69,13 +89,12 @@ async def due_captures(
         .where(
             Item.subscribed,
             ItemVersion.is_head,
-            ItemVersion.id.not_in(captured),
+            ItemVersion.id.not_in(settled),
             Item.version_count <= settings.max_versions_per_item,
             ~training.blocked(ItemVersion, Item),
             # A version superseding nothing is the item's first, and is due at once.
             ItemVersion.supersedes_id.is_(None) | (ItemVersion.observed_at <= settled_by),
             # Never tried, or refused and now off its backoff with tries still left.
-            # Without this a page that will never answer is asked once a minute forever.
             or_(
                 tried.c.version_id.is_(None),
                 and_(
@@ -93,12 +112,8 @@ async def due_captures(
     for version_id, url, canonical_url in rows:
         target = canonical_url or url
         host = host_of(target)
-        # A link that is not fetchable at all — an aggregator naming a `newsletter:`
-        # address, say — has no page to get. And a host whose robots.txt has never been
-        # read is left alone: unknown rules read as permission everywhere else in the
-        # codebase, which is right for a feed published for readers and wrong for
-        # crawling a publisher's pages. The refresh sweep writes a row for every host it
-        # visits, reachable or not, so this delays a new host rather than blocking it.
+        # A host whose robots.txt has never been read is left for the refresh sweep, which
+        # writes a row whether or not it could reach one — so this delays, not blocks.
         if host and host in known:
             due.append(DueCapture(version_id, target, host))
     return due
@@ -114,12 +129,7 @@ async def _hosts_with_rules(session: AsyncSession) -> set[str]:
 
 @db.transactional
 async def article_hosts(session: AsyncSession) -> list[str]:
-    """Every host we fetch articles from, which is not the set we poll.
-
-    BBC's feed is on `feeds.bbci.co.uk` and its articles are on `bbc.co.uk`. Without this
-    the robots refresh never asks the host being crawled, and the rules lookup, finding
-    nothing stored, allows everything.
-    """
+    """Every host we fetch articles from, which is not the set we poll."""
     rows = await session.execute(
         select(ItemVersion.url, ItemVersion.canonical_url)
         .join(Item, Item.id == ItemVersion.item_id)

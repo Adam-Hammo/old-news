@@ -8,11 +8,7 @@ LOCK_PREFIX = "host"
 
 
 def host_of(url: str) -> str:
-    """The politeness group a URL belongs to, or "" if it isn't fetchable.
-
-    Host, not registrable domain: splitting `theguardian.com` from `co.uk` needs a
-    public-suffix list, and a connection is per host anyway.
-    """
+    """The politeness group a URL belongs to, or "" if it isn't fetchable."""
     parsed = http_url(url)
     if parsed is None:
         return ""
@@ -27,8 +23,8 @@ def host_lock(host: str) -> str | None:
 def with_www(url: str) -> str:
     """The same URL under the `www.` name, unchanged if it is already there.
 
-    Rebuilt through `urlsplit`, not a string replace: the parsed host is lowercased and
-    punycoded, so replacing it finds nothing in `EXAMPLE.com` or any IDN host.
+    Rebuilt through `urlsplit`: the parsed host is lowercased and punycoded, so a string
+    replace finds nothing in an uppercase or IDN host.
     """
     if http_url(url) is None:
         return url

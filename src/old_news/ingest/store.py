@@ -1,9 +1,4 @@
-"""Every write a poll performs.
-
-`feeds` is the only table updated here. Items, versions and documents are only
-ever inserted, which is what makes read state safe by construction rather than
-by care.
-"""
+"""Every write a poll performs. `feeds` is the only table updated; the rest only insert."""
 
 import datetime
 import hashlib
@@ -69,11 +64,7 @@ def fingerprint_of(item: ParsedItem) -> bytes:
 
 
 async def previous_document_hash(session: AsyncSession, feed_id: uuid.UUID) -> bytes | None:
-    """The last body stored for this feed, not any body ever stored.
-
-    Comparing against the previous one rather than every one keeps a publisher
-    reverting a redaction visible as A -> B -> A.
-    """
+    """The last body stored for this feed, so a reverted redaction still reads as a change."""
     return (
         await session.execute(
             select(Document.body_hash)
@@ -130,11 +121,8 @@ class Current:
 async def current_versions(session: AsyncSession, feed_id: uuid.UUID) -> dict[str, Current]:
     """Every item in this feed with the tail of its chain, keyed by identity.
 
-    Four columns, not whole entities: a poll only compares hashes, and selecting
-    `ItemVersion` would drag every article body in the feed into memory to do it.
-
-    One query, not one per item. The anti-join is what "the tail of the chain"
-    means — the version nothing supersedes.
+    Columns, not entities: selecting `ItemVersion` would load every body to compare
+    hashes. The anti-join is what "tail of the chain" means — nothing supersedes it.
     """
     rows = await session.execute(
         select(
@@ -171,10 +159,8 @@ async def apply_items(
     for parsed in parsed_items:
         key, source = identity_of(parsed)
 
-        # The same identity twice in one document. Nothing distinguishes them, so
-        # the first wins: a second insert breaks uq_items_feed_identity, and a
-        # second version would both break uq_item_versions_supersedes and invent an
-        # edit that no publisher made.
+        # The same identity twice in one document, so the first wins: a second insert
+        # breaks the identity constraint and a second version invents an edit.
         if key in seen:
             duplicates += 1
             continue
@@ -184,9 +170,8 @@ async def apply_items(
         found = existing.get(key)
 
         if found is None:
-            # An unseen key on a URL we already hold means the publisher changed
-            # its guid scheme — a platform move, usually. Recorded, never merged:
-            # some feeds legitimately reuse a URL for live-updating pages.
+            # A new key on a URL we hold means the publisher changed its guid scheme.
+            # Recorded, never merged: some feeds reuse a URL for live-updating pages.
             if parsed.canonical_url and parsed.canonical_url in known_urls:
                 churn += 1
                 logger.warning(

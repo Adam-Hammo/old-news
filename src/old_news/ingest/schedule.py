@@ -1,8 +1,4 @@
-"""When to poll next. Pure functions — no database, no clock, no I/O.
-
-Cadence is this module's; the failure half is `politeness.backoff`, shared with the
-capture sweeps because a feed and a page are refused in the same ways.
-"""
+"""When to poll next. Pure functions; the failure half lives in `politeness.backoff`."""
 
 import datetime
 
@@ -21,8 +17,7 @@ def policy(settings: IngestSettings) -> backoff.Policy:
 
 
 def clamp_interval(seconds: float, settings: IngestSettings) -> int:
-    """Any wait, held inside the configured bounds. Public because `Retry-After`
-    needs the same clamping as a computed interval does."""
+    """Any wait, held inside the configured bounds. `Retry-After` needs it too."""
     return backoff.clamp(seconds, policy(settings))
 
 
@@ -34,11 +29,7 @@ def next_interval(
     new_items: int = 0,
     ttl_seconds: int | None = None,
 ) -> int:
-    """How long to wait before the next poll.
-
-    Failures back off exponentially. A feed that published gets visited sooner,
-    one that didn't drifts later, so a quiet feed costs less over time.
-    """
+    """How long to wait before the next poll. A feed that published is visited sooner."""
     bounds = policy(settings)
     if failures > 0:
         clamped = backoff.interval(

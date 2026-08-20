@@ -104,9 +104,7 @@ async def test_a_feed_that_carried_nothing_produces_no_row(clean: None, feed_id,
 
 
 async def test_a_feed_reading_has_no_child_row(clean: None, feed_id, article):
-    """`extract_metadata` on a fragment returns the first heading in the body — "Support
-    Bellingcat", "Today's links". The feed states its own title and author, and those are
-    on the version. So there is nothing to claim and no row to claim it in."""
+    """A fragment has no `<head>` to claim anything, and the feed's own title is on the version."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
     await _set_content(version_id, "<h2>Support Bellingcat</h2>" + ARTICLE)
 

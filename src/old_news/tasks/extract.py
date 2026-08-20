@@ -1,10 +1,4 @@
-"""Fetching article pages.
-
-Its own queue, so re-running the archive later cannot starve the polls keeping it
-current. A sweep rather than something the poll defers: capture is decided by what the
-archive is missing, not by what just arrived, so re-capturing an old article runs down
-exactly the same path as capturing a new one.
-"""
+"""Fetching article pages, on its own queue, driven by what the archive is missing."""
 
 import logging
 import uuid
@@ -44,8 +38,7 @@ async def schedule_captures(timestamp: int) -> None:
     for item, delay in zip(due, delays, strict=True):
         deferred += await defer_unless_queued(
             capture_page.configure(
-                # One capture per version in flight. A slow host would otherwise let the
-                # sweep stack the same version up behind itself.
+                # One capture per version in flight, or a slow host lets them stack up.
                 queueing_lock=f"page:{item.version_id}",
                 # The article host, which is frequently not the host serving the feed.
                 lock=politeness.host_lock(item.host),
@@ -68,8 +61,7 @@ async def extract_page(version_id: str) -> None:
 @app.periodic(cron="*/2 * * * *", periodic_id="schedule_extractions")
 @app.task(name="schedule_extractions", queue=QUEUE, priority=SCHEDULER_PRIORITY)
 async def schedule_extractions(timestamp: int) -> None:
-    """Extraction touches no network, so it needs no politeness — only its own queue, so
-    re-running the archive cannot starve the polls."""
+    """No network, so no politeness — only its own queue."""
     settings = get_settings()
     due = await extract.due_extractions(settings.extract, settings.extract.extract_batch_size)
 
@@ -93,9 +85,7 @@ async def extract_feed(version_id: str) -> None:
 @app.periodic(cron="*/2 * * * *", periodic_id="schedule_feed_extractions")
 @app.task(name="schedule_feed_extractions", queue=QUEUE, priority=SCHEDULER_PRIORITY)
 async def schedule_feed_extractions(timestamp: int) -> None:
-    """Newest first, unlike the page sweep. The feed text arrives with the poll and costs
-    no request, so there is nothing to be fair about — the useful order is the one that
-    makes what just landed readable soonest."""
+    """Newest first, unlike the page sweep: this costs no request, so fairness is moot."""
     settings = get_settings()
     due = await extract.due_feed_extractions(settings.extract.extract_batch_size)
 
@@ -119,8 +109,7 @@ async def capture_image(slot_id: str) -> None:
 @app.periodic(cron="*/2 * * * *", periodic_id="schedule_lead_images")
 @app.task(name="schedule_lead_images", queue=QUEUE, priority=SCHEDULER_PRIORITY)
 async def schedule_lead_images(timestamp: int) -> None:
-    """Lead images only. Body images are the same task, asked for by a reader rather than
-    by a sweep, which is what keeps images from being most of the archive."""
+    """Lead images only. The same task serves body images, when a reader asks."""
     settings = get_settings()
     due = await images.due_images(settings.extract.image_batch_size)
     hosts = [politeness.host_of(url) for url in await images.hosts_for(due)]

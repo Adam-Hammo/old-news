@@ -137,19 +137,14 @@ def _guid(entry: Any) -> str:
 def _present(entry: Any, key: str) -> Any:
     """Read a key only if it is really there.
 
-    FeedParserDict quietly maps `updated_parsed` onto `published_parsed` when the
-    former is missing, and warns about it. We want the two kept apart: "when the
-    publisher says it changed" is not "when it was first published".
+    FeedParserDict maps `updated_parsed` onto `published_parsed` when the former is
+    missing, and the two mean different things.
     """
     return entry[key] if key in entry else None  # noqa: SIM401 — .get() triggers the fallback
 
 
 def parse(body: bytes, *, url: str) -> ParsedFeed:
-    """Parse a feed document. Malformed is not the same as unusable.
-
-    `bozo` is set by a great deal of real-world RSS that parses perfectly well,
-    so it is recorded rather than treated as failure.
-    """
+    """Parse a feed document. `bozo` is recorded rather than treated as failure."""
     parsed = feedparser.parse(body)
     feed = parsed.get("feed") or {}
 

@@ -13,9 +13,7 @@ class AdminSettings(BaseModel):
     path: str = "/admin"
     username: str = "admin"
 
-    # A scrypt hash from `just admin-password`, not a password. Empty means
-    # unconfigured: development falls back to DEVELOPMENT_PASSWORD, production
-    # refuses to start.
+    # A scrypt hash from `just admin-password`, not a password. Empty is unconfigured.
     password_hash: SecretStr = SecretStr("")
 
     # Regenerated per process when unset, which logs every session out on

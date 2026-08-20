@@ -8,9 +8,7 @@ from xml.sax.saxutils import escape, quoteattr
 from defusedxml import DefusedXmlException
 from defusedxml.ElementTree import fromstring as defused_fromstring
 
-# The size cap bounds the input; defusedxml bounds what a small input can expand
-# to. A 1 KB file with nested entities is the attack, so the cap alone is no
-# defence.
+# The cap bounds the input; defusedxml bounds what a small input can expand to.
 MAX_BYTES = 8 * 1024 * 1024
 
 

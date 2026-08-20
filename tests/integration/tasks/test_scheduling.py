@@ -123,9 +123,7 @@ async def test_a_publishers_feeds_are_spaced_out_and_other_hosts_are_not(
 
 
 async def test_postgres_hands_out_one_job_per_host_at_a_time(no_jobs: None, queue_app):
-    """The invariant politeness rests on. If this stops holding, nothing else here
-    is doing anything, so it is asserted against a real Postgres rather than read
-    off the schema."""
+    """The invariant politeness rests on, asserted against a real Postgres."""
     manager = queue_app.job_manager
 
     async with queue_app.open_async():
@@ -146,10 +144,7 @@ async def test_postgres_hands_out_one_job_per_host_at_a_time(no_jobs: None, queu
 async def test_a_feed_already_queued_does_not_kill_the_sweep(
     no_jobs: None, queue_app, settings, monkeypatch
 ):
-    """procrastinate raises on a queueing-lock collision. Unhandled, that ended the
-    sweep and silently left every remaining feed undeferred — feeds stopped being
-    polled at all. Jobs now wait on a per-host lock, so collisions are routine.
-    """
+    """An unhandled lock collision used to end the sweep and leave the rest undeferred."""
     monkeypatch.setattr("old_news.tasks.ingest.get_settings", lambda: settings)
     for path in ("uk", "world", "sport"):
         await _due_feed(f"https://www.theguardian.com/{path}/rss")

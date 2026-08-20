@@ -65,9 +65,7 @@ def settings(database_url: str) -> Settings:
 
 @pytest.fixture(scope="session")
 def queue_app(settings: Settings):
-    """Procrastinate builds its connector from the environment at import time, so it
-    must be pointed at the container explicitly — otherwise the suite quietly talks to
-    whatever `OLD_NEWS_DATABASE__URL` happens to name."""
+    """Procrastinate builds its connector from the environment at import, so point it here."""
     connector = PsycopgConnector(conninfo=settings.database.psycopg_url)
     with procrastinate_app.replace_connector(connector):
         yield procrastinate_app
@@ -89,11 +87,7 @@ async def queue_schema(migrated: None, queue_app) -> None:
 
 @pytest.fixture
 async def database(migrated: None, settings: Settings) -> AsyncIterator[None]:
-    """An engine for tests that talk to Postgres directly rather than through the app.
-
-    Configures the shared HTTP client too, exactly as the worker entrypoint does —
-    otherwise a test that runs a real worker fails the moment a job wants to fetch.
-    """
+    """An engine for tests that talk to Postgres directly, plus the shared HTTP client."""
     db.configure(settings.database)
     fetch.configure(settings.http)
     try:
@@ -113,11 +107,7 @@ async def clean(database: None) -> AsyncIterator[None]:
 
 @pytest.fixture
 async def no_jobs(clean: None) -> AsyncIterator[None]:
-    """`clean` truncates feeds; the queue is a separate schema procrastinate owns.
-
-    Truncated afterwards as well: the database is session-scoped, so a test that
-    claims a job without finishing it would leave it `doing` for everything after.
-    """
+    """`clean` truncates feeds; the queue is a separate schema, and session-scoped."""
     await _truncate("procrastinate_jobs CASCADE")
     yield
     await _truncate("procrastinate_jobs CASCADE")

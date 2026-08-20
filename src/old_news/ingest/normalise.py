@@ -1,17 +1,11 @@
-"""What counts as the same URL, and as the same content.
-
-Both answers are provisional. The corpus is what tells us whether they are right —
-how many "edits" turn out to be rotating ad markup, and how many cross-feed
-duplicates a canonical URL actually catches.
-"""
+"""What counts as the same URL, and as the same content."""
 
 import hashlib
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-# Campaign and click identifiers. Publisher-specific ones are here because they
-# appear on the same article served through different feeds, which is exactly
-# the case cross-source dedup has to see through.
+# Campaign and click identifiers, including publisher-specific ones: the same article
+# served through two feeds differs only by these.
 TRACKING_PREFIXES = ("utm_", "pk_", "mtm_", "matomo_", "piwik_", "hsa_")
 TRACKING_PARAMS = frozenset(
     {
@@ -52,11 +46,7 @@ def _is_tracking(key: str) -> bool:
 
 
 def canonical_url(url: str) -> str:
-    """A URL reduced to what identifies the article, syntactically only.
-
-    Resolving redirects would need a network fetch, so a FeedBurner proxy link
-    and the article it points at stay different here. That arrives with extract/.
-    """
+    """A URL reduced to what identifies the article, syntactically. No redirects resolved."""
     if not url or not url.strip():
         return ""
 
@@ -88,11 +78,7 @@ def normalise_text(value: str) -> str:
 
 
 def content_fingerprint(*fields: str | None) -> bytes:
-    """A digest over every field a publisher supplied.
-
-    Every field, deliberately: hashing only title and body is how a redacted
-    byline or a quietly changed URL goes unrecorded.
-    """
+    """A digest over every field a publisher supplied, so a redacted byline still registers."""
     digest = hashlib.sha256()
     for field in fields:
         digest.update(normalise_text(field or "").encode())

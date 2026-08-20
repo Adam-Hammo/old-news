@@ -1,14 +1,9 @@
 """SQLAlchemy instrumentation is forced past its own version check, twice over.
 
-`opentelemetry-instrumentation-sqlalchemy` pins SQLAlchemy < 2.1, and this project
-needs 2.1 for free-threaded Python, so `instrument_engine` passes `skip_dep_check`.
-An instrumentor that refuses a dependency does not raise — it logs and returns, and
-every query goes untraced from then on.
-
-The second trap is ordering: instrumenting with no argument patches sqlalchemy's
-factory functions, but `db.session` binds `create_async_engine` at import, so the
-patched name is never the one it calls. Handing the engine over is what fixes it,
-and `test_session_hands_its_engine_over` is what keeps it handed over.
+The instrumentor pins SQLAlchemy < 2.1 and refusing a dependency logs rather than
+raises, so `skip_dep_check` is needed and failure is silent. Instrumenting with no
+argument also patches factory functions `db.session` already bound at import, so the
+engine has to be handed over.
 """
 
 from collections.abc import AsyncIterator, Iterator
@@ -47,9 +42,7 @@ def exporter() -> Iterator[TestExporter]:
 async def engine(
     exporter: TestExporter, settings: Settings, migrated: None
 ) -> AsyncIterator[AsyncEngine]:
-    """One engine for the session, because the instrumentor is a singleton: a second
-    `instrument()` warns and returns, leaving the second engine untraced. Each process
-    configures one engine, so that costs production nothing."""
+    """One engine for the session: the instrumentor is a singleton and a second call warns."""
     telemetry._instrument_database = True  # what observability.configure() sets
     current = create_async_engine(settings.database.sqlalchemy_url)
     observability.instrument_engine(current)

@@ -17,9 +17,8 @@ class ZstdDictionary(UUIDPrimaryKey, Base):
         UniqueConstraint("dict_id", "feed_id", "host_id", postgresql_nulls_not_distinct=True),
     )
 
-    # zstd's own identifier, stamped into the header of every frame it compresses. How a
-    # body finds its dictionary without being told which one to use. No separate index: it
-    # leads the unique constraint above, which is what a lookup by id uses.
+    # zstd's own identifier, stamped into every frame, so a body finds its own dictionary.
+    # No separate index: it leads the unique constraint above.
     dict_id: Mapped[int] = mapped_column(Integer)
 
     feed_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -1,11 +1,7 @@
 """Schema bootstrap, safe to run on every boot.
 
-Alembic is idempotent. `procrastinate schema --apply` is not — it fails with
-"type procrastinate_job_status already exists" on a second run, which would break
-every restart — so it only runs when the queue tables are absent.
-
-Upgrading procrastinate itself is a separate job: its versioned migration scripts
-live at `procrastinate schema --migrations-path` and are applied by hand.
+Alembic is idempotent; `procrastinate schema --apply` is not, so it only runs when the
+queue tables are absent. Upgrading procrastinate itself is done by hand.
 """
 
 import asyncio
@@ -21,11 +17,7 @@ from old_news.tasks import app as queue_app
 
 
 def alembic_config(url: str | None = None) -> Config:
-    """Built in code rather than read from alembic.ini.
-
-    The image ships the installed package, not the repo, so a path relative to
-    the working directory would only resolve in development.
-    """
+    """Built in code: the image ships the package, so a repo-relative path would not resolve."""
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
     if url is not None:
@@ -34,7 +26,7 @@ def alembic_config(url: str | None = None) -> Config:
 
 
 def upgrade(url: str | None = None) -> None:
-    """Alembic's env.py runs asyncio.run itself, so this must stay outside a loop."""
+    """Blocking: migrations run on a sync driver, so this must stay outside a loop."""
     command.upgrade(alembic_config(url), "head")
 
 

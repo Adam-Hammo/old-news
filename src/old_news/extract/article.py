@@ -1,11 +1,7 @@
-"""The trafilatura boundary. Nothing else in the codebase imports it.
+"""The trafilatura boundary. Nothing else imports it. Markdown is the stored form.
 
-Markdown is the stored form: it is the smallest of the options, it survives a change of
-renderer, and both the Kindle HTML and the search text are views of it rather than second
-copies.
-
-lxml is pinned above trafilatura's own floor because earlier releases do not declare
-free-thread safety, and importing one re-enables the GIL for the whole worker.
+lxml is pinned above trafilatura's floor: earlier releases do not declare free-thread
+safety, and importing one re-enables the GIL for the whole worker.
 """
 
 import dataclasses
@@ -21,9 +17,7 @@ EXTRACTOR = "trafilatura"
 # Bumped when anything below changes what comes out, so old rows stay attributable.
 RULES_REVISION = 1
 
-# `[anchor](https://…)`. Deliberately not a markdown parser: a link missed by this is a
-# row absent from a JSONB column that gets materialised properly in the search phase,
-# which is a cost of nothing.
+# Not a markdown parser on purpose: a missed link costs a JSONB row, not correctness.
 LINK = re.compile(r"\[([^\]\n]*)\]\((https?://[^)\s]+)\)")
 IMAGE = re.compile(r"!\[([^\]\n]*)\]\((https?://[^)\s]+)\)")
 
@@ -71,13 +65,7 @@ class Article:
 
     @property
     def link_density(self) -> float:
-        """Characters inside link anchors as a share of the whole.
-
-        Not the signal that catches a consent wall — measured against real ones,
-        trafilatura strips their links and this reads 0.0, so length and paragraph count
-        do that job. Kept because it is free and a navigation page that survives
-        extraction is mostly anchor text.
-        """
+        """Characters inside link anchors as a share of the whole."""
         if not self.body:
             return 0.0
         anchored = sum(len(anchor) for anchor, _ in LINK.findall(self.body))
@@ -89,11 +77,7 @@ def _text(value: object) -> str:
 
 
 def parse(html: str, url: str) -> Article:
-    """Pull a readable article out of a stored page. Empty `Article` when nothing came out.
-
-    `url` is the address the page was actually served from, so relative links resolve
-    against where it came from rather than where it was requested.
-    """
+    """Pull a readable article out of a stored page, resolving links against `url`."""
     body = trafilatura.extract(
         html,
         url=url,
@@ -108,8 +92,6 @@ def parse(html: str, url: str) -> Article:
     metadata = trafilatura.extract_metadata(html, default_url=url)
     claimed = metadata.as_dict() if metadata else {}
 
-    # The page's own lead image, which is what a card and a Kindle cover want. Body
-    # images keep the order they appear in.
     images = [
         Image(url=lead, role=ImageRole.LEAD, alt="")
         for lead in [_text(claimed.get("image"))]
@@ -137,9 +119,7 @@ def parse(html: str, url: str) -> Article:
 def parse_fragment(html: str, url: str) -> Article:
     """Pull a readable article out of what a feed already gave us.
 
-    No metadata: on a fragment `extract_metadata` returns the first heading in the body
-    — "Support Bellingcat", "Today's links" — because there is no `<head>` to read. No
-    lead image either, since there is no `og:image` to nominate one and guessing is worse.
+    No metadata: with no `<head>` to read, `extract_metadata` returns the first heading.
     """
     body = trafilatura.extract(
         html,

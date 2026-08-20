@@ -1,9 +1,7 @@
 """The deployment must invoke our entrypoints, not the libraries' own.
 
-`procrastinate --app=… worker` starts a worker that never calls db.configure(),
-so every task raises on its first statement. The bug is invisible in tests —
-fixtures configure an engine — and only shows up in a deployed process, so the
-guard is on the command the deployment actually runs.
+A library entrypoint never calls `db.configure()`, and fixtures hide that from every
+test — so the guard is on the command the deployment actually runs.
 """
 
 import re
@@ -33,9 +31,7 @@ def test_the_justfile_runs_our_worker_entrypoint():
 
 
 def test_the_image_runs_our_api_entrypoint():
-    """Running uvicorn by hand loses every setting the entrypoint reads — including
-    forwarded_allow_ips, without which TLS-terminated-upstream generates http://
-    URLs and the browser blocks the page's own assets."""
+    """Running uvicorn by hand loses every setting the entrypoint reads."""
     dockerfile = (REPO / "Dockerfile").read_text()
 
     assert OUR_API in dockerfile
@@ -43,10 +39,7 @@ def test_the_image_runs_our_api_entrypoint():
 
 
 def test_compose_sets_the_pydantic_plugin_record_level():
-    """Pydantic asks the plugin whether to record when a model builds its validator.
-    Every model imported at startup is built before the app can call anything, so
-    `logfire.instrument_pydantic()` would be too late for all of them and silently
-    do nothing. The environment is the only thing early enough."""
+    """Models imported at startup build their validators before the app can instrument anything."""
     compose = (REPO / "compose.yaml").read_text()
 
     assert "LOGFIRE_PYDANTIC_PLUGIN_RECORD" in compose
@@ -68,9 +61,7 @@ def _alert_message_prefixes() -> list[str]:
 
 
 def test_every_alert_matches_a_message_the_code_still_logs():
-    """An alert is a string in one repo matching a string in another, and renaming the
-    log line breaks it in total silence — which is the one thing an alert must not do.
-    `feed-given-up` was `suspending feed%` until the log line changed underneath it."""
+    """Renaming a log line breaks its alert in silence, which is what an alert must not do."""
     logged = "\n".join(
         path.read_text() for path in (REPO / "src").rglob("*.py") if "migrations" not in path.parts
     )
