@@ -2,7 +2,16 @@
 
 from old_news.db.models.dictionary import ZstdDictionary
 from old_news.db.models.document import Document
-from old_news.db.models.extraction import Extraction, ExtractionImage, ImageRole
+from old_news.db.models.extraction import (
+    READING_IDENTITY,
+    READING_KEY,
+    Extraction,
+    ExtractionImage,
+    ExtractionSource,
+    FeedExtraction,
+    ImageRole,
+    PageExtraction,
+)
 from old_news.db.models.feed import Feed
 from old_news.db.models.host import Host
 from old_news.db.models.image import ImageCapture
@@ -14,11 +23,15 @@ from old_news.db.models.subscription import Subscription
 from old_news.db.models.training import Dimension, RuleSource, TrainingRule
 
 __all__ = [
+    "READING_IDENTITY",
+    "READING_KEY",
     "Dimension",
     "Document",
     "Extraction",
     "ExtractionImage",
+    "ExtractionSource",
     "Feed",
+    "FeedExtraction",
     "FeedPoll",
     "Host",
     "ImageCapture",
@@ -26,6 +39,7 @@ __all__ = [
     "Item",
     "ItemVersion",
     "PageCapture",
+    "PageExtraction",
     "PollOutcome",
     "RobotsPolicy",
     "RuleSource",

@@ -1,10 +1,14 @@
 from old_news.db.base import Base
 from old_news.db.models import (
+    READING_IDENTITY,
+    READING_KEY,
     Dimension,
     Document,
     Extraction,
     ExtractionImage,
+    ExtractionSource,
     Feed,
+    FeedExtraction,
     FeedPoll,
     Host,
     ImageCapture,
@@ -12,6 +16,7 @@ from old_news.db.models import (
     Item,
     ItemVersion,
     PageCapture,
+    PageExtraction,
     PollOutcome,
     RobotsPolicy,
     RuleSource,
@@ -22,12 +27,16 @@ from old_news.db.models import (
 from old_news.db.session import configure, dispose, engine, session, transactional
 
 __all__ = [
+    "READING_IDENTITY",
+    "READING_KEY",
     "Base",
     "Dimension",
     "Document",
     "Extraction",
     "ExtractionImage",
+    "ExtractionSource",
     "Feed",
+    "FeedExtraction",
     "FeedPoll",
     "Host",
     "ImageCapture",
@@ -35,6 +44,7 @@ __all__ = [
     "Item",
     "ItemVersion",
     "PageCapture",
+    "PageExtraction",
     "PollOutcome",
     "RobotsPolicy",
     "RuleSource",

@@ -280,6 +280,69 @@ interval is let through, purely to find out whether the refusal still stands.
 Skipping writes no `page_captures` row. Deciding not to fetch is not an attempt, it matches what the
 two robots checks beside it already do, and a row would poison the window the breaker reads.
 
+### Feed text and page text are the same kind of object
+
+Both are a reading of stored bytes the network handed over, so both are rows in `extractions`,
+stamped with the extractor that produced them, derived and disposable. They were not always the same
+shape: feed text sat inline on `item_versions.content` with no record of what parsed it, while page
+text was a versioned row that said exactly what made it. That asymmetry is why "which one do I read,
+index, embed" had no clean answer — the two were not comparable.
+
+`item_versions.content` is untouched and still authoritative: it is what the feed document said. A
+feed reading is derived _from_ it, the same way a page reading is derived from a capture, and can be
+thrown away and rebuilt on the same terms.
+
+Joined-table inheritance, after two attempts without it. `Extraction` is the base and holds what
+every reading has; `FeedExtraction` adds nothing and has no table of its own; `PageExtraction` holds
+the two things only a page brings — the capture it was read from, and what the page claimed about
+itself. So no column is meaningless for half the rows, and the check constraint tying
+`page_capture_id` to `source` is gone: it existed only to hand-roll the invariant inheritance states
+structurally.
+
+The first two designs were wrong in opposite directions. Inheritance over the original table would
+have produced subclasses whose only difference was which columns were dead, because the table was
+doing four jobs. Splitting those jobs without inheritance left one nullable foreign key and a 1:1
+sibling table, which is joined-table inheritance with worse parts. The decomposition had to come
+first.
+
+`FeedExtraction` earns its keep by not being the default. A bare `Extraction` meaning "feed" by
+omission is the same overload as a column that means two things depending on the row, and the base
+declares no identity, so `source` being NOT NULL makes the database refuse a reading that will not
+say which kind it is.
+
+A page reading claims metadata; a feed reading does not. On a fragment `extract_metadata` returns
+the first heading inside the body — "Support Bellingcat", "Today's links" — because there is no
+`<head>` to read a claim from. The feed states its own title and author, and those are on the
+version: append-only, unrecoverable if lost, which is the opposite of a claim that can be
+re-derived.
+
+**A verdict is not a measurement.** `char_count`, `paragraph_count` and `link_density` are stored
+because they are pure functions of `body` and cannot go stale. `ok` and `note` were deleted because
+they were a verdict against `min_body_chars` and `min_paragraphs`, which live in config — so a
+stored answer is wrong the moment either moves and says nothing about it. Twenty-five of 1058 rows
+were already in that state. Same reasoning that removed `feeds.suspended`: a threshold judgement
+belongs where the threshold is.
+
+**`feed_body_ratio` was a symptom.** It existed only because the feed reading was not a row you
+could join to. Both are rows now, so the ratio is `page.char_count / feed.char_count` across one
+table — a query, not a column, and one that cannot disagree with either side.
+
+### A refusal is a fact about how we asked
+
+`page_captures.capture_policy` records the way a page was asked for, and the capture sweep counts
+only the attempts made the way it asks now. So improving the asking — the `www.` retry, the agent we
+send, how redirects are handled — forgives what came before it, without deleting a row.
+
+That is `extractions.extractor_version` again, and deliberately so: bumping the extractor already
+makes the whole archive due for re-extraction, and "the code changed, so old conclusions no longer
+bind" is one idea, not two. The first version of this was a timestamp on `hosts` doing double duty,
+which was a second mechanism for the same thing on a table that had no business holding it.
+
+It matters because without it the fix cannot reach the articles it was written for. A publisher
+whose apex has no DNS record burns through the retry limit in minutes, and the retry that would have
+worked only ever runs on a version the sweep still selects. Fifteen articles here were in exactly
+that state. `hosts.requires_www` stays, doing only its own job: which name to ask for next time.
+
 ### A queueing lock collision is not an error
 
 `queueing_lock` means "only one of these may be waiting", but procrastinate reports the collision by
@@ -290,6 +353,27 @@ and the skips are counted rather than thrown.
 
 This matters more now than it used to: jobs wait on a per-host lock, so one still sitting in the
 queue a minute later is ordinary rather than a sign of trouble.
+
+### One worker per queue
+
+`run_worker_async` used to be called once with no arguments, so every queue shared one pool of slots
+and the queue names were decoration. The roadmap called this out before it bit: re-reading the
+archive runs on the same worker as the polls keeping it current.
+
+Now one worker per queue, each with its own concurrency, from `WorkerSettings.concurrency`. A few
+thousand queued extractions can fill `pages` without touching what `ingest` has. Missing a queue
+there means nothing serves it and its jobs sit at `todo` for good — which is how `default` (the
+heartbeat, the nightly maintenance) was found unserved the first time this was written, so a test
+compares the configured set against the queues tasks declare.
+
+Signals are handled once for the process rather than per worker: `add_signal_handler` replaces
+whatever was registered before it, so letting each worker install its own would leave only the last
+one able to hear SIGTERM.
+
+It isolates slots, not CPU. Extraction is synchronous work in the event loop, so a large page still
+delays whatever else that process was going to do. Separate worker processes are the escalation if
+polls start lagging behind their schedule; the queue split is what makes that a deployment change
+rather than a code one.
 
 ## Telemetry
 

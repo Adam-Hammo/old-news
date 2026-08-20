@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, Text, text
+from sqlalchemy import ForeignKey, Index, Integer, LargeBinary, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -53,6 +53,12 @@ class PageCapture(UUIDPrimaryKey, Base):
 
     headers: Mapped[dict[str, str]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     error: Mapped[str] = mapped_column(Text, server_default="")
+
+    # How the page was asked for. Refusals are counted per policy, so improving the way
+    # we ask forgives every attempt made before it without deleting a row — the same
+    # bargain `extractions.extractor_version` makes. A publisher that refused the old
+    # way of asking has not refused the new one.
+    capture_policy: Mapped[str] = mapped_column(String(16), server_default="1")
 
     @hybrid_property
     def succeeded(self) -> bool:

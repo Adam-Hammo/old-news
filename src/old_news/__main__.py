@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import signal
 import sys
 from pathlib import Path
 
@@ -25,6 +26,9 @@ async def _worker(settings: Settings) -> None:
 
     `procrastinate worker` on its own never calls db.configure(), so every task
     that touches Postgres would raise on its first statement.
+
+    One worker per queue, each with its own slots, so a few thousand queued extractions
+    cannot occupy the capacity the polls need.
     """
     from old_news import db, fetch, observability
     from old_news.tasks import app as queue_app
@@ -36,10 +40,57 @@ async def _worker(settings: Settings) -> None:
     fetch.configure(settings.http)
     try:
         async with queue_app.open_async():
-            await queue_app.run_worker_async()
+            await _run_workers(queue_app, settings, _stop_on_signal())
     finally:
         await fetch.dispose()
         await db.dispose()
+
+
+def _stop_on_signal() -> asyncio.Event:
+    """One handler for the whole process, not one per worker.
+
+    `add_signal_handler` replaces whatever was registered before it, so letting each
+    worker install its own would leave only the last able to hear SIGTERM and the rest
+    running until Docker lost patience.
+    """
+    stopping = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signalled in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(signalled, stopping.set)
+    return stopping
+
+
+async def _run_workers(queue_app, settings: Settings, stopping: asyncio.Event) -> None:
+    """Run one worker per queue until `stopping` is set.
+
+    Cancellation is how a procrastinate worker is asked to wind down, so the
+    `CancelledError` each one answers with is the expected reply and not a fault.
+    Anything else a worker raises is, and is re-raised once they have all stopped.
+    """
+    workers = [
+        asyncio.create_task(
+            queue_app.run_worker_async(
+                queues=[queue],
+                concurrency=concurrency,
+                name=f"worker-{queue}",
+                install_signal_handlers=False,
+            ),
+            name=f"worker-{queue}",
+        )
+        for queue, concurrency in sorted(settings.worker.concurrency.items())
+    ]
+    stopped = asyncio.create_task(stopping.wait())
+    try:
+        await asyncio.wait([*workers, stopped], return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        stopped.cancel()
+        for worker in workers:
+            worker.cancel()
+        outcomes = await asyncio.gather(*workers, return_exceptions=True)
+
+    for outcome in outcomes:
+        if isinstance(outcome, BaseException) and not isinstance(outcome, asyncio.CancelledError):
+            raise outcome
 
 
 def serve(settings: Settings) -> None:

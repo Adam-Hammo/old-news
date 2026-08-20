@@ -23,5 +23,6 @@ class Host(UUIDPrimaryKey, Base):
     first_seen_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
 
     # Some publishers serve the feed from `www` and link their articles at the apex,
-    # which then resolves nowhere.
+    # which then resolves nowhere. Observed from the one capture that only worked with the
+    # prefix put back, so it costs a single wasted request per host, ever.
     requires_www: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))

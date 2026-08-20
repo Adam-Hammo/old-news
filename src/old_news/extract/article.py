@@ -132,3 +132,30 @@ def parse(html: str, url: str) -> Article:
         links=tuple(Link(url=target, anchor=anchor) for anchor, target in LINK.findall(body)),
         images=tuple(images),
     )
+
+
+def parse_fragment(html: str, url: str) -> Article:
+    """Pull a readable article out of what a feed already gave us.
+
+    No metadata: on a fragment `extract_metadata` returns the first heading in the body
+    — "Support Bellingcat", "Today's links" — because there is no `<head>` to read. No
+    lead image either, since there is no `og:image` to nominate one and guessing is worse.
+    """
+    body = trafilatura.extract(
+        html,
+        url=url,
+        output_format="markdown",
+        include_links=True,
+        include_images=True,
+        include_comments=False,
+    )
+    if not body:
+        return Article()
+
+    return Article(
+        body=body,
+        links=tuple(Link(url=target, anchor=anchor) for anchor, target in LINK.findall(body)),
+        images=tuple(
+            Image(url=target, role=ImageRole.BODY, alt=alt) for alt, target in IMAGE.findall(body)
+        ),
+    )
