@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
 from old_news.db import (
+    CaptureOutcome,
     Document,
     ExtractionImage,
     Item,
@@ -114,6 +115,7 @@ async def _extraction(
         host_id=await ensure(session, host),
         url=f"https://{host}/article",
         status=200,
+        outcome=CaptureOutcome.OK,
         body_hash=b"0" * 32,
         body=b"stored",
     )
@@ -160,6 +162,7 @@ async def _store_capture(
         url=url,
         final_url=url,
         status=200,
+        outcome=CaptureOutcome.OK,
         body_hash=body[:32],
         body=codec.compress(body, level=12),
     )

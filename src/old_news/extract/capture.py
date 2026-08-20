@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, robots
 from old_news.config import Settings
-from old_news.db import Host, ItemVersion, PageCapture, dictionaries
+from old_news.db import CAPTURE_POLICY, CaptureOutcome, Host, ItemVersion, PageCapture, dictionaries
 from old_news.db import bytes as codec
 from old_news.extract import breaker
 from old_news.fetch import Fetcher, FetchError, Response, Unresolvable
@@ -23,14 +23,20 @@ from old_news.politeness import ensure, host_of, with_www
 
 logger = logging.getLogger(__name__)
 
-# A transport failure is not an HTTP status, and 0 is not one either.
+# A transport failure is not an HTTP status, and neither is a visit we never sent.
 NO_STATUS = 0
 
-# Bumped when anything changes *how* a page is asked for. Refusals are counted per
-# policy, so a bump forgives what came before without deleting a row — `extractor_version`
-# one module over makes the same bargain. Refusing the old way of asking is not refusing
-# the new one.
-CAPTURE_POLICY = "2"
+# About a URL, not a publisher: a few dead links must not close a healthy host.
+PER_URL_STATUS = frozenset({404, 410})
+
+
+def _outcome_for(response: Response | None) -> CaptureOutcome:
+    """What the answer amounts to, for the counting that decides whether to ask again."""
+    if response is None:
+        return CaptureOutcome.FAILED
+    if response.ok:
+        return CaptureOutcome.OK
+    return CaptureOutcome.GONE if response.status in PER_URL_STATUS else CaptureOutcome.FAILED
 
 
 @db.transactional
@@ -90,11 +96,16 @@ async def _store(
     url: str,
     settings: Settings,
     *,
+    outcome: CaptureOutcome | None = None,
     response: Response | None = None,
     error: str = "",
 ) -> PageCapture:
-    """One row per attempt. A failure is a fact about the archive, so it is recorded
-    rather than thrown away, and the row is what bounds the next retry."""
+    """One row per visit, including the visits we decided not to make.
+
+    A failure is a fact about the archive, so it is recorded rather than thrown away.
+    So is a refusal: the sweep infers what it has already tried from these rows, and a
+    decision that returns silently tells it nothing and is handed the same slot forever.
+    """
     body = response.body if response is not None else b""
     body_hash = hashlib.sha256(body).digest()
     host_id = await ensure(session, host_of(url))
@@ -105,6 +116,7 @@ async def _store(
         url=url,
         final_url=response.url if response is not None else "",
         status=response.status if response is not None else NO_STATUS,
+        outcome=outcome if outcome is not None else _outcome_for(response),
         body_hash=body_hash,
         headers=_headers(response),
         error=error[:500],
@@ -168,25 +180,42 @@ async def capture_page(
 
     attributes: dict[str, Any] = {"version.id": str(version_id)}
     with span("capture page", **attributes) as current:
-        # Checked here as well as in the sweep: a job queued before a rule existed, or
-        # a re-capture asked for by hand, must not slip past it.
+        # Checked here as well as in the sweep: a job queued before a rule existed, or a
+        # re-capture asked for by hand, must not slip past it. Each spends a slot in the
+        # batch without sending a request, so each writes a row saying so — none counts
+        # as the publisher failing, so recording them cannot move the breaker below.
         if not await robots.rules_known(target):
             current.set_attribute("page.rules_unknown", True)
             count("extract.captures.rules_unknown", host=host_of(target))
-            return None
+            return await _store(
+                version_id,
+                target,
+                settings,
+                outcome=CaptureOutcome.UNKNOWN_RULES,
+                error="robots.txt never read",
+            )
 
         if not await robots.allows(target, settings):
             current.set_attribute("page.disallowed", True)
             count("extract.captures.disallowed", host=host_of(target))
-            return None
+            return await _store(
+                version_id,
+                target,
+                settings,
+                outcome=CaptureOutcome.DISALLOWED,
+                error="disallowed by robots.txt",
+            )
 
-        # Deciding not to fetch is not an attempt, so nothing is stored — the same shape
-        # as the two checks above. A stored row here would also poison the window the
-        # breaker reads, which is the thing deciding whether to ask again at all.
-        if await breaker.refusing(host_id, settings.extract):
+        if await breaker.refusing_host(host_id, settings.extract):
             current.set_attribute("page.host_refusing", True)
             count("extract.captures.host_refusing", host=host_of(target))
-            return None
+            return await _store(
+                version_id,
+                target,
+                settings,
+                outcome=CaptureOutcome.REFUSED,
+                error="host refusing",
+            )
 
         try:
             response, target = await _fetch(target, fetcher, settings, host_id=host_id)
@@ -204,7 +233,11 @@ async def capture_page(
             current.set_attribute("page.redirect_disallowed", True)
             count("extract.captures.redirect_disallowed", host=host_of(response.url))
             return await _store(
-                version_id, target, settings, error=f"redirected to {host_of(response.url)}"
+                version_id,
+                target,
+                settings,
+                outcome=CaptureOutcome.DISALLOWED,
+                error=f"redirected to {host_of(response.url)}",
             )
 
         count("extract.captures.stored" if response.ok else "extract.captures.failed")

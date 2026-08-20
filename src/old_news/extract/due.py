@@ -14,8 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, training
 from old_news.config import ExtractSettings
-from old_news.db import Host, Item, ItemVersion, PageCapture, RobotsPolicy
-from old_news.extract import capture
+from old_news.db import (
+    CAPTURE_POLICY,
+    CaptureOutcome,
+    Host,
+    Item,
+    ItemVersion,
+    PageCapture,
+    RobotsPolicy,
+)
+from old_news.extract import breaker
 from old_news.politeness import backoff, host_of
 
 
@@ -44,20 +52,61 @@ async def due_captures(
 
     captured = select(PageCapture.item_version_id).where(PageCapture.succeeded).scalar_subquery()
 
-    # Every row left for an uncaptured version is a failed attempt, so counting them
-    # counts consecutive failures without needing to say so.
+    # Every visit records which host it went to, so the answers to "have we been told no
+    # here" are all in one table and none of them has to be re-derived from a URL.
     #
-    # Only the ones made the way we ask now. A refusal is a fact about how we asked as
-    # much as about the publisher, so improving that — the `www.` retry is the first
-    # instance — forgives what came before rather than leaving articles written off by a
-    # limit they hit while we were getting it wrong.
+    # A version we have already visited on a host that is shut is not asked again, and
+    # neither is one robots forbade. Both are excluded in SQL rather than after the
+    # `LIMIT`, because dropping rows from a claimed batch silently shrinks it — the
+    # version stays due, leads the batch by age, and takes the same slot every minute.
+    # Twenty-five of those captured nothing for three hours.
+    #
+    # A version never visited at all is not covered here, and does not need to be: the
+    # first sweep that picks it up records the refusal, and from then on it is.
+    on_refusing = (
+        select(PageCapture.item_version_id)
+        .where(
+            PageCapture.host_id.in_(select(Host.id).where(breaker.refusing(Host, settings, now)))
+        )
+        .scalar_subquery()
+    )
+
+    # Robots is a cache, so a refusal only holds until the rules are read again. Re-read
+    # them and every page they forbade is a candidate once more, which is what makes
+    # this a delay rather than a verdict.
+    forbidden = (
+        select(PageCapture.item_version_id)
+        .join(RobotsPolicy, RobotsPolicy.host_id == PageCapture.host_id)
+        .where(
+            PageCapture.outcome == CaptureOutcome.DISALLOWED,
+            PageCapture.fetched_at > RobotsPolicy.fetched_at,
+        )
+        .scalar_subquery()
+    )
+
+    unread = (
+        select(PageCapture.item_version_id)
+        .outerjoin(RobotsPolicy, RobotsPolicy.host_id == PageCapture.host_id)
+        .where(
+            PageCapture.outcome == CaptureOutcome.UNKNOWN_RULES,
+            RobotsPolicy.id.is_(None),
+        )
+        .scalar_subquery()
+    )
+
+    # Only the visits that were actually sent and actually refused. A row saying we
+    # declined to ask must not spend one of the tries a page gets, or a host being shut
+    # for an afternoon would write off every article on it.
     tried = (
         select(
             PageCapture.item_version_id.label("version_id"),
             func.count().label("failures"),
             func.max(PageCapture.fetched_at).label("last_attempt"),
         )
-        .where(PageCapture.capture_policy == capture.CAPTURE_POLICY)
+        .where(
+            PageCapture.capture_policy == CAPTURE_POLICY,
+            PageCapture.outcome == CaptureOutcome.FAILED,
+        )
         .group_by(PageCapture.item_version_id)
         .subquery()
     )
@@ -70,6 +119,9 @@ async def due_captures(
             Item.subscribed,
             ItemVersion.is_head,
             ItemVersion.id.not_in(captured),
+            ItemVersion.id.not_in(on_refusing),
+            ItemVersion.id.not_in(forbidden),
+            ItemVersion.id.not_in(unread),
             Item.version_count <= settings.max_versions_per_item,
             ~training.blocked(ItemVersion, Item),
             # A version superseding nothing is the item's first, and is due at once.

@@ -16,15 +16,17 @@ from old_news.db.models.feed import Feed
 from old_news.db.models.host import Host
 from old_news.db.models.image import ImageCapture
 from old_news.db.models.item import Item, ItemVersion
-from old_news.db.models.page import PageCapture
+from old_news.db.models.page import CAPTURE_POLICY, CaptureOutcome, PageCapture
 from old_news.db.models.poll import FeedPoll, PollOutcome
 from old_news.db.models.robots import RobotsPolicy
 from old_news.db.models.subscription import Subscription
 from old_news.db.models.training import Dimension, RuleSource, TrainingRule
 
 __all__ = [
+    "CAPTURE_POLICY",
     "READING_IDENTITY",
     "READING_KEY",
+    "CaptureOutcome",
     "Dimension",
     "Document",
     "Extraction",

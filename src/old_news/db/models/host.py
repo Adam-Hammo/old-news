@@ -1,9 +1,11 @@
 import datetime
 
 from sqlalchemy import Boolean, Text, text
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
+from old_news.db.models.page import host_failures, host_last_failure
 
 
 class Host(UUIDPrimaryKey, Base):
@@ -26,3 +28,23 @@ class Host(UUIDPrimaryKey, Base):
     # which then resolves nowhere. Observed from the one capture that only worked with the
     # prefix put back, so it costs a single wasted request per host, ever.
     requires_www: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+
+    @hybrid_property
+    def capture_failures(self) -> int:
+        """Read off the capture log rather than stored, so there is one copy of the number."""
+        raise NotImplementedError("only queryable as SQL; select it rather than loading a row")
+
+    @capture_failures.inplace.expression
+    @classmethod
+    def _capture_failures_expression(cls):
+        return host_failures(cls.id)
+
+    @hybrid_property
+    def last_capture_failure(self) -> datetime.datetime:
+        """When the run counted by `capture_failures` last grew."""
+        raise NotImplementedError("only queryable as SQL; select it rather than loading a row")
+
+    @last_capture_failure.inplace.expression
+    @classmethod
+    def _last_capture_failure_expression(cls):
+        return host_last_failure(cls.id)

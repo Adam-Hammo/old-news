@@ -10,8 +10,15 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
-from old_news.db import Host, PageCapture, RobotsPolicy, dictionaries
-from old_news.extract.capture import CAPTURE_POLICY, capture_page
+from old_news.db import (
+    CAPTURE_POLICY,
+    CaptureOutcome,
+    Host,
+    PageCapture,
+    RobotsPolicy,
+    dictionaries,
+)
+from old_news.extract.capture import capture_page
 from old_news.fetch import Fetcher
 from old_news.politeness import ensure
 
@@ -165,8 +172,13 @@ async def test_a_disallowed_host_is_never_fetched(
     version_id = await _version(feed_id, article, f"{site}/article")
     await _replace_rules("127.0.0.1", "User-agent: *\nDisallow: /\n")
 
-    assert await capture_page(version_id, fetcher, settings) is None
-    assert await _captures(version_id) == []
+    stored = await capture_page(version_id, fetcher, settings)
+
+    # Recorded, though nothing was sent. The sweep works out what it has already been
+    # told no about from these rows, and a decision that returns silently tells it
+    # nothing — so it hands the same version the same slot every minute.
+    assert stored is not None and stored.outcome == CaptureOutcome.DISALLOWED
+    assert stored.status == 0
 
 
 async def test_two_attempts_on_one_version_leave_two_rows(
@@ -220,8 +232,9 @@ async def test_a_host_whose_rules_were_never_read_is_not_fetched(
     re-capture asked for by hand, must not slip past it."""
     version_id = (await article(feed_id, ("An article", f"{site}/article")))[0]
 
-    assert await capture_page(version_id, fetcher, settings) is None
-    assert await _captures(version_id) == []
+    stored = await capture_page(version_id, fetcher, settings)
+
+    assert stored is not None and stored.outcome == CaptureOutcome.UNKNOWN_RULES
 
 
 async def test_a_redirect_to_another_host_is_checked_against_that_host(
@@ -286,8 +299,10 @@ async def _refusals(
                 host_id=host_id,
                 url=f"https://{host}/other-{n}",
                 status=status,
+                outcome=CaptureOutcome.GONE if status in (404, 410) else CaptureOutcome.FAILED,
                 body_hash=b"0" * 32,
                 fetched_at=datetime.datetime.now(datetime.UTC) - ago,
+                capture_policy=CAPTURE_POLICY,
             )
         )
     await session.flush()
@@ -311,10 +326,11 @@ async def test_a_host_refusing_everything_stops_being_asked(
         ago=datetime.timedelta(minutes=1),
     )
 
-    assert await capture_page(version_id, fetcher, settings) is None
-    # Refusing to fetch is not an attempt, so nothing is recorded — a row here would
-    # also poison the window the breaker reads.
-    assert await _captures(version_id) == []
+    stored = await capture_page(version_id, fetcher, settings)
+
+    # Recorded, and harmless to record: only `failed` is counted against a host, so the
+    # row cannot move the breaker that wrote it.
+    assert stored is not None and stored.outcome == CaptureOutcome.REFUSED
 
 
 async def test_a_host_below_the_threshold_is_still_asked(

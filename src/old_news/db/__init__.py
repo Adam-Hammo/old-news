@@ -1,7 +1,9 @@
 from old_news.db.base import Base
 from old_news.db.models import (
+    CAPTURE_POLICY,
     READING_IDENTITY,
     READING_KEY,
+    CaptureOutcome,
     Dimension,
     Document,
     Extraction,
@@ -27,9 +29,11 @@ from old_news.db.models import (
 from old_news.db.session import configure, dispose, engine, session, transactional
 
 __all__ = [
+    "CAPTURE_POLICY",
     "READING_IDENTITY",
     "READING_KEY",
     "Base",
+    "CaptureOutcome",
     "Dimension",
     "Document",
     "Extraction",
