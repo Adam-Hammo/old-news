@@ -121,7 +121,6 @@ ignore_names = [
   "feed_health",
   "host_health",
   "item_reading",
-  "reading_version",
   # Read through SQL, Admin or the ORM rather than from Python.
   "added_at",
   "created_at",

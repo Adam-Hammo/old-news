@@ -9,7 +9,7 @@ from sqlalchemy.dialects import postgresql
 
 from old_news.db.models.feed import Feed
 from old_news.db.models.host import Host
-from old_news.db.models.item import Item, ItemVersion
+from old_news.db.models.item import Item
 from old_news.db.models.page import host_failures, host_last_failure
 from old_news.db.models.poll import FeedPoll, consecutive_failures, gone
 
@@ -61,15 +61,12 @@ _item_reading = select(
     Item.reading_body.label("reading_body"),
 )
 
-_reading_version = select(ItemVersion).where(ItemVersion.is_head)
-
 
 feed_health, feed_health_view = _view("feed_health", _feed_health)
 host_health, host_health_view = _view("host_health", _host_health)
 item_reading, item_reading_view = _view("item_reading", _item_reading)
-reading_version, reading_version_view = _view("reading_version", _reading_version)
 
-ENTITIES = [feed_health_view, host_health_view, item_reading_view, reading_version_view]
+ENTITIES = [feed_health_view, host_health_view, item_reading_view]
 
 
 def ours(obj: Any, *_: Any, **__: Any) -> bool:
