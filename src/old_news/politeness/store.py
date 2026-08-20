@@ -12,8 +12,19 @@ from old_news.politeness.hosts import host_of
 
 async def ensure(session: AsyncSession, name: str) -> uuid.UUID:
     """The host row for a name, created if new. Two feeds arriving at once both succeed."""
+    found = await _id_of(session, name)
+    if found is not None:
+        return found
     await session.execute(insert(Host).values(name=name).on_conflict_do_nothing())
-    return (await session.execute(select(Host.id).where(Host.name == name))).scalar_one()
+    return (await _id_of(session, name)) or _unreachable(name)
+
+
+async def _id_of(session: AsyncSession, name: str) -> uuid.UUID | None:
+    return (await session.execute(select(Host.id).where(Host.name == name))).scalar_one_or_none()
+
+
+def _unreachable(name: str) -> uuid.UUID:
+    raise LookupError(f"host {name} vanished between insert and read")
 
 
 async def resolve(session: AsyncSession, url: str) -> uuid.UUID | None:

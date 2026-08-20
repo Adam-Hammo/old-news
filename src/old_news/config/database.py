@@ -19,5 +19,10 @@ class DatabaseSettings(BaseModel):
         return self._with_scheme("postgresql+asyncpg")
 
     @property
+    def migration_url(self) -> str:
+        """Migrations run on a blocking driver. Nothing about them wants a loop."""
+        return self._with_scheme("postgresql+psycopg")
+
+    @property
     def psycopg_url(self) -> str:
         return self._with_scheme("postgresql")

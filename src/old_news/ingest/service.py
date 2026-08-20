@@ -148,7 +148,9 @@ async def _record_disallowed(
         return
     _log(session, feed_id, PollOutcome.DISALLOWED, error="disallowed by robots.txt")
     feed.last_polled_at = now
-    feed.next_poll_at = now + datetime.timedelta(seconds=settings.max_interval_seconds)
+    feed.next_poll_at = now + datetime.timedelta(
+        seconds=schedule.clamp_interval(settings.max_interval_seconds, settings)
+    )
 
 
 @db.transactional

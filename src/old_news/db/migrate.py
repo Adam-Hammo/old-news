@@ -26,7 +26,7 @@ def alembic_config(url: str | None = None) -> Config:
 
 
 def upgrade(url: str | None = None) -> None:
-    """Alembic's env.py runs asyncio.run itself, so this must stay outside a loop."""
+    """Blocking: migrations run on a sync driver, so this must stay outside a loop."""
     command.upgrade(alembic_config(url), "head")
 
 
