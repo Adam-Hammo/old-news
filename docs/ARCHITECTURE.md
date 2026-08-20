@@ -133,6 +133,17 @@ itself, and without the filter every revision opens with a dozen `drop_table` ca
 applies Alembic and then procrastinate's schema, the latter only when absent, because
 `procrastinate schema --apply` fails on a second run and would break every restart.
 
+Migrations run on psycopg, not asyncpg. Nothing about them wants a loop, and `alembic_utils`
+livelocks under an async env — the autogenerate that never finishes there takes a second against a
+sync connection.
+
+`alembic_utils` is installed and deliberately unwired. Two things to know before registering
+anything with it. It treats its registry as the whole truth for every entity in the schemas it
+watches, so on this shared schema it proposes dropping all of procrastinate's functions and triggers
+unless `include_object` scopes it to views. And it learns which schemas to watch from the entities
+you register, so it cannot notice the removal of its last one without being handed `schemas=[...]`
+explicitly.
+
 Models get one module each under `db/models/`. Migrations are generated, not written:
 
 ```sh
