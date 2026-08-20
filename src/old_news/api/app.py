@@ -31,10 +31,8 @@ def create_app(settings: Settings | None = None) -> Litestar:
     settings = settings or get_settings()
     observability.configure(settings.telemetry, environment=settings.environment, component="api")
 
-    # create_async_engine opens nothing — connections are made lazily, on
-    # whichever loop first asks for one. So unlike a pre-opened asyncpg pool this
-    # is safe to build outside the loop, and the admin mount can have the engine
-    # at construction time.
+    # `create_async_engine` opens nothing, so unlike a pre-opened pool this is safe to
+    # build outside the loop and the admin mount can hold it at construction time.
     engine = db.configure(settings.database)
     fetch.configure(settings.http)
 

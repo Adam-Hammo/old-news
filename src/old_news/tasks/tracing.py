@@ -1,8 +1,7 @@
-"""Job spans, and the trace context that links them to whatever deferred them.
+"""Job spans, and the trace context linking them to whatever deferred them.
 
-Procrastinate has no notion of metadata on a job, so the W3C traceparent travels
-as a reserved kwarg. `task()` strips it before the function is called, so task
-signatures never see it.
+Procrastinate has no metadata on a job, so the traceparent travels as a reserved
+kwarg that `task()` strips before the function is called.
 """
 
 import functools
@@ -22,8 +21,7 @@ TRACE_KEY = "__traceparent"
 # Housekeeping that runs on a timer forever. Failures still count and still log.
 UNTRACED_TASKS = frozenset({"queue_metrics", "prune_jobs"})
 
-# `messaging.*` below is OpenTelemetry's convention, not ours — it is what makes
-# the backend read these spans as a queue.
+# `messaging.*` is OpenTelemetry's convention: it makes the backend read these as a queue.
 MESSAGING_SYSTEM = "procrastinate"
 
 _propagator = TraceContextTextMapPropagator()
@@ -94,8 +92,7 @@ def task(app: App, **options: Any) -> Callable[[Callable[..., Any]], Any]:
 
 
 def _destination(registered_task: Any) -> tuple[str, str]:
-    """`Task.configure()` returns a JobDeferrer, so both shapes reach `defer` and
-    only one of them has a `.job`."""
+    """`Task.configure()` returns a JobDeferrer, so only one of the two shapes has `.job`."""
     job = getattr(registered_task, "job", None)
     if job is not None:
         return job.queue, job.task_name
@@ -103,10 +100,7 @@ def _destination(registered_task: Any) -> tuple[str, str]:
 
 
 async def defer(registered_task: Any, /, **kwargs: Any) -> Any:
-    """Defer a job carrying the current trace context.
-
-    Without the send span a job deferred by a periodic task parents to nothing.
-    """
+    """Defer a job carrying the current trace context."""
     queue, task_name = _destination(registered_task)
     attributes: dict[str, Any] = {
         "job.queue": queue,
@@ -125,10 +119,8 @@ async def defer(registered_task: Any, /, **kwargs: Any) -> Any:
 async def defer_unless_queued(registered_task: Any, /, **kwargs: Any) -> bool:
     """Defer, unless the queueing lock says one is already waiting.
 
-    A queueing lock is a request to skip a duplicate, but procrastinate expresses
-    the collision as an exception — so an unhandled one kills the whole sweep and
-    every job it had not deferred yet. Jobs now wait on a per-host lock, so one
-    still queued a minute later is ordinary rather than exceptional.
+    Procrastinate raises on the collision, and an unhandled one would kill the rest of
+    the sweep — while a job still queued a minute later is ordinary, not exceptional.
     """
     try:
         await defer(registered_task, **kwargs)

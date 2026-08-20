@@ -1,9 +1,7 @@
 """Password hashing for the admin UI. stdlib scrypt — no dependency, no service.
 
-The point is not that the admin UI is exposed; it is behind Tailscale and bound
-to loopback. The point is that a plaintext password would exist in `.env`, in
-`pulumi stack output --show-secrets`, in the Ansible variable file and in the
-box's environment. A hash makes every one of those copies unusable.
+Hashed so the copies that end up in `.env`, stack outputs and the box's environment
+are unusable, not because the UI is exposed.
 """
 
 import base64
@@ -12,9 +10,8 @@ from hashlib import scrypt
 from hmac import compare_digest
 
 SCHEME = "scrypt"
-# Not "$": docker compose treats $NAME in an env value as a variable reference and
-# silently expands it away, which would eat the salt and leave a hash that never
-# verifies. Base64 never produces a colon.
+# Not "$": compose expands $NAME in an env value, which would eat the salt.
+# Base64 never produces a colon.
 SEPARATOR = ":"
 COST = 2**15
 BLOCK_SIZE = 8

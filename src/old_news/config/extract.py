@@ -28,9 +28,7 @@ class ExtractSettings(BaseModel):
     )
     image_batch_size: int = 25
 
-    # A page that refused is asked again on a lengthening clock, then given up on.
-    # Steeper and shorter-lived than a feed's: a feed is the subscription, a page is
-    # one article, and 403 is usually a policy rather than a wobble.
+    # Steeper and shorter-lived than a feed's: a 403 on one article is usually policy.
     capture_retry: RetrySettings = Field(
         default_factory=lambda: RetrySettings(
             minimum_seconds=15 * 60, maximum_seconds=24 * 60 * 60, factor=3.0, max_failures=5

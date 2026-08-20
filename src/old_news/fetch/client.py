@@ -15,9 +15,8 @@ _HTTP_URL = TypeAdapter(AnyHttpUrl)
 def http_url(url: str) -> AnyHttpUrl | None:
     """Parse a URL, or None if it isn't one we could fetch.
 
-    Pydantic rather than `urlsplit`: it requires an http scheme and a host, and it
-    punycodes an IDN host, so `münchen.de` and `xn--mnchen-3ya.de` come back the
-    same. `urlsplit` returns them as two different hosts.
+    Pydantic, not `urlsplit`: it punycodes an IDN host, so the two spellings of one
+    host come back the same.
     """
     try:
         return _HTTP_URL.validate_python(url.strip())
@@ -26,13 +25,12 @@ def http_url(url: str) -> AnyHttpUrl | None:
 
 
 def fetchable(url: str) -> bool:
-    """Whether there is anything to fetch here. An OPML file can name entries that
-    were never web resources at all."""
+    """Whether there is anything to fetch here."""
     return http_url(url) is not None
 
 
 class FetchError(Exception):
-    """Transport failed. HTTP error statuses are not errors — they come back as a response."""
+    """Transport failed. An HTTP error status is not this; it comes back as a response."""
 
 
 class Timeout(FetchError):
@@ -48,18 +46,14 @@ class WrongContentType(FetchError):
 
 
 class Unresolvable(FetchError):
-    """The host has no address at all.
-
-    Worth its own name because it is often not a dead publisher: several point the feed
-    at `www` and their article links at an apex nobody ever gave a record to.
-    """
+    """The host has no address at all, which is often a missing apex rather than a dead site."""
 
 
 def _unresolvable(exc: BaseException) -> bool:
     """Whether a transport failure was DNS.
 
     The `gaierror` arrives wrapped as an argument rather than as `__cause__`, so both
-    are followed. Bounded because a cycle here would hang a worker.
+    are followed, and bounded because a cycle would hang the worker.
     """
     seen: BaseException | None = exc
     for _ in range(8):
@@ -72,10 +66,8 @@ def _unresolvable(exc: BaseException) -> bool:
     return False
 
 
-# One name for every outbound GET — feeds, robots.txt and article pages all come through
-# here, and `url.redacted` says which is which. Deliberately not "GET": that is what the
-# httpx2 instrumentation calls its own span, and two spans with one name make the
-# redaction tests unable to tell them apart.
+# Not "GET": that is what the httpx2 instrumentation names its own span, and two spans
+# sharing a name leave the redaction tests unable to tell them apart.
 SPAN_NAME = "fetch"
 
 
@@ -126,19 +118,14 @@ class Fetcher:
         last_modified: str | None = None,
         accept: tuple[str, ...] | None = None,
     ) -> Response:
-        """`accept` refuses a body by its declared type before any of it is read.
-
-        Checked here rather than by the caller because this is where the streaming is: an
-        article link pointing at a 40 MB video should cost one set of headers.
-        """
+        """`accept` refuses a body by its declared type before any of it is read."""
         headers = {}
         if etag:
             headers["If-None-Match"] = etag
         if last_modified:
             headers["If-Modified-Since"] = last_modified
 
-        # Only scheme/host/path — a feed URL's query string can carry an API key,
-        # and span attributes are not scrubbed once they leave here.
+        # No query string: it can carry an API key, and attributes leave unscrubbed.
         target = httpx2.URL(url).copy_with(query=None, fragment=None)
 
         attributes: dict[str, Any] = {

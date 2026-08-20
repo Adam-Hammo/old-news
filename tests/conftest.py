@@ -58,12 +58,7 @@ def _handler(routes: Mapping[str, Route]) -> type[BaseHTTPRequestHandler]:
 
 @pytest.fixture
 def http_server() -> Iterator[Callable[[Mapping[str, Route]], str]]:
-    """Start a real loopback HTTP server and return its base URL.
-
-    `fetch/` is tested against a socket rather than a stubbed transport, which is
-    how the redirect and 304 paths get exercised at all — so this is shared rather
-    than rebuilt per test module.
-    """
+    """Start a real loopback HTTP server and return its base URL."""
     running: list[ThreadingHTTPServer] = []
 
     def start(routes: Mapping[str, Route]) -> str:

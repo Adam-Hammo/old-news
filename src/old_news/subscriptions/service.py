@@ -36,11 +36,7 @@ async def add(
     category: str = "",
     site_url: str = "",
 ) -> Feed | None:
-    """Subscribe. Returns None if the URL is already subscribed.
-
-    A feed we once followed and dropped keeps its archive, so re-subscribing
-    reactivates the existing row rather than starting again.
-    """
+    """Subscribe, reactivating a dropped feed rather than starting again. None if already on."""
     feed = (await session.execute(select(Feed).where(Feed.url == url))).scalar_one_or_none()
 
     if feed is None:

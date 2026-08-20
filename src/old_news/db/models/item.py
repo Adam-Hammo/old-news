@@ -67,9 +67,8 @@ def _latest_capture_join():
 def _latest_extraction_join():
     """The newest extraction of one version.
 
-    Newest rather than "from the current extractor", which would mean this layer importing
-    `extract/` to learn a version string. Bumping the extractor inserts a row, so the
-    newest is the current one either way.
+    Newest, not "from the current extractor" — that would need this layer to import
+    `extract/` for a version string, and a bump inserts a row either way.
     """
     newer = aliased(Extraction, name="newer_extraction")
     return and_(
@@ -86,10 +85,8 @@ def _latest_extraction_join():
 def _latest_item_extraction_join():
     """The newest extraction of any version of one item.
 
-    Deliberately not the head version's extraction. An edit makes a new version the head,
-    and its page waits out the settle window before it is fetched and read — so scoping
-    this to the head would blank an article for an hour every time a publisher touched it,
-    with a perfectly good extraction of the previous version sitting right there.
+    Not the head's: an edit makes a new head whose page waits out the settle window, so
+    scoping this to the head would blank the article until that finished.
     """
     newer = aliased(Extraction, name="newer_item_extraction")
     sibling = aliased(ItemVersion, name="sibling_version")
@@ -129,9 +126,8 @@ class Item(UUIDPrimaryKey, Base):
     read_at: Mapped[datetime.datetime | None] = mapped_column(Timestamptz, nullable=True)
 
     if TYPE_CHECKING:
-        # Assigned below the class, because it names `ItemVersion`. Declared here so a
-        # type checker knows it exists; the annotation never reaches `__annotations__`,
-        # so declarative does not try to map it as a column.
+        # Assigned below the class, since it names `ItemVersion`. Under TYPE_CHECKING the
+        # annotation never reaches `__annotations__`, so declarative does not map it.
         version_count: Mapped[int]
 
     feed: Mapped[Feed] = relationship(lazy="raise")
@@ -163,11 +159,7 @@ class Item(UUIDPrimaryKey, Base):
 
     @hybrid_property
     def subscribed(self) -> bool:
-        """Whether we still follow the feed this came from.
-
-        Every sweep needs it, and this is cheaper to read than a join to `subscriptions`
-        for one boolean.
-        """
+        """Whether we still follow the feed this came from."""
         return self.feed.subscription is not None and self.feed.subscription.active
 
     @subscribed.inplace.expression
@@ -269,8 +261,7 @@ class ItemVersion(UUIDPrimaryKey, Base):
     def is_head(self) -> bool:
         """The tail of the chain: the version nothing supersedes.
 
-        The most-repeated predicate in the codebase, and the easiest to get subtly wrong —
-        note that it is *not* `supersedes_id IS NULL`, which is the chain's other end.
+        Not `supersedes_id IS NULL`, which is the chain's other end.
         """
         return self.superseded_by is None
 
@@ -322,9 +313,8 @@ class ItemVersion(UUIDPrimaryKey, Base):
         return self.title or self.url
 
 
-# Out of the class body because it names `ItemVersion`, which does not exist yet while
-# `Item` is being defined. Deferred, so a correlated count is not a tax on every
-# `select(Item)` — the capture sweep asks for it in a WHERE, and the list views never do.
+# Out of the class body because it names `ItemVersion`. Deferred, so a correlated
+# count is not a tax on every `select(Item)`.
 Item.version_count = column_property(
     select(func.count(ItemVersion.id))
     .where(ItemVersion.item_id == Item.id)

@@ -12,16 +12,13 @@ logger = logging.getLogger(__name__)
 
 QUEUE = "ingest"
 
-# The scheduler runs every minute and is cheap; the polls it defers are neither.
-# Without a higher priority it queues behind its own output, and a backlog stops
-# anything ever being scheduled again.
+# Without this the scheduler queues behind its own output, and a backlog is terminal.
 SCHEDULER_PRIORITY = 10
 
 
 @task(app, name="poll_feed", queue=QUEUE)
 async def poll_feed(feed_id: str) -> None:
-    """Takes an identifier, never a URL: procrastinate logs kwargs at INFO and a
-    feed URL can carry an API key."""
+    """Takes an identifier, never a URL: procrastinate logs kwargs at INFO."""
     await service.poll_feed(uuid.UUID(feed_id), fetch.client(), get_settings())
 
 
@@ -45,9 +42,7 @@ async def schedule_polls(timestamp: int) -> None:
                 # One poll per feed in flight. A feed slower than its interval
                 # would otherwise stack up behind itself forever.
                 queueing_lock=f"feed:{poll.feed_id}",
-                # Politeness: Postgres hands out one job per host at a time, so a
-                # publisher with four feeds gets four visits in a row rather than
-                # four simultaneous connections, and nothing keeps state to do it.
+                # Postgres hands out one job per host at a time, so nothing here keeps state.
                 lock=politeness.host_lock(poll.host),
                 schedule_in={"seconds": delay} if delay else None,
             ),

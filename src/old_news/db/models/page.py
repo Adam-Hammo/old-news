@@ -20,41 +20,29 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Run, Timestamptz, UUIDPrimaryKey, one_of, run_of
 
-# Bumped when anything changes *how* a page is asked for. Refusals are counted per
-# policy, so a bump forgives what came before without deleting a row — `extractor_version`
-# makes the same bargain. Refusing the old way of asking is not refusing the new one.
+# Bumped when anything changes *how* a page is asked for. Refusals count per policy, so a
+# bump forgives what came before without deleting a row.
 CAPTURE_POLICY = "2"
 
 
 class CaptureOutcome(enum.StrEnum):
-    """What one visit to a page turned out to be.
-
-    Only `FAILED` counts against a publisher and only `OK` clears the count. The rest
-    are stepped over: a dead link is about a URL, and the three we never sent are
-    about us. That is what lets every decision record a row without the row changing
-    what the next decision sees.
-    """
+    """What one visit to a page turned out to be. Only `FAILED` counts against a publisher."""
 
     OK = "ok"
-    # 404 or 410. About this URL, not the publisher: a few dead links must not close
-    # a healthy host.
+    # 404 or 410 — about this URL, so it must not close a host that answers everything else.
     GONE = "gone"
     FAILED = "failed"
-    # robots.txt forbids the path, so nothing was sent.
+    # The three we never sent.
     DISALLOWED = "disallowed"
-    # The host is refusing everyone and its probe is not due. Nothing was sent.
     REFUSED = "refused"
-    # The host's robots.txt has never been read, so there is no permission to rely on.
     UNKNOWN_RULES = "unknown_rules"
 
 
 class PageCapture(UUIDPrimaryKey, Base):
     """One visit to the article page behind one version, as served. Append-only.
 
-    Both the artefact and the log of asking for it. Every decision that spends a slot
-    in the capture batch writes one of these, including the decisions not to fetch —
-    a sweep that infers what it has tried from these rows cannot be told the truth by
-    a path that stays silent.
+    Both the artefact and the log of asking for it, so every decision that spends a slot
+    in the capture batch writes one — including the decisions not to fetch.
     """
 
     __tablename__ = "page_captures"
@@ -76,16 +64,14 @@ class PageCapture(UUIDPrimaryKey, Base):
         PgUUID(as_uuid=True), ForeignKey("item_versions.id", ondelete="CASCADE")
     )
 
-    # The publisher this page came from, which is often not the one serving the feed.
-    # A foreign key rather than a string derived again at read time: that is how
-    # `feeds.host` used to drift, and one function must own how a host is worked out.
+    # Often not the host serving the feed. A key rather than a string re-derived per
+    # read, so one function owns how a host is worked out.
     host_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("hosts.id"), index=True
     )
 
     url: Mapped[str] = mapped_column(Text)
-    # After redirects. Kept separately because a publisher that moved is worth knowing
-    # about, and because it is what the extractor must resolve relative links against.
+    # After redirects, which is what the extractor resolves relative links against.
     final_url: Mapped[str] = mapped_column(Text, server_default="")
 
     fetched_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
@@ -103,15 +89,11 @@ class PageCapture(UUIDPrimaryKey, Base):
     headers: Mapped[dict[str, str]] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     error: Mapped[str] = mapped_column(Text, server_default="")
 
-    # How the page was asked for. Refusals are counted per policy, so improving the way
-    # we ask forgives every attempt made before it without deleting a row — the same
-    # bargain `extractions.extractor_version` makes. A publisher that refused the old
-    # way of asking has not refused the new one.
     capture_policy: Mapped[str] = mapped_column(String(16), server_default="1")
 
     @hybrid_property
     def succeeded(self) -> bool:
-        """The fetch answered. A 403 is a fact worth keeping and not a page to read."""
+        """The fetch answered with a body worth reading."""
         return 200 <= self.status < 300
 
     @succeeded.inplace.expression

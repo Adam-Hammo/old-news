@@ -13,15 +13,7 @@ if TYPE_CHECKING:
 
 
 class Subscription(UUIDPrimaryKey, Base):
-    """Following a feed, as distinct from the feed itself.
-
-    `active` is a choice; `Feed.suspended` is the poller giving up. Keeping them
-    apart means unsubscribing never looks like a broken feed in the numbers.
-
-    One-to-one is enforced by the unique feed_id rather than by sharing the
-    feed's primary key: same guarantee today, and relaxing it to many-per-feed
-    later is dropping a constraint rather than replacing a key.
-    """
+    """Following a feed, as distinct from the feed itself. `active` is a choice, not a fault."""
 
     __tablename__ = "subscriptions"
 
@@ -39,12 +31,7 @@ class Subscription(UUIDPrimaryKey, Base):
 
 
 def subscribed(feed_id) -> ColumnElement[bool]:
-    """Whether an active subscription exists for this feed.
-
-    Written once and reached from both `Feed.subscribed` and `Item.subscribed`, because
-    every sweep needs it and an inner join to `subscriptions` for one boolean reads worse
-    at four call sites than the predicate does.
-    """
+    """Whether an active subscription exists for this feed."""
     return (
         select(Subscription.id)
         .where(Subscription.feed_id == feed_id, Subscription.active.is_(True))

@@ -1,8 +1,4 @@
-"""Resolving the host a URL belongs to, as a foreign key.
-
-A publisher is discovered from a feed URL, so somebody has to turn one into the
-other. That happens here, once, and returns the id everything else references.
-"""
+"""Resolving the host a URL belongs to, as a foreign key. The one place that does it."""
 
 import uuid
 
@@ -15,8 +11,7 @@ from old_news.politeness.hosts import host_of
 
 
 async def ensure(session: AsyncSession, name: str) -> uuid.UUID:
-    """The host row for a name, created if new. Hosts are shared, so two feeds
-    arriving at once both have to succeed."""
+    """The host row for a name, created if new. Two feeds arriving at once both succeed."""
     await session.execute(insert(Host).values(name=name).on_conflict_do_nothing())
     return (await session.execute(select(Host.id).where(Host.name == name))).scalar_one()
 

@@ -4,8 +4,13 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the code is laid out a
 
 - `uv` for everything. Never call `python`, `pip`, `pytest` or `ruff` directly.
 - No `from __future__ import annotations`.
-- Comment sparingly: non-obvious logic only, never a restatement of the code. No references to
-  documentation files — if something needs explaining at length, it belongs in `docs/`.
+- Comment sparingly. Good code is readable without prose, so a comment is a claim that this bit is
+  not. One-line docstrings stating intention; comments only where the mechanism is genuinely obscure
+  and getting it wrong is easy. Never restate the code, never narrate the design, and never reach
+  for a named example from the corpus to make a point. Rationale belongs in the commit message;
+  anything longer belongs in `docs/`, which the code does not reference.
+  `tests/unit/test_architecture.py` ratchets all of this — the budgets only go down, and raising one
+  is the argument you have to make out loud.
 - Prefer a new package over growing a module past a few hundred lines. But a _new top-level_ package
   is a decision to state out loud: if `docs/ROADMAP.md` calls something "the same mechanism" as an
   existing thing, extend that thing instead of adding a sibling. Scope where the code belongs before

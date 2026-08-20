@@ -9,12 +9,7 @@ from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
 
 
 class RobotsPolicy(UUIDPrimaryKey, Base):
-    """One host's robots.txt, refreshed on a timer.
-
-    A cache, not archive: overwritten in place and rebuildable from the network, so
-    the append-only rules don't apply. It points at `hosts` and nothing points back,
-    so it can be dropped and rebuilt whenever the parsing changes.
-    """
+    """One host's robots.txt, refreshed on a timer. A cache: droppable and rebuildable."""
 
     __tablename__ = "robots_policies"
 

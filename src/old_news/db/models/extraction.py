@@ -23,15 +23,12 @@ from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of
 class ImageRole(enum.StrEnum):
     """What an image is to its article."""
 
-    # The one the page puts forward as representing itself, and the only one fetched
-    # without being asked for.
     LEAD = "lead"
     BODY = "body"
 
 
-# What makes a reading the same reading. The upsert in `extract/service.py` matches on
-# this constraint and must not rewrite the columns it matched, so both are declared here
-# and the constraint is built from the tuple.
+# The upsert matches on this constraint and must not rewrite the columns it matched, so
+# the constraint is built from the tuple rather than repeating it.
 READING_KEY = "uq_extractions_version_source_extractor"
 READING_IDENTITY = ("item_version_id", "source", "extractor", "extractor_version")
 
@@ -44,20 +41,13 @@ class ExtractionSource(enum.StrEnum):
 
 
 class Extraction(UUIDPrimaryKey, Base):
-    """What one extractor made of one artefact. Derived, disposable, rebuildable.
-
-    Abstract in practice: no identity of its own, and `source` is NOT NULL with no
-    default, so the database refuses a row that will not say which kind it is.
-    """
+    """What one extractor made of one artefact. Derived, disposable, rebuildable."""
 
     __tablename__ = "extractions"
     __table_args__ = (
-        # Also serves lookups by version, which leads it. Named explicitly because the
-        # convention's template runs to 65 characters and Postgres truncates at 63.
+        # Named explicitly: the convention's template exceeds Postgres' 63-char limit.
         UniqueConstraint(*READING_IDENTITY, name=READING_KEY),
-        # What the extraction sweep asks: which versions has this extractor not done. The
-        # unique constraint cannot serve it, because the extractor is not its leading
-        # column.
+        # The extractor does not lead the unique constraint, so it cannot serve the sweep.
         Index("ix_extractions_extractor", "extractor", "extractor_version"),
         CheckConstraint(one_of("source", ExtractionSource), name="known_source"),
     )
@@ -73,18 +63,14 @@ class Extraction(UUIDPrimaryKey, Base):
 
     body: Mapped[str] = mapped_column(Text, server_default="")
 
-    # Captured, not yet materialised: turning these into article-to-article rows needs
-    # URL-to-item resolution, which arrives with dedup in the search phase.
     links: Mapped[list[dict[str, str]]] = mapped_column(JSONB, server_default=text("'[]'::jsonb"))
 
-    # Measurements, not judgements: pure functions of `body`, so they cannot go stale.
-    # Whether they are good enough is a threshold question, and thresholds live in config.
+    # Measurements, not judgements. The thresholds live in config.
     char_count: Mapped[int] = mapped_column(Integer, server_default="0")
     paragraph_count: Mapped[int] = mapped_column(Integer, server_default="0")
     link_density: Mapped[float] = mapped_column(Float, server_default="0")
 
-    # RUF012 wants ClassVar; SQLAlchemy declares it as an instance attribute and `ty`
-    # rejects the override. Plain assignment is what SQLAlchemy's own docs use.
+    # RUF012 wants ClassVar, which `ty` then rejects against SQLAlchemy's declaration.
     __mapper_args__ = {"polymorphic_on": source}  # noqa: RUF012
 
     def __str__(self) -> str:
@@ -92,21 +78,13 @@ class Extraction(UUIDPrimaryKey, Base):
 
 
 class FeedExtraction(Extraction):
-    """A reading of the text a feed already carried.
-
-    Adds nothing on purpose, so neither source is the default one. No `__tablename__`,
-    so no second table and no join — just a name for the identity.
-    """
+    """A reading of the text a feed already carried. No table of its own, just an identity."""
 
     __mapper_args__ = {"polymorphic_identity": ExtractionSource.FEED}  # noqa: RUF012
 
 
 class PageExtraction(Extraction):
-    """A reading of an article page, plus what that page claimed about itself.
-
-    Claims stay claims rather than being merged over what the feed said — which to
-    believe is a question for a reader. A feed states its own on the version instead.
-    """
+    """A reading of an article page, plus what that page claimed about itself."""
 
     __tablename__ = "page_extractions"
 
@@ -125,9 +103,9 @@ class PageExtraction(Extraction):
     page_type: Mapped[str] = mapped_column(String(32), server_default="")
     published_claim: Mapped[str] = mapped_column(String(32), server_default="")
 
-    # Eager, or the child columns lazy-load and fail once a row outlives its transaction.
-    # Not `"inline"`: that outer-joins this table into the aliased subquery
-    # `Item.current_extraction` builds, which has no FROM clause to attach it to.
+    # Eager, or child columns lazy-load and fail once a row outlives its transaction.
+    # Not `"inline"`: `Item.current_extraction` builds an aliased subquery with no FROM
+    # for it to attach to.
     __mapper_args__ = {  # noqa: RUF012
         "polymorphic_identity": ExtractionSource.PAGE,
         "polymorphic_load": "selectin",
@@ -138,19 +116,13 @@ class PageExtraction(Extraction):
 
 
 class ExtractionImage(UUIDPrimaryKey, Base):
-    """One image an extraction found, and the capture that satisfied it if any.
-
-    A row rather than JSONB because it points at `image_captures`, and because rendering
-    an article with its pictures should be one join.
-    """
+    """One image an extraction found, and the capture that satisfied it if any."""
 
     __tablename__ = "extraction_images"
     __table_args__ = (
         CheckConstraint(one_of("role", ImageRole), name="known_role"),
-        # Leading column serves lookups by extraction, so no separate index for it.
         UniqueConstraint("extraction_id", "url"),
-        # What the image sweep asks, and only ever about slots with nothing fetched — so
-        # partial, which keeps it small as the archive fills up.
+        # Partial: the sweep only ever asks about slots with nothing fetched.
         Index(
             "ix_extraction_images_wanted",
             "role",
@@ -162,8 +134,6 @@ class ExtractionImage(UUIDPrimaryKey, Base):
         PgUUID(as_uuid=True), ForeignKey("extractions.id", ondelete="CASCADE")
     )
     url: Mapped[str] = mapped_column(Text)
-    # Null until something fetches it. A lead image is fetched unasked; the rest wait for
-    # a reader, a Kindle build or a label to ask.
     image_capture_id: Mapped[uuid.UUID | None] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("image_captures.id"), nullable=True, index=True
     )

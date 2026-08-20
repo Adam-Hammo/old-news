@@ -1,10 +1,4 @@
-"""What the reader has said it does not want.
-
-This phase asks one question — is this item blocked — and asks it as a clause inside
-the sweep that finds work, so a batch limit still means what it says. Which field a
-dimension looks at is decided here rather than by the caller: that is the rule's
-meaning, not the query's.
-"""
+"""What the reader has said it does not want, as a clause a sweep can put in its WHERE."""
 
 from sqlalchemy import ColumnElement, and_, exists, func, or_, select
 from sqlalchemy.orm import InstrumentedAttribute
@@ -17,9 +11,8 @@ def _contains(
 ) -> ColumnElement[bool]:
     """Case-insensitive substring, via position rather than LIKE.
 
-    LIKE would need the pattern escaped, and it cannot be: the pattern is a column, so
-    there is nothing to escape client-side. `position` has no wildcards to begin with, so
-    a rule containing `_` or `%` — and URLs are full of the former — means itself.
+    The pattern is a column, so it cannot be escaped client-side. `strpos` has no
+    wildcards, so a rule containing `_` or `%` means itself.
     """
     return func.strpos(func.lower(haystack), func.lower(needle)) > 0
 
@@ -33,11 +26,7 @@ def _matches(rule: type[TrainingRule], version: type[ItemVersion]) -> ColumnElem
 
 
 def blocked(version: type[ItemVersion], item: type[Item]) -> ColumnElement[bool]:
-    """True where a blocking rule matches this version.
-
-    The item is needed for scope: a rule with no feed is global, and one with a feed
-    applies only there.
-    """
+    """True where a blocking rule matches this version. A rule with no feed is global."""
     return exists(
         select(TrainingRule.id).where(
             TrainingRule.blocks.is_(True),

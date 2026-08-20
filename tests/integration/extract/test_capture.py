@@ -48,11 +48,7 @@ def site(http_server) -> str:
 
 @pytest.fixture
 def elsewhere(site: str, http_server) -> str:
-    """A server whose article redirects to a *different* host.
-
-    `localhost` and `127.0.0.1` both answer on loopback and are different hosts by
-    `politeness.host_of`, which is what makes a cross-host redirect testable at all.
-    """
+    """A server whose article redirects to a different host on loopback."""
     away = site.replace("127.0.0.1", "localhost")
     return http_server({"/syndicated": (301, b"", {"Location": f"{away}/article"})})
 
@@ -102,11 +98,7 @@ async def _replace_rules(session: AsyncSession, host: str, body: str) -> None:
 
 
 async def _version(feed_id: uuid.UUID, article, url: str) -> uuid.UUID:
-    """A version to capture, with the host's robots.txt already asked for.
-
-    Nothing is fetched from a host whose rules have never been read, so an empty policy —
-    which is what a reachable robots.txt with no rules looks like — is the baseline.
-    """
+    """A version to capture, with the host's robots.txt already asked for."""
     await _rules("127.0.0.1", "")
     return (await article(feed_id, ("An article", url)))[0]
 
@@ -126,8 +118,7 @@ async def test_a_page_is_captured_and_reads_back(
 async def test_a_redirect_records_both_urls(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """A publisher that moved is worth knowing about, and the extractor needs the URL
-    the page actually came from to resolve its links."""
+    """The extractor needs the URL the page actually came from."""
     version_id = await _version(feed_id, article, f"{site}/moved")
 
     stored = await capture_page(version_id, fetcher, settings)
@@ -154,8 +145,7 @@ async def test_a_non_html_body_is_refused_without_being_stored(
 async def test_a_404_is_recorded_rather_than_dropped(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """An article that has gone is a fact about the archive, and the row is what bounds
-    the retry."""
+    """The row is what bounds the retry."""
     version_id = await _version(feed_id, article, f"{site}/gone")
 
     stored = await capture_page(version_id, fetcher, settings)
@@ -167,8 +157,7 @@ async def test_a_404_is_recorded_rather_than_dropped(
 async def test_a_disallowed_host_is_never_fetched(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """The strict check, with no blanket-ban carve-out: a feed is published for readers,
-    an article page is not."""
+    """The strict check, with no blanket-ban carve-out."""
     version_id = await _version(feed_id, article, f"{site}/article")
     await _replace_rules("127.0.0.1", "User-agent: *\nDisallow: /\n")
 
@@ -228,8 +217,7 @@ async def test_the_article_host_gets_a_row(
 async def test_a_host_whose_rules_were_never_read_is_not_fetched(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """The sweep already refuses these, but a job queued before a rule existed, or a
-    re-capture asked for by hand, must not slip past it."""
+    """For a job queued before a rule existed."""
     version_id = (await article(feed_id, ("An article", f"{site}/article")))[0]
 
     stored = await capture_page(version_id, fetcher, settings)
@@ -240,8 +228,7 @@ async def test_a_host_whose_rules_were_never_read_is_not_fetched(
 async def test_a_redirect_to_another_host_is_checked_against_that_host(
     clean: None, no_policies: None, feed_id, article, elsewhere: str, fetcher, settings
 ):
-    """Redirects are followed inside the fetch, so only the first host was ever asked. The
-    hop's bytes must not be archived on a permission another publisher gave."""
+    """Only the first host was ever asked."""
     version_id = await _version(feed_id, article, f"{elsewhere}/syndicated")
 
     stored = await capture_page(version_id, fetcher, settings)
@@ -254,8 +241,7 @@ async def test_a_redirect_to_another_host_is_checked_against_that_host(
 async def test_a_redirect_to_a_host_that_does_allow_it_is_kept(
     clean: None, no_policies: None, feed_id, article, elsewhere: str, fetcher, settings
 ):
-    """The guard is about asking, not about refusing. Once the second host has rules on
-    file and they permit it, the page is archived as normal."""
+    """The guard is about asking, not refusing."""
     version_id = await _version(feed_id, article, f"{elsewhere}/syndicated")
     await _rules("localhost", "")
 
@@ -269,8 +255,7 @@ async def test_a_redirect_to_a_host_that_does_allow_it_is_kept(
 async def test_a_same_host_redirect_is_not_treated_as_one(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """`theguardian.com` sending you to `www.theguardian.com` is not a redirect worth the
-    word, and 80 of 80 real ones in this corpus were exactly that."""
+    """An apex sending you to `www.` is not a redirect worth the word."""
     version_id = await _version(feed_id, article, f"{site}/moved")
 
     stored = await capture_page(version_id, fetcher, settings)
@@ -289,8 +274,7 @@ async def _refusals(
     ago: datetime.timedelta,
     status: int = 403,
 ) -> None:
-    """A run of refusals on a host, recorded against a different article than the one
-    being captured — which is the point: the breaker is about the publisher."""
+    """A run of refusals on a host, recorded against a different article."""
     host_id = await ensure(session, host)
     for n in range(count):
         session.add(
@@ -316,8 +300,7 @@ async def _other_article(feed_id: uuid.UUID, article) -> uuid.UUID:
 async def test_a_host_refusing_everything_stops_being_asked(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """Medium 403s every article page it serves. Per-version backoff would leave ten
-    independent clocks all still knocking; this is the one clock."""
+    """One clock for the publisher, not one per article."""
     version_id = await _version(feed_id, article, f"{site}/article")
     await _refusals(
         "127.0.0.1",
@@ -353,8 +336,7 @@ async def test_a_host_below_the_threshold_is_still_asked(
 async def test_one_probe_is_let_through_once_the_interval_passes(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """Without this the breaker freezes the window it reads and never reopens, so a
-    publisher who unblocks us is never found out."""
+    """Without it the breaker freezes the window it reads."""
     version_id = await _version(feed_id, article, f"{site}/article")
     await _refusals(
         "127.0.0.1",
@@ -371,8 +353,7 @@ async def test_one_probe_is_let_through_once_the_interval_passes(
 async def test_a_run_of_404s_does_not_close_a_host(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """A 404 is about one URL. A handful of dead links must not shut out a publisher
-    that is answering everything else."""
+    """A 404 is about one URL."""
     version_id = await _version(feed_id, article, f"{site}/article")
     await _refusals(
         "127.0.0.1",
@@ -390,8 +371,7 @@ async def test_a_run_of_404s_does_not_close_a_host(
 async def test_a_capture_records_the_policy_it_was_made_under(
     clean: None, no_policies: None, feed_id, article, site: str, fetcher, settings
 ):
-    """If `_store` ever stopped stamping this, every row would fall back to the default
-    and be forgiven by the sweep forever — a retry loop that looks like a fixed one."""
+    """Unstamped rows fall back to the default and are forgiven forever."""
     version_id = await _version(feed_id, article, f"{site}/article")
 
     stored = await capture_page(version_id, fetcher, settings)

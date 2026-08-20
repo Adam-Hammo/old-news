@@ -1,8 +1,4 @@
-"""Fetching the page behind a version and keeping the bytes.
-
-Capture only. What the page means is derived, disposable and lands in its own table, so a
-wrong extractor costs a rerun rather than the article.
-"""
+"""Fetching the page behind a version and keeping the bytes. What it means is elsewhere."""
 
 import hashlib
 import logging
@@ -31,7 +27,7 @@ PER_URL_STATUS = frozenset({404, 410})
 
 
 def _outcome_for(response: Response | None) -> CaptureOutcome:
-    """What the answer amounts to, for the counting that decides whether to ask again."""
+    """What the answer amounts to for the counting that decides whether to ask again."""
     if response is None:
         return CaptureOutcome.FAILED
     if response.ok:
@@ -100,12 +96,7 @@ async def _store(
     response: Response | None = None,
     error: str = "",
 ) -> PageCapture:
-    """One row per visit, including the visits we decided not to make.
-
-    A failure is a fact about the archive, so it is recorded rather than thrown away.
-    So is a refusal: the sweep infers what it has already tried from these rows, and a
-    decision that returns silently tells it nothing and is handed the same slot forever.
-    """
+    """One row per visit, including the visits we decided not to make."""
     body = response.body if response is not None else b""
     body_hash = hashlib.sha256(body).digest()
     host_id = await ensure(session, host_of(url))
@@ -124,8 +115,7 @@ async def _store(
     )
 
     if body:
-        # Bytes already held for this URL are pointed at rather than stored twice: 204
-        # URLs in this corpus arrive in more than one feed.
+        # Bytes already held for this URL are pointed at rather than stored twice.
         held = await _held_body(session, url, body_hash)
         if held is None:
             current = await dictionaries.current_for_host(session, host_id)
@@ -175,15 +165,13 @@ async def capture_page(
     if state is None:
         return None
     host_id, requires_www = state
-    # Learned last time, so the attempt that taught us is not repeated per article.
     target = with_www(url) if requires_www else url
 
     attributes: dict[str, Any] = {"version.id": str(version_id)}
     with span("capture page", **attributes) as current:
-        # Checked here as well as in the sweep: a job queued before a rule existed, or a
-        # re-capture asked for by hand, must not slip past it. Each spends a slot in the
-        # batch without sending a request, so each writes a row saying so — none counts
-        # as the publisher failing, so recording them cannot move the breaker below.
+        # Checked here as well as in the sweep, for a job queued before a rule existed.
+        # Each spends a batch slot without sending a request, so each records one — and
+        # none counts as the publisher failing, so recording cannot move the breaker.
         if not await robots.rules_known(target):
             current.set_attribute("page.rules_unknown", True)
             count("extract.captures.rules_unknown", host=host_of(target))
@@ -226,9 +214,7 @@ async def capture_page(
 
         current.set_attribute("http.response.status_code", response.status)
 
-        # Redirects are followed inside the fetch, so only the first host was checked. A
-        # hop to somewhere else has said nothing about us, and its bytes are not archived
-        # on the strength of a permission another publisher gave.
+        # Redirects are followed inside the fetch, so only the first host was asked.
         if not await robots.allows_after_redirect(target, response.url, settings):
             current.set_attribute("page.redirect_disallowed", True)
             count("extract.captures.redirect_disallowed", host=host_of(response.url))

@@ -1,13 +1,4 @@
-"""Whether a publisher is refusing us, rather than one article being unavailable.
-
-Per-version backoff leaves as many clocks as there are articles, all still knocking.
-This is the one clock, and it is one SQL predicate over the capture log — so the sweep
-choosing a batch and the fetch about to send a request read the same number and cannot
-disagree about which hosts are shut.
-
-Derived, never stored, which is why it needs the probe: a breaker that stops attempts
-freezes the window it reads.
-"""
+"""Whether a publisher is refusing us, rather than one article being unavailable."""
 
 import datetime
 import uuid
@@ -24,9 +15,9 @@ from old_news.politeness import backoff
 def refusing(host, settings: ExtractSettings, now: datetime.datetime) -> ColumnElement[bool]:
     """Whether this host is shut and its probe is not yet due.
 
-    Goes false while a probe is due, so exactly one capture gets through and the count
-    it reads can move again. The threshold is subtracted before the backoff, so the
-    first wait is the minimum rather than several doublings deep.
+    Goes false while a probe is due, so one capture gets through and the count it reads
+    can move again — a breaker with no probe freezes its own input. Subtracting the
+    threshold first starts the wait at the minimum instead of several doublings deep.
     """
     policy = backoff.policy_for(settings.host_probe)
     threshold = settings.host_failure_threshold
@@ -39,7 +30,7 @@ def refusing(host, settings: ExtractSettings, now: datetime.datetime) -> ColumnE
 async def refusing_host(
     session: AsyncSession, host_id: uuid.UUID, settings: ExtractSettings
 ) -> bool:
-    """The same predicate for one host, for the check standing in front of a fetch."""
+    """The same predicate for one host, for the check in front of a fetch."""
     closed = await session.execute(
         select(refusing(Host, settings, datetime.datetime.now(datetime.UTC))).where(
             Host.id == host_id

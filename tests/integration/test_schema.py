@@ -45,10 +45,7 @@ async def test_queue_schema_reports_installed(database: None, queue_schema: None
 async def test_both_clients_share_the_container_database(
     database: None, queue_schema: None, queue_app
 ):
-    """SQLAlchemy and procrastinate are configured independently, and procrastinate
-    reads OLD_NEWS_DATABASE__URL at import. If they ever point at different
-    databases the suite passes while testing a developer's machine.
-    """
+    """Configured independently, so two different databases would pass while testing nothing."""
     async with queue_app.open_async():
         await heartbeat.defer_async(note="same-database")
 

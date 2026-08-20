@@ -1,9 +1,4 @@
-"""Which pages are worth fetching, as one query.
-
-The rule lives here whole rather than spread over a call chain, so it reads in one go and
-can be tested case by case. Modelled on `ingest.service.due_polls`, which is the same
-shape: claim a batch, group it by host, hand it to the queue.
-"""
+"""Which pages are worth fetching, as one query."""
 
 import dataclasses
 import datetime
@@ -40,23 +35,15 @@ class DueCapture:
 async def due_captures(
     session: AsyncSession, settings: ExtractSettings, limit: int
 ) -> list[DueCapture]:
-    """Head versions whose page we should have and do not.
-
-    The first version of an item is due at once, so every article has something; a later
-    one waits for the settle window, so a rolling story does not cost a fetch per rewrite.
-    The version cap and the blocking rule are what make a live blog cost nothing.
-    """
+    """Head versions whose page we should have and do not."""
     now = datetime.datetime.now(datetime.UTC)
     settled_by = now - datetime.timedelta(seconds=settings.settle_seconds)
     policy = backoff.policy_for(settings.capture_retry)
 
-    # One visit to a page records the host it went to, so every reason not to go back
-    # reads off the same table. Excluded in SQL rather than after the `LIMIT`: dropping
-    # rows from a claimed batch shrinks it, and the version stays due, leads by age and
-    # takes the same slot on the next sweep.
-    #
-    # A version never visited at all is not covered, and does not need to be — the first
-    # sweep to pick it up records the refusal, and from then on it is.
+    # Excluded in SQL, not after the `LIMIT`: dropping rows from a claimed batch shrinks
+    # it, and the version stays due and leads the next one by age. A version never
+    # visited is not covered and needs no covering — the first sweep to reach it records
+    # the refusal, and from then on it is.
     settled = (
         select(PageCapture.item_version_id)
         .outerjoin(RobotsPolicy, RobotsPolicy.host_id == PageCapture.host_id)
@@ -66,8 +53,7 @@ async def due_captures(
                 PageCapture.host_id.in_(
                     select(Host.id).where(breaker.refusing(Host, settings, now))
                 ),
-                # Robots is a cache, so its refusal holds only until the rules are read
-                # again. That makes this a delay rather than a verdict.
+                # A cache, so its refusal holds only until the rules are read again.
                 and_(
                     PageCapture.outcome == CaptureOutcome.DISALLOWED,
                     PageCapture.fetched_at > RobotsPolicy.fetched_at,
@@ -81,9 +67,7 @@ async def due_captures(
         .scalar_subquery()
     )
 
-    # Only the visits that were actually sent and actually refused. A row saying we
-    # declined to ask must not spend one of the tries a page gets, or a host being shut
-    # for an afternoon would write off every article on it.
+    # Only visits actually sent. A decline must not spend one of a page's limited tries.
     tried = (
         select(
             PageCapture.item_version_id.label("version_id"),
@@ -111,7 +95,6 @@ async def due_captures(
             # A version superseding nothing is the item's first, and is due at once.
             ItemVersion.supersedes_id.is_(None) | (ItemVersion.observed_at <= settled_by),
             # Never tried, or refused and now off its backoff with tries still left.
-            # Without this a page that will never answer is asked once a minute forever.
             or_(
                 tried.c.version_id.is_(None),
                 and_(
@@ -129,12 +112,8 @@ async def due_captures(
     for version_id, url, canonical_url in rows:
         target = canonical_url or url
         host = host_of(target)
-        # A link that is not fetchable at all — an aggregator naming a `newsletter:`
-        # address, say — has no page to get. And a host whose robots.txt has never been
-        # read is left alone: unknown rules read as permission everywhere else in the
-        # codebase, which is right for a feed published for readers and wrong for
-        # crawling a publisher's pages. The refresh sweep writes a row for every host it
-        # visits, reachable or not, so this delays a new host rather than blocking it.
+        # A host whose robots.txt has never been read is left for the refresh sweep, which
+        # writes a row whether or not it could reach one — so this delays, not blocks.
         if host and host in known:
             due.append(DueCapture(version_id, target, host))
     return due
@@ -150,12 +129,7 @@ async def _hosts_with_rules(session: AsyncSession) -> set[str]:
 
 @db.transactional
 async def article_hosts(session: AsyncSession) -> list[str]:
-    """Every host we fetch articles from, which is not the set we poll.
-
-    BBC's feed is on `feeds.bbci.co.uk` and its articles are on `bbc.co.uk`. Without this
-    the robots refresh never asks the host being crawled, and the rules lookup, finding
-    nothing stored, allows everything.
-    """
+    """Every host we fetch articles from, which is not the set we poll."""
     rows = await session.execute(
         select(ItemVersion.url, ItemVersion.canonical_url)
         .join(Item, Item.id == ItemVersion.item_id)

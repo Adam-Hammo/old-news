@@ -18,8 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of, run_of
 
-# The publisher saying the feed is gone for good, which is the only answer that is
-# permanent on its own.
+# The only answer that is permanent on its own.
 PERMANENTLY_GONE = 410
 
 
@@ -27,19 +26,15 @@ class PollOutcome(enum.StrEnum):
     """What a poll turned out to be. Only `FAILED` backs a feed off."""
 
     OK = "ok"
-    # A 304. The feed answered and had nothing new, which is a healthy poll.
+    # A 304 is a healthy poll that happened to carry nothing.
     NOT_MODIFIED = "not_modified"
-    # robots.txt names this feed. Not a failure — dropping the rule brings it back.
+    # Not a failure: dropping the rule brings the feed back.
     DISALLOWED = "disallowed"
     FAILED = "failed"
 
 
 class FeedPoll(UUIDPrimaryKey, Base):
-    """One visit to one feed, as it happened. Append-only.
-
-    The feed row says what happens next; this says what already did, which
-    `feeds.last_error` used to overwrite once a poll.
-    """
+    """One visit to one feed, as it happened. Append-only; the feed row says what happens next."""
 
     __tablename__ = "feed_polls"
     __table_args__ = (
@@ -85,11 +80,7 @@ def consecutive_failures(feed_id) -> ColumnElement[int]:
 
 
 def gone(feed_id) -> ColumnElement[bool]:
-    """Whether the publisher has ever answered 410 — their only permanent answer.
-
-    Needs no threshold, unlike giving up after N failures, which is our policy and is
-    applied where the setting lives.
-    """
+    """Whether the publisher has ever answered 410. Needs no threshold, unlike giving up."""
     return (
         select(FeedPoll.id)
         .where(FeedPoll.feed_id == feed_id, FeedPoll.status == PERMANENTLY_GONE)

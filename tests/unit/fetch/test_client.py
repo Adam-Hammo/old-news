@@ -145,10 +145,7 @@ async def test_the_feed_span_never_carries_the_query_string(
 async def test_the_client_span_does_carry_the_query_string(
     traced_fetcher: Fetcher, server: str, capfire: CaptureLogfire
 ):
-    """The accepted cost of instrumenting httpx2: its span records `http.url` whole,
-    and Logfire treats that key as safe and never scrubs it. Feed URLs are ours and
-    hold no credentials. This fails the day one does, which is the point of it.
-    """
+    """The accepted cost of instrumenting httpx2: `http.url` is never scrubbed."""
     await traced_fetcher.get(f"{server}/conditional?api_key={SECRET}")
 
     theirs = [s for s in capfire.exporter.exported_spans if s.name != SPAN_NAME]

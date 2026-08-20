@@ -1,10 +1,7 @@
-"""How long to wait before asking again, after being told no.
+"""How long to wait before asking again. Pure functions over a policy.
 
-Pure functions over a policy. Feeds, pages and images fail the same way and so back
-off the same way; they differ only in the numbers, which is what `Policy` carries.
-
-Two forms of the same arithmetic, because one caller decides in Python and another
-needs it inside a `WHERE` clause. `test_backoff.py` asserts they agree.
+Spelled twice, in Python and in SQL, because one caller decides in advance and another
+needs it inside a `WHERE`. `test_backoff.py` asserts the two agree.
 """
 
 import dataclasses
@@ -44,7 +41,7 @@ def interval(policy: Policy, *, failures: int, base_seconds: float | None = None
 def due_at(
     last_attempt: ColumnClause | ColumnElement, failures: ColumnElement, policy: Policy
 ) -> ColumnElement:
-    """`retry_at` as SQL, so a batch can be ordered and limited by it.
+    """The interval as SQL, so a batch can be ordered and limited by it.
 
     Filtering in Python after a `LIMIT` would silently shrink every batch.
     """

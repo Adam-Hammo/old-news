@@ -1,8 +1,4 @@
-"""Choosing and training compression dictionaries.
-
-A dictionary is immutable once written, so loaded ones are cached for the life of the
-process and a read almost never touches Postgres.
-"""
+"""Choosing and training compression dictionaries. Immutable, so loaded ones are cached."""
 
 import datetime
 import logging
@@ -21,9 +17,7 @@ from old_news.db.session import transactional
 
 logger = logging.getLogger(__name__)
 
-# zstd's trainer splits the samples it is given and refuses outright below a handful,
-# whatever dictionary size is asked for. Configuring fewer than this cannot work, so
-# it is a floor rather than a default.
+# The trainer refuses outright below this, whatever dictionary size is asked for.
 MIN_TRAINABLE_SAMPLES = 8
 
 _loaded: dict[int, zstd.ZstdDict] = {}
@@ -48,11 +42,7 @@ class Current:
 
 
 async def current_for_feed(session: AsyncSession, feed_id: uuid.UUID) -> Current | None:
-    """The newest dictionary for a feed, or None while it has none.
-
-    None is not a failure — it is what every scope starts as, and plain zstd is always
-    readable.
-    """
+    """The newest dictionary for a feed, or None while it has none."""
     row = (
         await session.execute(
             select(ZstdDictionary.id, ZstdDictionary.dict_id, ZstdDictionary.body)
@@ -67,11 +57,7 @@ async def current_for_feed(session: AsyncSession, feed_id: uuid.UUID) -> Current
 
 
 async def current_for_host(session: AsyncSession, host_id: uuid.UUID) -> Current | None:
-    """The newest dictionary for a host's article pages.
-
-    A separate scope from a feed's, because two pages from one publisher share a template
-    where two documents from one feed share almost everything.
-    """
+    """The newest dictionary for a host's article pages, a separate scope from a feed's."""
     row = (
         await session.execute(
             select(ZstdDictionary.id, ZstdDictionary.dict_id, ZstdDictionary.body)
@@ -100,8 +86,7 @@ async def _load(session: AsyncSession, dict_id: int) -> zstd.ZstdDict:
         await session.execute(select(ZstdDictionary.body).where(ZstdDictionary.dict_id == dict_id))
     ).scalar_one_or_none()
     if stored is None:
-        # The foreign key makes this unreachable from a consistent database, so it
-        # means the row was removed out of band and those bodies are now unreadable.
+        # Unreachable while the foreign key holds, so the row went out of band.
         raise LookupError(f"no stored zstd dictionary {dict_id}")
     return _cached(dict_id, stored)
 
@@ -116,11 +101,7 @@ def _cached(dict_id: int, body: bytes) -> zstd.ZstdDict:
 async def feeds_wanting_a_dictionary(
     session: AsyncSession, settings: StorageSettings, limit: int
 ) -> list[uuid.UUID]:
-    """Feeds with enough documents to learn from and no current dictionary.
-
-    Ordered by document count so the feeds paying the most for compression get one
-    first — which is also where the training set is best.
-    """
+    """Feeds with enough documents to learn from and no current dictionary, biggest first."""
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
         seconds=settings.dictionary_max_age_seconds
     )
@@ -142,13 +123,7 @@ async def feeds_wanting_a_dictionary(
 
 @transactional
 async def feed_samples(session: AsyncSession, feed_id: uuid.UUID, limit: int) -> list[bytes]:
-    """Recent document bodies for a feed, expanded.
-
-    Newest first: a dictionary should describe what the publisher serves now, not what
-    it served when the feed was first subscribed to. Expanded here rather than by the
-    caller because a sample compressed against an earlier dictionary needs a lookup to
-    read, and this is where the session is.
-    """
+    """Recent document bodies for a feed, newest first, expanded."""
     rows = await session.execute(
         select(Document.body)
         .where(Document.feed_id == feed_id)
@@ -184,7 +159,7 @@ async def hosts_wanting_a_dictionary(
 
 @transactional
 async def host_samples(session: AsyncSession, host_id: uuid.UUID, limit: int) -> list[bytes]:
-    """Recent page bodies for a host, expanded. Newest first, like a feed's."""
+    """Recent page bodies for a host, newest first, expanded."""
     rows = await session.execute(
         select(PageCapture.body)
         .where(PageCapture.host_id == host_id, PageCapture.body != b"")
@@ -195,14 +170,10 @@ async def host_samples(session: AsyncSession, host_id: uuid.UUID, limit: int) ->
 
 
 def train(samples: list[bytes], settings: StorageSettings) -> Trained | None:
-    """Build the best dictionary these bodies support. None when none of them helps.
+    """Build the best dictionary these bodies support, or None when none beats plain zstd.
 
-    Every candidate size is judged on a sample held out of its own training set, because the
-    best size is a property of the scope — a Guardian page wants four times what zstd's
-    default offers — and because the trainer degrades badly when asked for more than it can
-    use, which a fixed number cannot detect and a measurement can.
-
-    Pure and deliberately outside a transaction: tens of megabytes and seconds of CPU.
+    Sizes are measured on a held-out sample, not picked: the trainer degrades when asked
+    for more than the scope can use. Outside a transaction — it costs seconds of CPU.
     """
     if len(samples) < max(settings.dictionary_min_samples, MIN_TRAINABLE_SAMPLES):
         return None
@@ -210,15 +181,13 @@ def train(samples: list[bytes], settings: StorageSettings) -> Trained | None:
     held, training = samples[0], samples[1:]
     level = settings.compression_level
     best: Trained | None = None
-    # Anything that cannot beat plain zstd is not worth the row or the coupling.
     smallest = len(codec.compress(held, level=level))
 
     for size in settings.dictionary_size_ladder:
         try:
             candidate = zstd.train_dict(training, size)
         except zstd.ZstdError:
-            # Bodies the trainer cannot make sense of must not fail the sweep for every
-            # other scope. Plain zstd remains correct.
+            # One unlearnable scope must not fail the sweep for the rest.
             continue
 
         stored = len(codec.compress(held, level=level, dictionary=candidate))
@@ -240,9 +209,7 @@ def train(samples: list[bytes], settings: StorageSettings) -> Trained | None:
 async def _store(
     session: AsyncSession, scope: dict[str, uuid.UUID], trained: Trained
 ) -> ZstdDictionary:
-    """A retrain that produces an identical dictionary only moves `trained_at`, which
-    says the scope was looked at and had nothing new to learn. No body is ever rewritten
-    and no existing dictionary is replaced."""
+    """Upsert: an identical retrain moves `trained_at` and rewrites no body."""
     values = {
         "dict_id": trained.dict_id,
         "body": trained.body,

@@ -9,24 +9,17 @@ from old_news.db.models.page import host_failures, host_last_failure
 
 
 class Host(UUIDPrimaryKey, Base):
-    """A publisher. The aggregate root that feeds and robots rules hang off.
-
-    Not a cache of something derived from a feed URL — that is only how a host is
-    discovered. It owns state no feed can produce: robots rules, crawl delay, and
-    whatever else gets observed about a publisher later.
-    """
+    """A publisher. The aggregate root that feeds and robots rules hang off."""
 
     __tablename__ = "hosts"
 
-    # Punycoded, lowercased, `www.` stripped — whatever `politeness.host_of` says.
-    # A surrogate key rather than this: re-deriving after a parser fix is then an
-    # update to one row instead of a cascading key change.
+    # Punycoded, lowercased, `www.` stripped — whatever `politeness.host_of` says. Not the
+    # primary key, so re-deriving after a parser fix updates one row.
     name: Mapped[str] = mapped_column(Text, unique=True, index=True)
     first_seen_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
 
-    # Some publishers serve the feed from `www` and link their articles at the apex,
-    # which then resolves nowhere. Observed from the one capture that only worked with the
-    # prefix put back, so it costs a single wasted request per host, ever.
+    # Some publishers link articles at an apex that resolves nowhere. Learned from the one
+    # capture that only worked with the prefix put back, so it costs one request per host.
     requires_www: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
 
     @hybrid_property

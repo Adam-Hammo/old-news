@@ -1,8 +1,4 @@
-"""Keeping each host's robots.txt current.
-
-The fetches take the same per-host lock as a poll, so asking for the rules queues
-behind that host's other traffic rather than racing it.
-"""
+"""Keeping each host's robots.txt current, behind the same per-host lock as a poll."""
 
 import logging
 

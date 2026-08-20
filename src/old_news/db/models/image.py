@@ -9,20 +9,14 @@ from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
 
 
 class ImageCapture(UUIDPrimaryKey, Base):
-    """One image, as served.
-
-    Keyed on the URL and the bytes together: a header image shared by forty posts is one
-    row, and a re-crop at the same path is a second rather than a silent overwrite.
-    Nothing here re-encodes — a rendition that replaced the original could not be undone.
-    """
+    """One image, as served. Keyed on URL and bytes together, and never re-encoded."""
 
     __tablename__ = "image_captures"
     __table_args__ = (UniqueConstraint("url_digest", "body_hash"),)
 
     url: Mapped[str] = mapped_column(Text)
-    # sha256 of the URL, keyed instead of `url` because an image URL can exceed what btree
-    # will take and a CDN's query string is part of its identity. No separate index: it
-    # leads the unique constraint above.
+    # Keyed instead of `url`: an image URL can exceed what btree takes, and a CDN's query
+    # string is part of its identity. No separate index — it leads the constraint above.
     url_digest: Mapped[bytes] = mapped_column(LargeBinary)
 
     host_id: Mapped[uuid.UUID] = mapped_column(

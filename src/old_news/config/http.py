@@ -7,7 +7,5 @@ class HttpSettings(BaseModel):
     max_redirects: int = 5
     max_body_bytes: int = 16 * 1024 * 1024
 
-    # Floor on the gap between two requests to one host. Applied when polls are
-    # deferred, so a publisher with a dozen feeds is visited in a queue rather
-    # than all at once. Nothing is lost by being slow here.
+    # Floor on the gap between two requests to one host, applied when polls are deferred.
     min_host_interval_seconds: float = 5.0

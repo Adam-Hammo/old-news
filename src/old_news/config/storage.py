@@ -6,19 +6,12 @@ class StorageSettings(BaseModel):
     # for another 5%. 12 is 3 ms and most of the win.
     compression_level: int = 12
 
-    # A dictionary needs something to learn from, and how much is what decides whether it
-    # is any good — measured on real pages, eight samples buys 16% and twenty-eight buys
-    # 50%. Below the floor a scope stays on plain zstd, which is always correct and is what
-    # every body starts out as.
+    # Below this a scope stays on plain zstd, which is always correct.
     dictionary_min_samples: int = 20
     dictionary_sample_limit: int = 100
 
-    # Candidate dictionary sizes, tried in turn and judged on a held-out sample, because the
-    # best one is a property of the scope rather than a constant.
-    #
-    # The ladder stops at 512K because the trainer has a cliff: asked for much more than it
-    # can use it emits a far *smaller* dictionary than it would have at 256K, which is worse
-    # than either. Judging each candidate rather than trusting the number sidesteps that.
+    # Tried in turn and judged on a held-out sample. The ladder stops at 512K because the
+    # trainer, asked for more than it can use, emits a far smaller dictionary than at 256K.
     dictionary_size_ladder: tuple[int, ...] = (
         64 * 1024,
         128 * 1024,

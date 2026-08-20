@@ -1,8 +1,7 @@
-"""The rules in docs/ARCHITECTURE.md, as assertions.
+"""The rules in CLAUDE.md and docs/ARCHITECTURE.md, as assertions.
 
-They were prose, and prose does not fail a build. Two of them are cheap to check
-and both describe things that go wrong silently: a package appearing that nobody
-decided on, and a service reaching back into an adapter.
+Each describes something that otherwise goes wrong silently: an undecided package, a
+service reaching back into an adapter, and prose growing back over the code.
 """
 
 import ast
@@ -85,3 +84,58 @@ def test_a_service_never_imports_an_adapter(adapter: str):
             offenders.append(relative)
 
     assert not offenders, f"{offenders} import old_news.{adapter}"
+
+
+# Ratchets. Both may only go down: a docstring past one line, or a comment past one, is
+# a claim that the code cannot be read as it stands. Raising either is the argument.
+MULTI_LINE_DOCSTRING_BUDGET = 32
+MAX_DOCSTRING_LINES = 5
+MAX_COMMENT_RUN = 4
+
+
+def _docstring_lengths() -> list[tuple[str, str, int]]:
+    found = []
+    for path, tree in _modules():
+        for node in ast.walk(tree):
+            if not isinstance(
+                node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+            ):
+                continue
+            text = ast.get_docstring(node, clean=False)
+            if text:
+                name = getattr(node, "name", "<module>")
+                found.append(
+                    (path.relative_to(SRC).as_posix(), name, len(text.strip().split("\n")))
+                )
+    return found
+
+
+def test_no_docstring_runs_past_a_paragraph():
+    too_long = [
+        f"{where}::{name} ({length} lines)"
+        for where, name, length in _docstring_lengths()
+        if length > MAX_DOCSTRING_LINES
+    ]
+
+    assert not too_long, f"{too_long} — say it in one line, or put it in docs/"
+
+
+def test_multi_line_docstrings_stay_within_budget():
+    multi = [entry for entry in _docstring_lengths() if entry[2] > 1]
+
+    assert len(multi) <= MULTI_LINE_DOCSTRING_BUDGET, (
+        f"{len(multi)} multi-line docstrings against a budget of "
+        f"{MULTI_LINE_DOCSTRING_BUDGET}. Collapse one, or lower the budget deliberately."
+    )
+
+
+def test_no_comment_block_runs_past_a_few_lines():
+    offenders = []
+    for path, _ in _modules():
+        run = 0
+        for number, line in enumerate(path.read_text().splitlines(), start=1):
+            run = run + 1 if line.strip().startswith("#") else 0
+            if run == MAX_COMMENT_RUN + 1:
+                offenders.append(f"{path.relative_to(SRC).as_posix()}:{number}")
+
+    assert not offenders, f"{offenders} — a comment that long belongs in docs/"

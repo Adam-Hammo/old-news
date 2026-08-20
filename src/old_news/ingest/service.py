@@ -1,8 +1,4 @@
-"""Polling a feed. Orchestration only — the writes live in store.py.
-
-Each transaction is its own decorated function; `poll_feed` is the network half,
-deliberately inside none of them.
-"""
+"""Polling a feed. Orchestration only — the writes live in store.py."""
 
 import dataclasses
 import datetime
@@ -27,10 +23,7 @@ RATE_LIMITED = {429, 503}
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class DuePoll:
-    """A feed to visit, and the host politeness groups it under.
-
-    The host travels rather than the URL, which can carry an API key.
-    """
+    """A feed to visit, and the host politeness groups it under."""
 
     feed_id: uuid.UUID
     host: str
@@ -49,9 +42,8 @@ class _FetchState:
 async def due_polls(session: AsyncSession, settings: IngestSettings, limit: int) -> list[DuePoll]:
     """Feeds worth visiting now.
 
-    Giving up after N failures is applied here, not stored: it is our policy, so it
-    belongs with its setting and changing the number takes effect at once. `gone` — a
-    410 — is the publisher's half, and needs no threshold.
+    Giving up after N failures is applied here rather than stored, so changing the
+    number takes effect at once. `gone` is the publisher's half and needs no threshold.
     """
     rows = await session.execute(
         select(Feed.id, Host.name)
@@ -127,8 +119,7 @@ def _log(
     error: str = "",
     new_items: int = 0,
 ) -> None:
-    """Append what this poll turned out to be, inside the caller's transaction, so the
-    record and the schedule it moves land together or not at all."""
+    """Append what this poll turned out to be, inside the caller's transaction."""
     session.add(
         FeedPoll(
             feed_id=feed_id,
@@ -141,7 +132,7 @@ def _log(
 
 
 async def _consecutive_failures(session: AsyncSession, feed_id: uuid.UUID) -> int:
-    """The derived count, read back for the schedule. One definition, on the model."""
+    """The derived count, read back for the schedule."""
     return (
         await session.execute(select(Feed.consecutive_failures).where(Feed.id == feed_id))
     ).scalar_one()
@@ -151,8 +142,7 @@ async def _consecutive_failures(session: AsyncSession, feed_id: uuid.UUID) -> in
 async def _record_disallowed(
     session: AsyncSession, feed_id: uuid.UUID, settings: IngestSettings, now: datetime.datetime
 ) -> None:
-    """robots.txt names this feed. Backed off rather than suspended and not counted
-    as a failure, so dropping the rule brings the feed back on its own."""
+    """robots.txt names this feed. Backed off, not failed, so dropping the rule undoes it."""
     feed = await session.get(Feed, feed_id)
     if feed is None:
         return
@@ -207,13 +197,12 @@ async def _record_failure(
 
 
 def _retry_after(response: Response, settings: IngestSettings) -> int | None:
-    """A publisher asking for a pause. Honouring it is how you avoid a block."""
+    """How long a rate-limited publisher asked us to wait, if it said."""
     if response.status not in RATE_LIMITED:
         return None
     raw = response.header("retry-after")
     try:
-        # Bounded above as well as below: a server sending 999999999 would
-        # otherwise park the feed for decades.
+        # Bounded above too, or a server sending 999999999 parks the feed for decades.
         return schedule.clamp_interval(int(raw or ""), settings)
     except ValueError:
         # The header may be an HTTP date. Backing off by the maximum is fine.
@@ -268,10 +257,8 @@ async def poll_feed(feed_id: uuid.UUID, fetcher: Fetcher, settings: Settings) ->
             current.set_attribute("feed.items", len(parsed.items))
             applied = await _store_poll(feed_id, response, parsed, settings, now)
         except Exception as exc:
-            # Without this the schedule never moves, so the feed stays due and the
-            # scheduler re-defers it every minute — a hot loop against a publisher
-            # whose document happens to break us. Backing off is the same response
-            # a fetch failure gets; re-raising still fails the job and the trace.
+            # Without this the schedule never moves and the feed is re-deferred every minute.
+            # Re-raising still fails the job and the trace.
             current.record_exception(exc)
             await _record_failure(feed_id, f"{type(exc).__name__}: {exc}", settings.ingest, now)
             count("ingest.polls.failed", feed=str(feed_id))

@@ -70,9 +70,7 @@ async def test_failures_are_counted_back_to_the_last_success(clean: None, feed_i
 
 
 async def test_a_dead_link_is_stepped_over_rather_than_counted(clean: None, feed_id, article):
-    """`gone` is about one URL. Counting it would let a handful of dead links close a
-    host that is answering everything else, and clearing on it would forgive a run of
-    real refusals that happened to contain one."""
+    """`gone` neither counts against a host nor clears a run of real refusals."""
     version_id = (await article(feed_id, ("A story", f"https://{HOST}/a")))[0]
     await _visits(version_id, CaptureOutcome.FAILED, CaptureOutcome.GONE, CaptureOutcome.FAILED)
 

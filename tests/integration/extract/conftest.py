@@ -68,11 +68,7 @@ async def _item(session: AsyncSession, feed_id: uuid.UUID) -> uuid.UUID:
 
 @pytest.fixture
 def article() -> Callable[..., Coroutine[Any, Any, list[uuid.UUID]]]:
-    """An item with one version per title given, chained newest last.
-
-    `aged` backdates every version so the settle window has elapsed; the default leaves
-    them just-observed, which is what an unsettled head looks like.
-    """
+    """An item with one version per title given, chained newest last. `aged` backdates them."""
 
     async def build(
         feed_id: uuid.UUID, *titles_and_urls: tuple[str, str], aged: bool = True

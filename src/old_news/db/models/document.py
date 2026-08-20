@@ -10,10 +10,7 @@ from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
 
 
 class Document(UUIDPrimaryKey, Base):
-    """A feed document as served, kept whenever it differs from the previous one.
-
-    Everything the parser drops stays recoverable from here.
-    """
+    """A feed document as served, kept whenever it differs from the previous one."""
 
     __tablename__ = "documents"
     __table_args__ = (Index("ix_documents_feed_fetched", "feed_id", text("fetched_at DESC")),)
