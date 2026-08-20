@@ -8,7 +8,7 @@ down this same path.
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -30,19 +30,6 @@ from old_news.extract import article
 from old_news.observability import count, span
 
 logger = logging.getLogger(__name__)
-
-
-class Readable(Protocol):
-    """What a judgement needs. A parse has it; so does a stored row."""
-
-    @property
-    def body(self) -> str: ...
-
-    @property
-    def char_count(self) -> int: ...
-
-    @property
-    def paragraph_count(self) -> int: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,7 +150,9 @@ async def pending(session: AsyncSession, version_id: uuid.UUID) -> Pending | Non
     )
 
 
-# Rewriting any of this on conflict would move the row it just matched.
+# Rewriting any of this on conflict would move the row it just matched. Kept in step with
+# the constraint by `test_store_identity.py`.
+_UNIQUE = "uq_extractions_version_source_extractor"
 _IDENTITY = ("item_version_id", "source", "extractor", "extractor_version")
 
 
@@ -191,7 +180,7 @@ async def store(session: AsyncSession, found: Pending, parsed: article.Article) 
             insert(Extraction)
             .values(**base)
             .on_conflict_do_update(
-                constraint="uq_extractions_version_source_extractor",
+                constraint=_UNIQUE,
                 set_={key: base[key] for key in base if key not in _IDENTITY},
             )
             .returning(Extraction.id)
@@ -234,18 +223,19 @@ async def store(session: AsyncSession, found: Pending, parsed: article.Article) 
     return await session.get_one(Extraction, reading_id)
 
 
-def judge(parsed: Readable, settings: ExtractSettings) -> tuple[bool, str]:
+def judge(chars: int, paragraphs: int, settings: ExtractSettings) -> tuple[bool, str]:
     """Whether this reads like an article. Measured against real pages and a consent wall.
 
-    Asked, never stored: the thresholds live in config, so a stored verdict goes wrong
-    silently. Failing is never destructive — the reading is stored either way.
+    Takes the measurements rather than the thing measured, so a parse in flight and a row
+    read back are the same call. Asked, never stored: the thresholds live in config, so a
+    stored verdict goes wrong silently. Failing is never destructive either way.
     """
-    if not parsed.body:
+    if not chars:
         return False, "nothing extracted"
-    if parsed.char_count < settings.min_body_chars:
-        return False, f"only {parsed.char_count} characters"
-    if parsed.paragraph_count < settings.min_paragraphs:
-        return False, f"only {parsed.paragraph_count} paragraphs"
+    if chars < settings.min_body_chars:
+        return False, f"only {chars} characters"
+    if paragraphs < settings.min_paragraphs:
+        return False, f"only {paragraphs} paragraphs"
     return True, ""
 
 
@@ -260,7 +250,7 @@ async def extract_page(version_id: uuid.UUID, settings: ExtractSettings) -> Extr
         parsed = article.parse(found.body.decode("utf-8", errors="replace"), found.final_url)
         current.set_attribute("extract.chars", parsed.char_count)
 
-        ok, note = judge(parsed, settings)
+        ok, note = judge(parsed.char_count, parsed.paragraph_count, settings)
         stored = await store(found, parsed)
         current.set_attribute("extract.ok", ok)
         count("extract.extractions.ok" if ok else "extract.extractions.poor")
@@ -282,7 +272,7 @@ async def extract_feed(version_id: uuid.UUID, settings: ExtractSettings) -> Extr
         )
         current.set_attribute("extract.chars", parsed.char_count)
 
-        ok, _ = judge(parsed, settings)
+        ok, _ = judge(parsed.char_count, parsed.paragraph_count, settings)
         stored = await store(found, parsed)
         current.set_attribute("extract.ok", ok)
         # A teaser is not a defect — most of this corpus is teasers, and knowing which is

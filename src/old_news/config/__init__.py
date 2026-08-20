@@ -13,6 +13,7 @@ from old_news.config.ingest import IngestSettings
 from old_news.config.robots import RobotsSettings
 from old_news.config.storage import StorageSettings
 from old_news.config.telemetry import TelemetrySettings
+from old_news.config.worker import WorkerSettings
 
 
 class Settings(BaseSettings):
@@ -34,6 +35,7 @@ class Settings(BaseSettings):
     robots: RobotsSettings = Field(default_factory=RobotsSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     extract: ExtractSettings = Field(default_factory=ExtractSettings)
+    worker: WorkerSettings = Field(default_factory=WorkerSettings)
 
 
 @lru_cache

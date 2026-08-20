@@ -67,7 +67,7 @@ async def test_feed_text_becomes_a_feed_reading(clean: None, feed_id, article):
     assert stored is not None
     assert type(stored) is FeedExtraction
     assert stored.source == ExtractionSource.FEED
-    assert judge(stored, SETTINGS) == (True, "")
+    assert judge(stored.char_count, stored.paragraph_count, SETTINGS) == (True, "")
 
 
 async def test_a_teaser_is_stored_and_judged_short(clean: None, feed_id, article):
@@ -78,7 +78,7 @@ async def test_a_teaser_is_stored_and_judged_short(clean: None, feed_id, article
     stored = await extract_feed(version_id, SETTINGS)
 
     assert stored is not None
-    ok, note = judge(stored, SETTINGS)
+    ok, note = judge(stored.char_count, stored.paragraph_count, SETTINGS)
     assert not ok and note
 
 
@@ -91,9 +91,9 @@ async def test_the_verdict_follows_the_current_thresholds(clean: None, feed_id, 
     stored = await extract_feed(version_id, SETTINGS)
 
     assert stored is not None
-    assert judge(stored, SETTINGS)[0]
+    assert judge(stored.char_count, stored.paragraph_count, SETTINGS)[0]
     demanding = SETTINGS.model_copy(update={"min_body_chars": stored.char_count + 1})
-    assert not judge(stored, demanding)[0]
+    assert not judge(stored.char_count, stored.paragraph_count, demanding)[0]
 
 
 async def test_a_feed_that_carried_nothing_produces_no_row(clean: None, feed_id, article):

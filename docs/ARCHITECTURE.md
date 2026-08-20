@@ -354,6 +354,27 @@ and the skips are counted rather than thrown.
 This matters more now than it used to: jobs wait on a per-host lock, so one still sitting in the
 queue a minute later is ordinary rather than a sign of trouble.
 
+### One worker per queue
+
+`run_worker_async` used to be called once with no arguments, so every queue shared one pool of slots
+and the queue names were decoration. The roadmap called this out before it bit: re-reading the
+archive runs on the same worker as the polls keeping it current.
+
+Now one worker per queue, each with its own concurrency, from `WorkerSettings.concurrency`. A few
+thousand queued extractions can fill `pages` without touching what `ingest` has. Missing a queue
+there means nothing serves it and its jobs sit at `todo` for good — which is how `default` (the
+heartbeat, the nightly maintenance) was found unserved the first time this was written, so a test
+compares the configured set against the queues tasks declare.
+
+Signals are handled once for the process rather than per worker: `add_signal_handler` replaces
+whatever was registered before it, so letting each worker install its own would leave only the last
+one able to hear SIGTERM.
+
+It isolates slots, not CPU. Extraction is synchronous work in the event loop, so a large page still
+delays whatever else that process was going to do. Separate worker processes are the escalation if
+polls start lagging behind their schedule; the queue split is what makes that a deployment change
+rather than a code one.
+
 ## Telemetry
 
 `observability/telemetry.py` is the only module that imports `logfire`. It installs the global

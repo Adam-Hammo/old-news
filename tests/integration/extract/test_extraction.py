@@ -50,7 +50,7 @@ async def test_a_captured_page_becomes_a_readable_extraction(
 
     assert stored is not None
     assert isinstance(stored, PageExtraction)
-    assert judge(stored, SETTINGS) == (True, "")
+    assert judge(stored.char_count, stored.paragraph_count, SETTINGS) == (True, "")
     assert stored.char_count > 3000
     assert stored.site_name == "The Guardian"
     assert stored.extractor == article_module.EXTRACTOR
