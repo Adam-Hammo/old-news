@@ -57,8 +57,14 @@ appends, never overwrites" has to live in exactly one place or the third caller 
 
 Anything a reader asks that is _structural_ is a relationship, not a query written again at each
 call site: `Item.current_version`, `Item.current_extraction`, `ItemVersion.latest_capture`,
-`ItemVersion.latest_extraction`. Each is `viewonly` with a `primaryjoin` doing the anti-join, and
-each is `lazy="raise"` so a forgotten `joinedload` fails loudly instead of firing a query per row.
+`ItemVersion.feed_capture`, `ItemVersion.feed_extraction`, `ItemVersion.page_extraction`. Each is
+`viewonly` with a `primaryjoin` doing the anti-join, and each is `lazy="raise"` so a forgotten
+`joinedload` fails loudly instead of firing a query per row.
+
+Both extraction bridges are per source rather than one "latest reading", because that is the
+comparison `reading_body` makes: a superseded extractor's longer output must not beat the current
+one's. `has_feed_text` is the same care in the other direction — it reads the newest capture, not
+any capture, so the sweep never offers a version `pending_feed` will return nothing for.
 
 Two of them are deliberately not scoped to the head version. `Item.current_extraction` and
 `Item.reading_body` span the whole chain, because an edit makes a new version the head and its page
@@ -67,8 +73,12 @@ hour every time a publisher touched it. `ItemVersion.reading_body` answers the n
 about one version, which is what a history view wants.
 
 `reading_body` is a `hybrid_property`, so a river can select and sort on it without loading every
-body into Python. That puts one policy — which of two texts is fuller — in the model layer rather
-than a service, which is the exception to the rule below and is why it is written down here.
+body into Python. That puts one policy — which reading is fuller — in the model layer rather than a
+service, which is the exception to the rule below and is why it is written down here. It is one
+ordered subquery over the newest reading per source, longest first with the source breaking a tie,
+rather than a `CASE` comparing two: two spellings of "which one won" is what the column it replaced
+already cost us. `Item.reading_body` raises in Python for the reason `Feed.consecutive_failures`
+does — it only exists as SQL, and answering from a half-loaded row would be a stale answer.
 
 ## Where services live
 
@@ -212,13 +222,17 @@ the limit used to leave rows stamped with the old one.
 
 ### Stored bodies are compressed, sometimes against a dictionary
 
-`db/bytes.py` is the only module that imports zstd. Everything stored as bytes — feed documents,
-article pages — goes through it at one level, which is config rather than a constant.
+`db/bytes.py` is the only module that imports zstd. Everything stored as bytes — feed documents, the
+item text carved out of them, article pages — goes through it at one level, which is config rather
+than a constant.
 
 Bodies that share a template compress about twice as well against a dictionary trained on their own
-kind: feed documents 88 KB to 44 KB, article pages 49 KB to 24 KB. Feed documents and article pages
-are separate scopes — two documents from one feed share almost everything, two pages from one host
-share a template — so `zstd_dictionaries` carries exactly one of `feed_id` or `host_id`.
+kind: feed documents 88 KB to 44 KB, article pages 49 KB to 24 KB. What counts as a kind is a
+`scope` — `feed_document`, `feed_item`, `host_page` — beside exactly one of `feed_id` or `host_id`.
+Two of those share a feed and are still different scopes: whole feed XML and the HTML fragments
+inside it have almost nothing in common, so a dictionary trained on one leaves most of the win on
+the other unclaimed. Reusing it would be correct, because `train()` measures against a held-out
+sample; it would just be worse.
 
 What decides whether a dictionary is any good is how many samples it saw, not how big it is. Eight
 buys 16%, twenty-eight buys 50%, and against held-out pages a 110 KB dictionary beats 512 KB, 1 MB
@@ -232,9 +246,9 @@ Three things make this safe to have done:
   reading never depends on remembering what wrote it, and reading with the wrong one raises rather
   than returning plausible rubbish.
 - **Nothing is ever rewritten.** A dictionary is immutable and outlives being current, because every
-  body compressed against it stays that way. `documents.dictionary_id` and
-  `page_captures.dictionary_id` are foreign keys, so Postgres refuses to drop one still in use and
-  it cannot go missing from a dump that holds the bodies.
+  body compressed against it stays that way. `documents.dictionary_id`,
+  `feed_captures.dictionary_id` and `page_captures.dictionary_id` are foreign keys, so Postgres
+  refuses to drop one still in use and it cannot go missing from a dump that holds the bodies.
 - **No dictionary is always correct.** A scope with too little to learn from — zstd's trainer
   refuses below a handful of samples — stays on plain zstd. That is the cold start and the fallback.
 
@@ -294,21 +308,30 @@ two robots checks beside it already do, and a row would poison the window the br
 ### Feed text and page text are the same kind of object
 
 Both are a reading of stored bytes the network handed over, so both are rows in `extractions`,
-stamped with the extractor that produced them, derived and disposable. They were not always the same
-shape: feed text sat inline on `item_versions.content` with no record of what parsed it, while page
-text was a versioned row that said exactly what made it. That asymmetry is why "which one do I read,
-index, embed" had no clean answer — the two were not comparable.
+stamped with the extractor that produced them, derived and disposable. And both name the artefact
+they read: `feed_captures` and `page_captures` sit either side of an `item_version`, one row per
+version on the feed side and a log of attempts on the page side.
 
-`item_versions.content` is untouched and still authoritative: it is what the feed document said. A
-feed reading is derived _from_ it, the same way a page reading is derived from a capture, and can be
-thrown away and rebuilt on the same terms.
+The asymmetry that made this hard is gone in stages. First the readings became one table. Then the
+feed side got its artefact: feed text used to sit inline on `item_versions.content`, uncompressed
+and with no record of what parsed it, so "which one do I read, index, embed" had no clean answer.
 
-Joined-table inheritance, after two attempts without it. `Extraction` is the base and holds what
-every reading has; `FeedExtraction` adds nothing and has no table of its own; `PageExtraction` holds
-the two things only a page brings — the capture it was read from, and what the page claimed about
-itself. So no column is meaningless for half the rows, and the check constraint tying
-`page_capture_id` to `source` is gone: it existed only to hand-roll the invariant inheritance states
-structurally.
+A feed capture is a materialisation, not a network event. The raw archive is `documents.body` and
+the fetch that produced it is already in `feed_polls`, so there is no status, host or outcome on it
+— what there is instead is `parser_version`, which makes re-carving after a feedparser bump a sweep
+over stored documents rather than a loss. It holds content-or-summary, whichever the feed served,
+which is what closes the hole where a summary-only version got no reading at all.
+
+Captures deliberately do not become polymorphic. `page_captures` is a log of attempts that can fail,
+`feed_captures` is a carving that cannot fail at all, `image_captures` is content-addressed and
+shared across articles. A shared base would carry `outcome` where it is meaningless, or shrink to
+four columns and buy a join.
+
+Joined-table inheritance for the readings, after two attempts without it. `Extraction` is the base
+and holds what every reading has; each child holds the capture it read, and `PageExtraction` also
+holds what the page claimed about itself. So no column is meaningless for half the rows, and the
+check constraint tying `page_capture_id` to `source` is gone: it existed only to hand-roll the
+invariant inheritance states structurally.
 
 The first two designs were wrong in opposite directions. Inheritance over the original table would
 have produced subclasses whose only difference was which columns were dead, because the table was
@@ -320,6 +343,11 @@ first.
 omission is the same overload as a column that means two things depending on the row, and the base
 declares no identity, so `source` being NOT NULL makes the database refuse a reading that will not
 say which kind it is.
+
+`title` stays on `item_versions`, with both urls, because `training.blocked()` matches on them in
+the `WHERE` of `due_captures` — before anything is fetched. Moving a title to an extraction would
+make a block unevaluable on a version whose extraction sweep has not run yet, and the obvious fix,
+extracting inside the poll, is ruled out: a failing extractor must not fail a poll.
 
 A page reading claims metadata; a feed reading does not. On a fragment `extract_metadata` returns
 the first heading inside the body — "Support Bellingcat", "Today's links" — because there is no

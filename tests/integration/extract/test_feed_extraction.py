@@ -1,4 +1,4 @@
-"""Reading the text a feed already gave us, as a base row beside a page's child row."""
+"""Reading the text a feed already gave us, as a child row beside a page's."""
 
 import uuid
 
@@ -11,7 +11,6 @@ from old_news.db import (
     Extraction,
     ExtractionSource,
     FeedExtraction,
-    ItemVersion,
     PageExtraction,
 )
 from old_news.extract.service import extract_feed, judge
@@ -23,13 +22,6 @@ TEASER = "<p>Read the rest on our site.</p>"
 
 
 @db.transactional
-async def _set_content(session: AsyncSession, version_id: uuid.UUID, content: str) -> None:
-    version = await session.get(ItemVersion, version_id)
-    assert version is not None
-    version.content = content
-
-
-@db.transactional
 async def _readings(session: AsyncSession, version_id: uuid.UUID) -> list[Extraction]:
     rows = await session.execute(
         select(Extraction)
@@ -37,6 +29,18 @@ async def _readings(session: AsyncSession, version_id: uuid.UUID) -> list[Extrac
         .order_by(Extraction.source)
     )
     return list(rows.scalars().all())
+
+
+@db.transactional
+async def _page_readings(session: AsyncSession, version_id: uuid.UUID) -> int:
+    """Child rows for this version, not for the whole table: other articles have them too."""
+    return (
+        await session.execute(
+            select(func.count())
+            .select_from(PageExtraction)
+            .where(PageExtraction.item_version_id == version_id)
+        )
+    ).scalar_one()
 
 
 @db.transactional
@@ -56,11 +60,11 @@ async def _page_reading(
     return reading.id
 
 
-async def test_feed_text_becomes_a_feed_reading(clean: None, feed_id, article):
+async def test_feed_text_becomes_a_feed_reading(clean: None, feed_id, article, stored_feed_text):
     """A `FeedExtraction`, which adds no columns — but neither source is the default one,
     and a bare `Extraction` meaning "feed" by omission is the overload this replaces."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, ARTICLE)
+    await stored_feed_text(version_id, ARTICLE)
 
     stored = await extract_feed(version_id, SETTINGS)
 
@@ -70,10 +74,10 @@ async def test_feed_text_becomes_a_feed_reading(clean: None, feed_id, article):
     assert judge(stored.char_count, stored.paragraph_count, SETTINGS) == (True, "")
 
 
-async def test_a_teaser_is_stored_and_judged_short(clean: None, feed_id, article):
+async def test_a_teaser_is_stored_and_judged_short(clean: None, feed_id, article, stored_feed_text):
     """Most of this corpus is teasers. Knowing which is the point, so the row is kept."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, TEASER)
+    await stored_feed_text(version_id, TEASER)
 
     stored = await extract_feed(version_id, SETTINGS)
 
@@ -82,11 +86,13 @@ async def test_a_teaser_is_stored_and_judged_short(clean: None, feed_id, article
     assert not ok and note
 
 
-async def test_the_verdict_follows_the_current_thresholds(clean: None, feed_id, article):
+async def test_the_verdict_follows_the_current_thresholds(
+    clean: None, feed_id, article, stored_feed_text
+):
     """Asked, never stored. A stored verdict is wrong the moment a threshold moves and
     says nothing about it — 25 of 1058 rows were already in that state."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, ARTICLE)
+    await stored_feed_text(version_id, ARTICLE)
 
     stored = await extract_feed(version_id, SETTINGS)
 
@@ -96,31 +102,35 @@ async def test_the_verdict_follows_the_current_thresholds(clean: None, feed_id, 
     assert not judge(stored.char_count, stored.paragraph_count, demanding)[0]
 
 
-async def test_a_feed_that_carried_nothing_produces_no_row(clean: None, feed_id, article):
+async def test_a_feed_that_carried_nothing_produces_no_row(
+    clean: None, feed_id, article, stored_feed_text
+):
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, "")
+    await stored_feed_text(version_id, "")
 
     assert await extract_feed(version_id, SETTINGS) is None
 
 
-async def test_a_feed_reading_has_no_child_row(clean: None, feed_id, article):
-    """A fragment has no `<head>` to claim anything, and the feed's own title is on the version."""
+async def test_a_feed_reading_names_its_capture(clean: None, feed_id, article, stored_feed_text):
+    """What the child table buys the feed side. It claims nothing else: a fragment has no
+    `<head>` to read a claim from, and the feed's own title is on the version."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, "<h2>Support Bellingcat</h2>" + ARTICLE)
+    capture_id = await stored_feed_text(version_id, "<h2>Support Bellingcat</h2>" + ARTICLE)
 
-    await extract_feed(version_id, SETTINGS)
+    stored = await extract_feed(version_id, SETTINGS)
 
-    async with db.session() as session:
-        assert (
-            await session.execute(select(func.count()).select_from(PageExtraction.__table__))
-        ).scalar_one() == 0
+    assert isinstance(stored, FeedExtraction)
+    assert stored.feed_capture_id == capture_id
+    assert await _page_readings(version_id) == 0
 
 
-async def test_both_sources_coexist_for_one_version(clean: None, feed_id, article, stored_page):
+async def test_both_sources_coexist_for_one_version(
+    clean: None, feed_id, article, stored_page, stored_feed_text
+):
     """The point of the whole change: two readings of one article, side by side, and the
     discriminator picks the right class for each."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, ARTICLE)
+    await stored_feed_text(version_id, ARTICLE)
     await _page_reading(version_id, await stored_page(version_id, b"<html></html>"))
 
     await extract_feed(version_id, SETTINGS)
@@ -130,10 +140,12 @@ async def test_both_sources_coexist_for_one_version(clean: None, feed_id, articl
     assert [row.source for row in stored] == [ExtractionSource.FEED, ExtractionSource.PAGE]
 
 
-async def test_re_reading_the_same_feed_text_rewrites_its_own_row(clean: None, feed_id, article):
+async def test_re_reading_the_same_feed_text_rewrites_its_own_row(
+    clean: None, feed_id, article, stored_feed_text
+):
     """Idempotent per source, the same way the page path is."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, ARTICLE)
+    await stored_feed_text(version_id, ARTICLE)
 
     first = await extract_feed(version_id, SETTINGS)
     second = await extract_feed(version_id, SETTINGS)
@@ -154,17 +166,16 @@ async def test_deleting_a_reading_takes_its_claims_with_it(
     async with db.session() as session:
         await session.execute(text("delete from extractions where id = :id"), {"id": reading_id})
 
-    async with db.session() as session:
-        assert (
-            await session.execute(select(func.count()).select_from(PageExtraction.__table__))
-        ).scalar_one() == 0
+    assert await _page_readings(version_id) == 0
 
 
-async def test_the_feed_page_ratio_is_a_join(clean: None, feed_id, article, stored_page):
+async def test_the_feed_page_ratio_is_a_join(
+    clean: None, feed_id, article, stored_page, stored_feed_text
+):
     """`feed_body_ratio` was a column only because the feed reading was not a row. Both
     are rows, so the comparison is a join and cannot go stale against either side."""
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, ARTICLE)
+    await stored_feed_text(version_id, ARTICLE)
     await extract_feed(version_id, SETTINGS)
     await _page_reading(
         version_id, await stored_page(version_id, b"<html></html>"), body="x" * 4000
@@ -177,7 +188,9 @@ async def test_the_feed_page_ratio_is_a_join(clean: None, feed_id, article, stor
                 select(page.c.char_count / func.nullif(feed.c.char_count, 0))
                 .select_from(feed.join(page, feed.c.item_version_id == page.c.item_version_id))
                 .where(
-                    feed.c.source == ExtractionSource.FEED, page.c.source == ExtractionSource.PAGE
+                    feed.c.source == ExtractionSource.FEED,
+                    page.c.source == ExtractionSource.PAGE,
+                    feed.c.item_version_id == version_id,
                 )
             )
         ).scalar_one()
@@ -186,10 +199,10 @@ async def test_the_feed_page_ratio_is_a_join(clean: None, feed_id, article, stor
 
 
 async def test_the_sweep_finds_versions_with_feed_text_and_no_reading(
-    clean: None, feed_id, article
+    clean: None, feed_id, article, stored_feed_text
 ):
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _set_content(version_id, ARTICLE)
+    await stored_feed_text(version_id, ARTICLE)
 
     assert await extract.due_feed_extractions(50) == [version_id]
 

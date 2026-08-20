@@ -40,6 +40,7 @@ old-news = "old_news.__main__:main"
 
 [dependency-groups]
 dev = [
+  "factory-boy>=3.3.3",
   "pre-commit>=4.0",
   "pytest-asyncio>=0.25",
   "pytest-cov>=6.0",
@@ -93,6 +94,9 @@ ignore_names = [
   "form_*",
   "icon",
   "name_plural",
+  # factory_boy reads a factory's options off a nested class of this name.
+  "Meta",
+  "abstract",
   # Frameworks call these by name, or hand them arguments we do not use.
   "authenticate",
   "do_GET",
@@ -201,9 +205,12 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["old_news", "provider", "provider_oci"]
+known-local-folder = ["factories"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# `tests` is a first-party root for ty as well, so shared test modules import bare.
+pythonpath = ["tests"]
 asyncio_mode = "auto"
 # asyncpg binds a pool to the loop that created it.
 asyncio_default_fixture_loop_scope = "session"

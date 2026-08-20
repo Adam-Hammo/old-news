@@ -5,6 +5,7 @@ import logging
 import uuid
 from compression import zstd
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -12,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news.config import StorageSettings
 from old_news.db import bytes as codec
-from old_news.db.models import Document, PageCapture, ZstdDictionary
+from old_news.db.models import (
+    DictionaryScope,
+    Document,
+    FeedCapture,
+    PageCapture,
+    ZstdDictionary,
+)
 from old_news.db.session import transactional
 
 logger = logging.getLogger(__name__)
@@ -41,12 +48,57 @@ class Current:
     dictionary: zstd.ZstdDict
 
 
-async def current_for_feed(session: AsyncSession, feed_id: uuid.UUID) -> Current | None:
-    """The newest dictionary for a feed, or None while it has none."""
+@dataclass(frozen=True, slots=True)
+class _Source:
+    """Where one scope's bytes live, and the column a dictionary for them is keyed by."""
+
+    key: Any
+    body: Any
+    at: Any
+    frm: Any
+    scoped_by: Any
+
+
+# Every scope is the same three questions — who has enough to learn from, what did they
+# send, where does the row point — so they differ only in this table. Item text is
+# reached through its document, which is what says which feed served it.
+_SOURCES: dict[DictionaryScope, _Source] = {
+    DictionaryScope.FEED_DOCUMENT: _Source(
+        key=Document.feed_id,
+        body=Document.body,
+        at=Document.fetched_at,
+        frm=Document,
+        scoped_by=ZstdDictionary.feed_id,
+    ),
+    DictionaryScope.FEED_ITEM: _Source(
+        key=Document.feed_id,
+        body=FeedCapture.body,
+        at=FeedCapture.captured_at,
+        frm=FeedCapture.__table__.join(Document, Document.id == FeedCapture.document_id),
+        scoped_by=ZstdDictionary.feed_id,
+    ),
+    DictionaryScope.HOST_PAGE: _Source(
+        key=PageCapture.host_id,
+        body=PageCapture.body,
+        at=PageCapture.fetched_at,
+        frm=PageCapture,
+        scoped_by=ZstdDictionary.host_id,
+    ),
+}
+
+
+def _scoped(scope: DictionaryScope, key_id: uuid.UUID) -> dict[str, uuid.UUID]:
+    """Which of the two nullable keys a scope hangs off."""
+    return {_SOURCES[scope].scoped_by.key: key_id}
+
+
+async def _current(
+    session: AsyncSession, scope: DictionaryScope, key_id: uuid.UUID
+) -> Current | None:
     row = (
         await session.execute(
             select(ZstdDictionary.id, ZstdDictionary.dict_id, ZstdDictionary.body)
-            .where(ZstdDictionary.feed_id == feed_id)
+            .filter_by(scope=scope, **_scoped(scope, key_id))
             .order_by(ZstdDictionary.trained_at.desc())
             .limit(1)
         )
@@ -54,21 +106,18 @@ async def current_for_feed(session: AsyncSession, feed_id: uuid.UUID) -> Current
     if row is None:
         return None
     return Current(row.id, _cached(row.dict_id, row.body))
+
+
+async def current_for_feed(
+    session: AsyncSession, feed_id: uuid.UUID, scope: DictionaryScope
+) -> Current | None:
+    """The newest dictionary for a feed's documents or its item text, or None while it has none."""
+    return await _current(session, scope, feed_id)
 
 
 async def current_for_host(session: AsyncSession, host_id: uuid.UUID) -> Current | None:
     """The newest dictionary for a host's article pages, a separate scope from a feed's."""
-    row = (
-        await session.execute(
-            select(ZstdDictionary.id, ZstdDictionary.dict_id, ZstdDictionary.body)
-            .where(ZstdDictionary.host_id == host_id)
-            .order_by(ZstdDictionary.trained_at.desc())
-            .limit(1)
-        )
-    ).first()
-    if row is None:
-        return None
-    return Current(row.id, _cached(row.dict_id, row.body))
+    return await _current(session, DictionaryScope.HOST_PAGE, host_id)
 
 
 async def expand(session: AsyncSession, body: bytes) -> bytes:
@@ -82,8 +131,13 @@ async def expand(session: AsyncSession, body: bytes) -> bytes:
 async def _load(session: AsyncSession, dict_id: int) -> zstd.ZstdDict:
     if dict_id in _loaded:
         return _loaded[dict_id]
+    # One row, not the only row: `dict_id` hashes the dictionary's own bytes, so two
+    # scopes that trained to the same bytes hold the same dictionary. Asking for exactly
+    # one made every read of an affected body raise instead.
     stored = (
-        await session.execute(select(ZstdDictionary.body).where(ZstdDictionary.dict_id == dict_id))
+        await session.execute(
+            select(ZstdDictionary.body).where(ZstdDictionary.dict_id == dict_id).limit(1)
+        )
     ).scalar_one_or_none()
     if stored is None:
         # Unreachable while the foreign key holds, so the row went out of band.
@@ -98,72 +152,42 @@ def _cached(dict_id: int, body: bytes) -> zstd.ZstdDict:
 
 
 @transactional
-async def feeds_wanting_a_dictionary(
-    session: AsyncSession, settings: StorageSettings, limit: int
+async def wanting_a_dictionary(
+    session: AsyncSession, settings: StorageSettings, scope: DictionaryScope, limit: int
 ) -> list[uuid.UUID]:
-    """Feeds with enough documents to learn from and no current dictionary, biggest first."""
+    """Keys with enough bodies of this kind to learn from and no current dictionary."""
+    source = _SOURCES[scope]
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
         seconds=settings.dictionary_max_age_seconds
     )
     fresh = (
-        select(ZstdDictionary.feed_id)
-        .where(ZstdDictionary.feed_id.is_not(None), ZstdDictionary.trained_at > cutoff)
+        select(source.scoped_by)
+        .where(ZstdDictionary.scope == scope, ZstdDictionary.trained_at > cutoff)
         .scalar_subquery()
     )
     rows = await session.execute(
-        select(Document.feed_id)
-        .where(Document.feed_id.not_in(fresh))
-        .group_by(Document.feed_id)
-        .having(func.count(Document.id) >= settings.dictionary_min_samples)
-        .order_by(func.count(Document.id).desc())
+        select(source.key)
+        .select_from(source.frm)
+        .where(source.key.not_in(fresh), source.body != b"")
+        .group_by(source.key)
+        .having(func.count() >= settings.dictionary_min_samples)
+        .order_by(func.count().desc())
         .limit(limit)
     )
-    return [feed_id for (feed_id,) in rows.all()]
+    return [key_id for (key_id,) in rows.all()]
 
 
 @transactional
-async def feed_samples(session: AsyncSession, feed_id: uuid.UUID, limit: int) -> list[bytes]:
-    """Recent document bodies for a feed, newest first, expanded."""
+async def samples(
+    session: AsyncSession, scope: DictionaryScope, key_id: uuid.UUID, limit: int
+) -> list[bytes]:
+    """Recent bodies of this kind for one key, newest first, expanded."""
+    source = _SOURCES[scope]
     rows = await session.execute(
-        select(Document.body)
-        .where(Document.feed_id == feed_id)
-        .order_by(Document.fetched_at.desc())
-        .limit(limit)
-    )
-    return [await expand(session, body) for (body,) in rows.all()]
-
-
-@transactional
-async def hosts_wanting_a_dictionary(
-    session: AsyncSession, settings: StorageSettings, limit: int
-) -> list[uuid.UUID]:
-    """Hosts with enough captured pages to learn from and no current dictionary."""
-    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
-        seconds=settings.dictionary_max_age_seconds
-    )
-    fresh = (
-        select(ZstdDictionary.host_id)
-        .where(ZstdDictionary.host_id.is_not(None), ZstdDictionary.trained_at > cutoff)
-        .scalar_subquery()
-    )
-    rows = await session.execute(
-        select(PageCapture.host_id)
-        .where(PageCapture.host_id.not_in(fresh), PageCapture.body != b"")
-        .group_by(PageCapture.host_id)
-        .having(func.count(PageCapture.id) >= settings.dictionary_min_samples)
-        .order_by(func.count(PageCapture.id).desc())
-        .limit(limit)
-    )
-    return [host_id for (host_id,) in rows.all()]
-
-
-@transactional
-async def host_samples(session: AsyncSession, host_id: uuid.UUID, limit: int) -> list[bytes]:
-    """Recent page bodies for a host, newest first, expanded."""
-    rows = await session.execute(
-        select(PageCapture.body)
-        .where(PageCapture.host_id == host_id, PageCapture.body != b"")
-        .order_by(PageCapture.fetched_at.desc())
+        select(source.body)
+        .select_from(source.frm)
+        .where(source.key == key_id, source.body != b"")
+        .order_by(source.at.desc())
         .limit(limit)
     )
     return [await expand(session, body) for (body,) in rows.all()]
@@ -206,48 +230,36 @@ def train(samples: list[bytes], settings: StorageSettings) -> Trained | None:
     return best
 
 
-async def _store(
-    session: AsyncSession, scope: dict[str, uuid.UUID], trained: Trained
+@transactional
+async def store(
+    session: AsyncSession, scope: DictionaryScope, key_id: uuid.UUID, trained: Trained
 ) -> ZstdDictionary:
-    """Upsert: an identical retrain moves `trained_at` and rewrites no body."""
+    """Record a dictionary against what produced its bytes."""
+    # Upsert: an identical retrain moves `trained_at` and rewrites no body.
     values = {
         "dict_id": trained.dict_id,
+        "scope": scope,
         "body": trained.body,
         "sample_count": trained.sample_count,
         "sample_bytes": trained.sample_bytes,
-        **scope,
+        **_scoped(scope, key_id),
     }
     stored = (
         await session.execute(
             insert(ZstdDictionary)
             .values(**values)
             .on_conflict_do_update(
-                index_elements=["dict_id", "feed_id", "host_id"],
+                index_elements=["dict_id", "scope", "feed_id", "host_id"],
                 set_={"trained_at": func.now(), "sample_count": trained.sample_count},
             )
             .returning(ZstdDictionary)
         )
     ).scalar_one()
     logger.info(
-        "dictionary %s for %s trained from %d bodies",
-        trained.dict_id,
+        "%s dictionary %s for %s trained from %d bodies",
         scope,
+        trained.dict_id,
+        key_id,
         trained.sample_count,
     )
     return stored
-
-
-@transactional
-async def store_for_feed(
-    session: AsyncSession, feed_id: uuid.UUID, trained: Trained
-) -> ZstdDictionary:
-    """Record a dictionary against a feed's documents."""
-    return await _store(session, {"feed_id": feed_id}, trained)
-
-
-@transactional
-async def store_for_host(
-    session: AsyncSession, host_id: uuid.UUID, trained: Trained
-) -> ZstdDictionary:
-    """Record a dictionary against a publisher's article pages."""
-    return await _store(session, {"host_id": host_id}, trained)

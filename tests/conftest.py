@@ -1,10 +1,12 @@
 import os
 import threading
+import zlib
 from collections.abc import Callable, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from factory.random import reseed_random
 
 # Ryuk bind-mounts the docker socket, which Docker Desktop on macOS refuses.
 # testcontainers reads its config at import, so this must run first.
@@ -15,6 +17,20 @@ os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 # against the same bytes, and trimming them to fit a directory would change what they
 # prove.
 PAGES = Path(__file__).parent / "pages"
+
+# Fixed unless asked otherwise. Varied *fields* are the point — varied *runs* would mean a
+# suite that goes red on its own schedule, which is how people stop believing one.
+SEED = int(os.environ.get("OLD_NEWS_TEST_SEED", "20260821"))
+
+
+@pytest.fixture(autouse=True)
+def entropy(request: pytest.FixtureRequest) -> int:
+    """Reseeded per test off its own node id, so running one test builds the same rows a
+    full run builds. Set OLD_NEWS_TEST_SEED to sweep for shapes this seed never makes."""
+    seed = SEED + zlib.crc32(request.node.nodeid.encode())
+    reseed_random(seed)
+    return seed
+
 
 # A reply, or something that decides one from the request headers — which is what
 # conditional GETs need, since the answer depends on If-None-Match.

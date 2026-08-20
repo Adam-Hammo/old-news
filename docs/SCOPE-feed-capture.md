@@ -47,21 +47,6 @@ Do not re-litigate these.
   appears in admin.
 - **Search will index `extractions.body`**, not the captures.
 
-## Gate
-
-Only worth doing if the text is actually large. Run this first and stop if it is not.
-
-```sql
-select
-  count(*) as versions,
-  count(*) filter (where content = '') as summary_only,
-  pg_size_pretty(sum(pg_column_size(content))) as content_total,
-  pg_size_pretty(sum(pg_column_size(summary))) as summary_total
-from item_versions;
-```
-
-Compare against `pg_total_relation_size('documents')`. Report the numbers either way.
-
 ## Order
 
 Reading must stop touching `content` and `summary` before the columns go.

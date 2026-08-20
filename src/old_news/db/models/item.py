@@ -24,7 +24,8 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column, relationship
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
-from old_news.db.models.extraction import Extraction
+from old_news.db.models.extraction import Extraction, ExtractionSource
+from old_news.db.models.feed_capture import FeedCapture
 from old_news.db.models.page import PageCapture
 from old_news.db.models.subscription import subscribed
 
@@ -32,14 +33,47 @@ if TYPE_CHECKING:
     from old_news.db.models.feed import Feed
 
 
-def _fuller(extracted, feed):
-    """Whichever of the two texts is longer, as SQL. Null extraction counts as empty."""
+# Which reading wins a tie, named rather than left to how the two values happen to sort.
+# A source added to the enum and not to this ranks last instead of by its spelling.
+READING_PREFERENCE = (ExtractionSource.FEED, ExtractionSource.PAGE)
+
+
+def _preferred():
+    # Compared against the column rather than passed as a `value=` mapping, which binds
+    # the sources untyped and leaves asyncpg nothing to send them as.
     return case(
-        (
-            func.length(func.coalesce(extracted, "")) > func.length(feed),
-            func.coalesce(extracted, ""),
-        ),
-        else_=feed,
+        *((Extraction.source == source, rank) for rank, source in enumerate(READING_PREFERENCE)),
+        else_=len(READING_PREFERENCE),
+    )
+
+
+def _fullest_reading(scope, correlate):
+    """The fuller of the newest reading per source among `scope`, as a scalar subquery.
+
+    Length decides and `READING_PREFERENCE` breaks a tie, so a full-text feed still beats
+    its own page. Per source, or a superseded extractor's longer output would win.
+    """
+    newer = aliased(Extraction, name="newer_reading")
+    # `correlate_except`, or the inner half puts `item_versions` in its own FROM and asks
+    # whether a newer reading of that source exists for *any* version.
+    superseded = (
+        select(newer.id)
+        .where(
+            scope(newer),
+            newer.source == Extraction.source,
+            tuple_(newer.created_at, newer.id) > tuple_(Extraction.created_at, Extraction.id),
+        )
+        .correlate_except(newer)
+        .exists()
+    )
+    return func.coalesce(
+        select(Extraction.body)
+        .where(scope(Extraction), ~superseded)
+        .order_by(func.length(Extraction.body).desc(), _preferred())
+        .correlate(correlate)
+        .limit(1)
+        .scalar_subquery(),
+        "",
     )
 
 
@@ -64,18 +98,30 @@ def _latest_capture_join():
     )
 
 
-def _latest_extraction_join():
-    """The newest extraction of one version.
+def _feed_capture_join():
+    """The newest text carved out of the feed for a version."""
+    newer = aliased(FeedCapture, name="newer_feed_capture")
+    return and_(
+        ItemVersion.id == FeedCapture.item_version_id,
+        ~select(newer.id)
+        .where(
+            newer.item_version_id == FeedCapture.item_version_id,
+            tuple_(newer.captured_at, newer.id) > tuple_(FeedCapture.captured_at, FeedCapture.id),
+        )
+        .exists(),
+    )
 
-    Newest, not "from the current extractor" — that would need this layer to import
-    `extract/` for a version string, and a bump inserts a row either way.
-    """
-    newer = aliased(Extraction, name="newer_extraction")
+
+def _source_reading_join(source: ExtractionSource):
+    """The newest reading of one source for one version."""
+    newer = aliased(Extraction, name=f"newer_{source}_reading")
     return and_(
         ItemVersion.id == Extraction.item_version_id,
+        Extraction.source == source,
         ~select(newer.id)
         .where(
             newer.item_version_id == Extraction.item_version_id,
+            newer.source == source,
             tuple_(newer.created_at, newer.id) > tuple_(Extraction.created_at, Extraction.id),
         )
         .exists(),
@@ -169,33 +215,16 @@ class Item(UUIDPrimaryKey, Base):
 
     @hybrid_property
     def reading_body(self) -> str:
-        """The text to show for this article: whichever of the two is fuller."""
-        extracted = self.current_extraction.body if self.current_extraction else ""
-        feed = self.current_version.feed_body if self.current_version else ""
-        return extracted if len(extracted) > len(feed) else feed
+        """The text to show for this article, across every version of it."""
+        raise NotImplementedError("only queryable as SQL; select it rather than loading a row")
 
     @reading_body.inplace.expression
     @classmethod
     def _reading_body_expression(cls):
-        feed = (
-            select(ItemVersion.feed_body)
-            .where(_current_version_join())
-            .correlate(cls)
-            .limit(1)
-            .scalar_subquery()
-        )
-        # Ordered rather than anti-joined: a scalar subquery may sort and limit, which a
-        # relationship's primaryjoin may not.
-        extracted = (
-            select(Extraction.body)
-            .join(ItemVersion, ItemVersion.id == Extraction.item_version_id)
-            .where(ItemVersion.item_id == cls.id)
-            .order_by(Extraction.created_at.desc(), Extraction.id.desc())
-            .correlate(cls)
-            .limit(1)
-            .scalar_subquery()
-        )
-        return _fuller(extracted, feed)
+        # `correlate` on the inner select too, or `items` lands in its own FROM and the
+        # answer is the fullest reading in the archive.
+        versions = select(ItemVersion.id).where(ItemVersion.item_id == cls.id).correlate(cls)
+        return _fullest_reading(lambda reading: reading.item_version_id.in_(versions), cls)
 
 
 class ItemVersion(UUIDPrimaryKey, Base):
@@ -214,6 +243,8 @@ class ItemVersion(UUIDPrimaryKey, Base):
         # Postgres doesn't index foreign keys. Ordered by id so it also serves
         # walking an item's chain and finding its tail.
         Index("ix_item_versions_item_id", "item_id", "id"),
+        # What the feed capture sweep groups by, and what a document delete has to find.
+        Index("ix_item_versions_document_id", "document_id"),
     )
 
     item_id: Mapped[uuid.UUID] = mapped_column(
@@ -233,8 +264,6 @@ class ItemVersion(UUIDPrimaryKey, Base):
     author: Mapped[str] = mapped_column(Text, server_default="")
     url: Mapped[str] = mapped_column(Text, server_default="")
     canonical_url: Mapped[str] = mapped_column(Text, server_default="", index=True)
-    summary: Mapped[str] = mapped_column(Text, server_default="")
-    content: Mapped[str] = mapped_column(Text, server_default="")
     tags: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default=text("'{}'"))
     enclosures: Mapped[list[dict[str, str]]] = mapped_column(
         JSONB, server_default=text("'[]'::jsonb")
@@ -271,43 +300,57 @@ class ItemVersion(UUIDPrimaryKey, Base):
         successor = aliased(cls, name="successor")
         return ~select(successor.id).where(successor.supersedes_id == cls.id).exists()
 
-    @hybrid_property
-    def feed_body(self) -> str:
-        """What the feed itself gave us for this version."""
-        return self.content or self.summary
-
-    @feed_body.inplace.expression
-    @classmethod
-    def _feed_body_expression(cls):
-        return func.coalesce(func.nullif(cls.content, ""), cls.summary)
-
-    # The newest capture that answered, and the newest text read out of one. Both
-    # foreign keys cascade in Postgres, so neither needs an ORM cascade to clean up.
+    # The artefacts behind one version, and the newest reading of each. Every foreign
+    # key cascades in Postgres, so none of these needs an ORM cascade to clean up.
     latest_capture: Mapped[PageCapture | None] = relationship(
         primaryjoin=_latest_capture_join, viewonly=True, uselist=False, lazy="raise"
     )
-    latest_extraction: Mapped[Extraction | None] = relationship(
-        primaryjoin=_latest_extraction_join, viewonly=True, uselist=False, lazy="raise"
+    feed_capture: Mapped[FeedCapture | None] = relationship(
+        primaryjoin=_feed_capture_join, viewonly=True, uselist=False, lazy="raise"
+    )
+    feed_extraction: Mapped[Extraction | None] = relationship(
+        primaryjoin=lambda: _source_reading_join(ExtractionSource.FEED),
+        viewonly=True,
+        uselist=False,
+        lazy="raise",
+    )
+    page_extraction: Mapped[Extraction | None] = relationship(
+        primaryjoin=lambda: _source_reading_join(ExtractionSource.PAGE),
+        viewonly=True,
+        uselist=False,
+        lazy="raise",
     )
 
     @hybrid_property
-    def reading_body(self) -> str:
-        """The text a reader should be shown: whichever of the two is fuller."""
-        extracted = self.latest_extraction.body if self.latest_extraction else ""
-        return extracted if len(extracted) > len(self.feed_body) else self.feed_body
+    def has_feed_text(self) -> bool:
+        """Whether the capture a feed reading would read has anything in it."""
+        return bool(self.feed_capture and self.feed_capture.body)
 
-    @reading_body.inplace.expression
+    @has_feed_text.inplace.expression
     @classmethod
-    def _reading_body_expression(cls):
-        extracted = (
-            select(Extraction.body)
-            .where(Extraction.item_version_id == cls.id)
-            .order_by(Extraction.created_at.desc(), Extraction.id.desc())
+    def _has_feed_text_expression(cls):
+        # The newest, not any: that is the one `pending_feed` expands, so a sweep asking
+        # anything wider would hand it a version it returns nothing for.
+        newest = (
+            select(func.octet_length(FeedCapture.body))
+            .where(FeedCapture.item_version_id == cls.id)
+            .order_by(FeedCapture.captured_at.desc(), FeedCapture.id.desc())
             .correlate(cls)
             .limit(1)
             .scalar_subquery()
         )
-        return _fuller(extracted, cls.feed_body)
+        return func.coalesce(newest, 0) > 0
+
+    @hybrid_property
+    def reading_body(self) -> str:
+        """The text a reader should be shown: whichever reading of this version is fuller."""
+        bodies = [read.body for read in (self.feed_extraction, self.page_extraction) if read]
+        return max(bodies, key=len, default="")
+
+    @reading_body.inplace.expression
+    @classmethod
+    def _reading_body_expression(cls):
+        return _fullest_reading(lambda reading: reading.item_version_id == cls.id, cls)
 
     def __str__(self) -> str:
         return self.title or self.url

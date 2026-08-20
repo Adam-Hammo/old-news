@@ -78,9 +78,23 @@ class Extraction(UUIDPrimaryKey, Base):
 
 
 class FeedExtraction(Extraction):
-    """A reading of the text a feed already carried. No table of its own, just an identity."""
+    """A reading of the text a feed already carried, and the capture it was read from."""
 
-    __mapper_args__ = {"polymorphic_identity": ExtractionSource.FEED}  # noqa: RUF012
+    __tablename__ = "feed_extractions"
+
+    # Not `UUIDPrimaryKey`: the child shares the parent's key rather than minting one.
+    id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("extractions.id", ondelete="CASCADE"), primary_key=True
+    )
+    feed_capture_id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), ForeignKey("feed_captures.id", ondelete="CASCADE"), index=True
+    )
+
+    # Eager, for the same reason the page child is: a row outliving its transaction.
+    __mapper_args__ = {  # noqa: RUF012
+        "polymorphic_identity": ExtractionSource.FEED,
+        "polymorphic_load": "selectin",
+    }
 
 
 class PageExtraction(Extraction):

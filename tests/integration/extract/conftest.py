@@ -1,6 +1,7 @@
 """Building items and versions by hand, since a poll is not what is under test here."""
 
 import datetime
+import hashlib
 import uuid
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -12,20 +13,37 @@ from old_news import db
 from old_news.db import (
     CaptureOutcome,
     Document,
+    Extraction,
     ExtractionImage,
+    ExtractionSource,
+    Feed,
+    FeedCapture,
+    FeedExtraction,
     Item,
     ItemVersion,
     PageCapture,
     PageExtraction,
+    Subscription,
 )
 from old_news.db import bytes as codec
 from old_news.politeness import ensure
 from old_news.subscriptions.service import add
 
+from factories import (
+    DocumentFields,
+    ExtractionFields,
+    FeedCaptureFields,
+    FeedFields,
+    ItemFields,
+    ItemVersionFields,
+    PageCaptureFields,
+    faker,
+)
+
 
 @db.transactional
 async def _document(session: AsyncSession, feed_id: uuid.UUID) -> uuid.UUID:
-    document = Document(feed_id=feed_id, status=200, body_hash=b"0" * 32, body=b"<rss/>")
+    document = Document(feed_id=feed_id, **DocumentFields.kwargs())
     session.add(document)
     await session.flush()
     return document.id
@@ -42,15 +60,15 @@ async def _version(
     observed_at: datetime.datetime,
     supersedes_id: uuid.UUID | None,
 ) -> uuid.UUID:
+    # Title and url are what tests assert on, so they are passed. Everything else comes
+    # from the factory: author, tags, enclosures and published_at were left at their
+    # server defaults by every test, so nothing ever read a row where they were set.
     version = ItemVersion(
         item_id=item_id,
         document_id=document_id,
         supersedes_id=supersedes_id,
-        title=title,
-        url=url,
-        canonical_url=url,
         observed_at=observed_at,
-        content_hash=uuid.uuid4().bytes,
+        **ItemVersionFields.kwargs(title=title, url=url, canonical_url=url),
     )
     session.add(version)
     await session.flush()
@@ -59,8 +77,7 @@ async def _version(
 
 @db.transactional
 async def _item(session: AsyncSession, feed_id: uuid.UUID) -> uuid.UUID:
-    key = str(uuid.uuid4())
-    item = Item(feed_id=feed_id, guid=key, identity_key=key, identity_source="guid")
+    item = Item(feed_id=feed_id, **ItemFields.kwargs())
     session.add(item)
     await session.flush()
     return item.id
@@ -110,10 +127,8 @@ async def _extraction(
         item_version_id=version_id,
         host_id=await ensure(session, host),
         url=f"https://{host}/article",
-        status=200,
-        outcome=CaptureOutcome.OK,
-        body_hash=b"0" * 32,
         body=b"stored",
+        **PageCaptureFields.kwargs(),
     )
     session.add(capture)
     await session.flush()
@@ -121,9 +136,9 @@ async def _extraction(
     extraction = PageExtraction(
         item_version_id=version_id,
         page_capture_id=capture.id,
-        extractor="test",
-        extractor_version="0",
-        body="Words.",
+        **ExtractionFields.kwargs(
+            source=ExtractionSource.PAGE, extractor="test", extractor_version="0"
+        ),
     )
     session.add(extraction)
     await session.flush()
@@ -157,10 +172,8 @@ async def _store_capture(
         host_id=await ensure(session, host),
         url=url,
         final_url=url,
-        status=200,
-        outcome=CaptureOutcome.OK,
-        body_hash=body[:32],
         body=codec.compress(body, level=12),
+        **PageCaptureFields.kwargs(body_hash=hashlib.sha256(body).digest()),
     )
     session.add(capture)
     await session.flush()
@@ -181,3 +194,136 @@ def stored_page() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
         return await _store_capture(version_id, body, url, host)
 
     return store
+
+
+@db.transactional
+async def _store_feed_capture(
+    session: AsyncSession, version_id: uuid.UUID, text: str, parser_version: str
+) -> uuid.UUID:
+    version = await session.get(ItemVersion, version_id)
+    assert version is not None
+    capture = FeedCapture(
+        item_version_id=version_id,
+        document_id=version.document_id,
+        body=codec.compress(text.encode(), level=12) if text else b"",
+        **FeedCaptureFields.kwargs(
+            body_hash=hashlib.sha256(text.encode()).digest(), parser_version=parser_version
+        ),
+    )
+    session.add(capture)
+    await session.flush()
+    return capture.id
+
+
+@pytest.fixture
+def stored_feed_text() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
+    """What a feed served for a version, carved without going back to the document."""
+
+    async def store(version_id: uuid.UUID, text: str, *, parser_version: str = "test") -> uuid.UUID:
+        return await _store_feed_capture(version_id, text, parser_version)
+
+    return store
+
+
+@db.transactional
+async def _bystander(session: AsyncSession) -> None:
+    """A second article, settled, that no test is about.
+
+    Every test used to build exactly one of each row, which made "this version" and "any
+    version" the same query and let a correlated subquery that had lost its correlation
+    pass the whole suite. This is the row that tells them apart.
+
+    Its shape varies as well as its values, because one fixed shape only catches scope
+    leaks: a chain of versions, more than one capture on the head, and a reading on an
+    older version too, so "the newest of" and "across the chain" have something to be
+    wrong about. What cannot vary is that it is settled at the current policy, parser and
+    extractor — anything due here would turn up in every sweep assertion in the suite.
+    """
+    fake = faker()
+    host_id = await ensure(session, "bystander.example.com")
+    feed = Feed(host_id=host_id, **FeedFields.kwargs(url="https://bystander.example.com/feed.xml"))
+    session.add(feed)
+    await session.flush()
+    session.add(Subscription(feed_id=feed.id, active=True))
+
+    document = Document(feed_id=feed.id, **DocumentFields.kwargs())
+    session.add(document)
+    await session.flush()
+
+    item = Item(feed_id=feed.id, **ItemFields.kwargs(guid="bystander", identity_key="bystander"))
+    session.add(item)
+    await session.flush()
+
+    versions: list[ItemVersion] = []
+    for _ in range(fake.random_int(1, 3)):
+        version = ItemVersion(
+            item_id=item.id,
+            document_id=document.id,
+            supersedes_id=versions[-1].id if versions else None,
+            # A distinctive prefix, so a leak is recognisable in the failure and a random
+            # sentence can never collide with a phrase some test wrote a rule for.
+            **ItemVersionFields.kwargs(title=f"Bystander: {fake.sentence()}"),
+        )
+        session.add(version)
+        await session.flush()
+        versions.append(version)
+
+    head = versions[-1]
+    body = fake.paragraph(nb_sentences=40)
+    # A failure before the answer, so the run of failures this host carries is reset by it.
+    for outcome, status in ((CaptureOutcome.FAILED, 0), (CaptureOutcome.OK, 200)):
+        capture = PageCapture(
+            item_version_id=head.id,
+            host_id=host_id,
+            url=head.url,
+            final_url=head.url,
+            body=codec.compress(body.encode(), level=12) if status == 200 else b"",
+            **PageCaptureFields.kwargs(outcome=outcome, status=status),
+        )
+        session.add(capture)
+        await session.flush()
+
+    carvings = []
+    for text in (fake.paragraph(nb_sentences=5), body):
+        carving = FeedCapture(
+            item_version_id=head.id,
+            document_id=document.id,
+            body=codec.compress(text.encode(), level=12),
+            **FeedCaptureFields.kwargs(),
+        )
+        session.add(carving)
+        await session.flush()
+        carvings.append(carving)
+
+    # Both sources on the head so neither extraction sweep wants it.
+    readings: list[Extraction] = [
+        PageExtraction(
+            item_version_id=head.id,
+            page_capture_id=capture.id,
+            **ExtractionFields.kwargs(source=ExtractionSource.PAGE, body=body),
+        ),
+        FeedExtraction(
+            item_version_id=head.id,
+            feed_capture_id=carvings[-1].id,
+            **ExtractionFields.kwargs(body=body),
+        ),
+    ]
+    # And one further back when the chain has a back, so anything reading "the extraction
+    # for this item" has a choice it can get wrong. The unique key is per version and
+    # source, so a one-version chain must not be given this twice.
+    if len(versions) > 1:
+        readings.append(
+            FeedExtraction(
+                item_version_id=versions[0].id,
+                feed_capture_id=carvings[0].id,
+                **ExtractionFields.kwargs(),
+            )
+        )
+    session.add_all(readings)
+    await session.flush()
+
+
+@pytest.fixture(autouse=True)
+async def bystander(clean: None) -> None:
+    """Autouse: a test that has to ask for the row catching its own blind spot will not."""
+    await _bystander()

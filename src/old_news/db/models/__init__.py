@@ -1,6 +1,6 @@
 """Importing this module registers every mapper. Alembic and the app both rely on it."""
 
-from old_news.db.models.dictionary import ZstdDictionary
+from old_news.db.models.dictionary import DictionaryScope, ZstdDictionary
 from old_news.db.models.document import Document
 from old_news.db.models.extraction import (
     READING_IDENTITY,
@@ -13,6 +13,7 @@ from old_news.db.models.extraction import (
     PageExtraction,
 )
 from old_news.db.models.feed import Feed
+from old_news.db.models.feed_capture import FeedCapture
 from old_news.db.models.host import Host
 from old_news.db.models.image import ImageCapture
 from old_news.db.models.item import Item, ItemVersion
@@ -27,12 +28,14 @@ __all__ = [
     "READING_IDENTITY",
     "READING_KEY",
     "CaptureOutcome",
+    "DictionaryScope",
     "Dimension",
     "Document",
     "Extraction",
     "ExtractionImage",
     "ExtractionSource",
     "Feed",
+    "FeedCapture",
     "FeedExtraction",
     "FeedPoll",
     "Host",

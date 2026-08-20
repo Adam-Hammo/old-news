@@ -108,6 +108,9 @@ async def test_a_new_extractor_version_makes_the_archive_due_again(
     version_id = await _captured(feed_id, article, page, stored_page)
     await extract_page(version_id, SETTINGS)
 
+    assert await extract.due_extractions(SETTINGS, limit=10) == []
+
     monkeypatch.setattr(article_module, "RULES_REVISION", article_module.RULES_REVISION + 1)
 
-    assert await extract.due_extractions(SETTINGS, limit=10) == [version_id]
+    # The whole corpus comes back, which is the point — so this asks about its own row.
+    assert version_id in await extract.due_extractions(SETTINGS, limit=10)

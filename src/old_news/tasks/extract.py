@@ -5,7 +5,7 @@ import uuid
 
 from old_news import extract, fetch, politeness, robots
 from old_news.config import get_settings
-from old_news.extract import capture, images, service
+from old_news.extract import capture, feed, images, service
 from old_news.observability import count
 from old_news.tasks.app import app
 from old_news.tasks.ingest import SCHEDULER_PRIORITY
@@ -75,6 +75,30 @@ async def schedule_extractions(timestamp: int) -> None:
     if due:
         logger.info("deferred %d of %d due extractions", deferred, len(due))
         count("extract.extractions.deferred", deferred)
+
+
+@task(app, name="capture_feed", queue=QUEUE)
+async def capture_feed(document_id: str) -> None:
+    await feed.capture_feed(uuid.UUID(document_id), get_settings())
+
+
+@app.periodic(cron="*/2 * * * *", periodic_id="schedule_feed_captures")
+@app.task(name="schedule_feed_captures", queue=QUEUE, priority=SCHEDULER_PRIORITY)
+async def schedule_feed_captures(timestamp: int) -> None:
+    """One job per document, not per version: the parse is what costs, and it is shared."""
+    settings = get_settings()
+    due = await extract.due_feed_captures(settings.extract.extract_batch_size)
+
+    deferred = 0
+    for document_id in due:
+        deferred += await defer_unless_queued(
+            capture_feed.configure(queueing_lock=f"capture-feed:{document_id}"),
+            document_id=str(document_id),
+        )
+
+    if due:
+        logger.info("deferred %d of %d due feed captures", deferred, len(due))
+        count("extract.feed_captures.deferred", deferred)
 
 
 @task(app, name="extract_feed", queue=QUEUE)
