@@ -11,16 +11,14 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
-    func,
-    select,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Mapped, aliased, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
-from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of
+from old_news.db.base import NOW, Base, Run, Timestamptz, UUIDPrimaryKey, one_of, run_of
 
 # Bumped when anything changes *how* a page is asked for. Refusals are counted per
 # policy, so a bump forgives what came before without deleting a row — `extractor_version`
@@ -125,57 +123,25 @@ class PageCapture(UUIDPrimaryKey, Base):
         return f"{self.outcome} {self.status} {self.url}"
 
 
-def _since_last_success(host_id) -> ColumnElement[bool]:
-    """Rows for this host newer than its last answering capture, under the policy we ask by.
-
-    A host with no success under the current policy has its whole history counted,
-    which is what makes a policy bump a fresh trial rather than a pardon.
-    """
-    earlier = aliased(PageCapture)
-    last_ok = (
-        select(func.max(earlier.fetched_at))
-        .where(
-            earlier.host_id == host_id,
-            earlier.outcome == CaptureOutcome.OK,
-            earlier.capture_policy == CAPTURE_POLICY,
-        )
-        .correlate_except(earlier)
-        .scalar_subquery()
+def _failures(host_id) -> Run:
+    return run_of(
+        PageCapture,
+        at=lambda capture: capture.fetched_at,
+        scope=lambda capture: (
+            (capture.host_id == host_id) & (capture.capture_policy == CAPTURE_POLICY)
+        ),
+        counts=lambda capture: capture.outcome == CaptureOutcome.FAILED,
+        # Only an answer clears the count. A dead link and the visits we declined to
+        # send say nothing either way, which is what lets us record them.
+        resets=lambda capture: capture.outcome == CaptureOutcome.OK,
     )
-    return last_ok.is_(None) | (PageCapture.fetched_at > last_ok)
 
 
 def host_failures(host_id) -> ColumnElement[int]:
-    """Failed captures on this host since its last success.
-
-    Derived, because a counter beside the log is a second copy that can only disagree.
-    Only `FAILED` is counted: the visits we declined to send say nothing about the
-    publisher, which is what lets us record them at all.
-    """
-    return (
-        select(func.count())
-        .select_from(PageCapture)
-        .where(
-            PageCapture.host_id == host_id,
-            PageCapture.outcome == CaptureOutcome.FAILED,
-            PageCapture.capture_policy == CAPTURE_POLICY,
-            _since_last_success(host_id),
-        )
-        .correlate_except(PageCapture)
-        .scalar_subquery()
-    )
+    """Failed captures on this host since its last success, under the policy we ask by."""
+    return _failures(host_id).length
 
 
 def host_last_failure(host_id) -> ColumnElement[datetime.datetime]:
-    """When the run of failures counted by `host_failures` last grew. NULL if it is empty."""
-    return (
-        select(func.max(PageCapture.fetched_at))
-        .where(
-            PageCapture.host_id == host_id,
-            PageCapture.outcome == CaptureOutcome.FAILED,
-            PageCapture.capture_policy == CAPTURE_POLICY,
-            _since_last_success(host_id),
-        )
-        .correlate_except(PageCapture)
-        .scalar_subquery()
-    )
+    """When that run last grew, or NULL if it is empty."""
+    return _failures(host_id).latest

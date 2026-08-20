@@ -45,6 +45,19 @@ class Pending:
     capture_id: uuid.UUID | None = None
 
 
+def _extracted(source: ExtractionSource):
+    """Versions the current extractor has already read from this kind of artefact."""
+    return (
+        select(Extraction.item_version_id)
+        .where(
+            Extraction.source == source,
+            Extraction.extractor == article.EXTRACTOR,
+            Extraction.extractor_version == article.extractor_version(),
+        )
+        .scalar_subquery()
+    )
+
+
 @db.transactional
 async def due_extractions(
     session: AsyncSession, settings: ExtractSettings, limit: int
@@ -54,15 +67,7 @@ async def due_extractions(
     Keyed on the extractor version, so bumping it makes the whole archive due again
     without anything deleting a row.
     """
-    done = (
-        select(Extraction.item_version_id)
-        .where(
-            Extraction.source == ExtractionSource.PAGE,
-            Extraction.extractor == article.EXTRACTOR,
-            Extraction.extractor_version == article.extractor_version(),
-        )
-        .scalar_subquery()
-    )
+    done = _extracted(ExtractionSource.PAGE)
     rows = await session.execute(
         select(ItemVersion.id)
         .join(PageCapture, PageCapture.item_version_id == ItemVersion.id)
@@ -85,15 +90,7 @@ async def due_feed_extractions(session: AsyncSession, limit: int) -> list[uuid.U
 
     No capture, no network, nothing to wait for — so this runs ahead of capture.
     """
-    done = (
-        select(Extraction.item_version_id)
-        .where(
-            Extraction.source == ExtractionSource.FEED,
-            Extraction.extractor == article.EXTRACTOR,
-            Extraction.extractor_version == article.extractor_version(),
-        )
-        .scalar_subquery()
-    )
+    done = _extracted(ExtractionSource.FEED)
     rows = await session.execute(
         select(ItemVersion.id)
         .where(

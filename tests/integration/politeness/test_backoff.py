@@ -1,4 +1,4 @@
-"""That the two spellings of the backoff formula agree, by asking Postgres."""
+"""That the SQL spelling of the backoff formula matches the Python one, by asking Postgres."""
 
 import datetime
 
@@ -34,4 +34,6 @@ async def test_postgres_computes_the_same_next_attempt(database: None, name: str
     async with db.session() as session:
         from_sql = (await session.execute(select(expression))).scalar_one()
 
-    assert from_sql == backoff.retry_at(WHEN, policy, failures=failures)
+    expected = WHEN + datetime.timedelta(seconds=backoff.interval(policy, failures=failures))
+
+    assert from_sql == expected

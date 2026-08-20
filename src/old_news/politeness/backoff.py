@@ -8,7 +8,6 @@ needs it inside a `WHERE` clause. `test_backoff.py` asserts they agree.
 """
 
 import dataclasses
-import datetime
 
 from sqlalchemy import ColumnElement, func
 from sqlalchemy.sql.elements import ColumnClause
@@ -40,19 +39,6 @@ def interval(policy: Policy, *, failures: int, base_seconds: float | None = None
     """Exponential in consecutive failures. `base_seconds` for callers with a cadence."""
     base = policy.minimum_seconds if base_seconds is None else base_seconds
     return clamp(base * policy.factor**failures, policy)
-
-
-def retry_at(
-    now: datetime.datetime, policy: Policy, *, failures: int, base_seconds: float | None = None
-) -> datetime.datetime:
-    return now + datetime.timedelta(
-        seconds=interval(policy, failures=failures, base_seconds=base_seconds)
-    )
-
-
-def exhausted(policy: Policy, *, failures: int) -> bool:
-    """Whether to stop asking. What stopping means is the caller's business."""
-    return failures >= policy.max_failures
 
 
 def due_at(

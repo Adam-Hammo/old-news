@@ -9,15 +9,14 @@ from sqlalchemy import (
     Index,
     Integer,
     Text,
-    func,
     select,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Mapped, aliased, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
-from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of
+from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of, run_of
 
 # The publisher saying the feed is gone for good, which is the only answer that is
 # permanent on its own.
@@ -74,32 +73,15 @@ class FeedPoll(UUIDPrimaryKey, Base):
 
 
 def consecutive_failures(feed_id) -> ColumnElement[int]:
-    """Failed polls since the last one that was not a failure.
-
-    Derived, because a counter beside the log is a second copy that can only disagree.
-    A 304 and a robots refusal both end a run — neither says the publisher is broken.
-    """
-    # Aliased and correlated explicitly. Both halves select from `feed_polls`, so
-    # without this SQLAlchemy folds the inner `max` into the outer WHERE and Postgres
-    # rejects the aggregate.
-    earlier = aliased(FeedPoll)
-    last_good = (
-        select(func.max(earlier.polled_at))
-        .where(earlier.feed_id == feed_id, earlier.outcome != PollOutcome.FAILED)
-        .correlate_except(earlier)
-        .scalar_subquery()
-    )
-    return (
-        select(func.count())
-        .select_from(FeedPoll)
-        .where(
-            FeedPoll.feed_id == feed_id,
-            FeedPoll.outcome == PollOutcome.FAILED,
-            last_good.is_(None) | (FeedPoll.polled_at > last_good),
-        )
-        .correlate_except(FeedPoll)
-        .scalar_subquery()
-    )
+    """Failed polls since the last one that was not a failure."""
+    return run_of(
+        FeedPoll,
+        at=lambda poll: poll.polled_at,
+        scope=lambda poll: poll.feed_id == feed_id,
+        counts=lambda poll: poll.outcome == PollOutcome.FAILED,
+        # A 304 and a robots refusal both end a run. Neither says the publisher broke.
+        resets=lambda poll: poll.outcome != PollOutcome.FAILED,
+    ).length
 
 
 def gone(feed_id) -> ColumnElement[bool]:
