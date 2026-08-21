@@ -65,7 +65,7 @@ async def link_existing(session: AsyncSession, slot_id: uuid.UUID, url: str) -> 
     held = (
         await session.execute(
             select(ImageCapture.id)
-            .where(ImageCapture.url_digest == digest_of(url), ImageCapture.body != b"")
+            .where(ImageCapture.url_digest == digest_of(url), ImageCapture.usable)
             .limit(1)
         )
     ).scalar_one_or_none()
@@ -114,10 +114,11 @@ async def _store(
         )
     ).scalar_one()
 
-    # Only an answer satisfies the slot. `accept` refuses a body by its declared type in
-    # the fetcher, but only below 300 — so a 404's error page arrives untyped, and one of
-    # them was linked as an article's lead image.
-    if body and response is not None and response.ok:
+    # Asked of the row rather than the response, so this and `link_existing` cannot drift.
+    # `accept` refuses a body by its declared type in the fetcher but only below 300, so a
+    # 404's error page arrives untyped — and one was an article's lead image, twice: the
+    # first repair was undone by the reuse path, which had no such check.
+    if stored.usable:
         await session.execute(
             update(ExtractionImage)
             .where(ExtractionImage.id == slot_id)

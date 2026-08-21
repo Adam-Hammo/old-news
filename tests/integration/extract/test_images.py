@@ -12,6 +12,7 @@ from old_news.db import ExtractionImage, ImageCapture, ImageRole
 from old_news.extract import images
 from old_news.extract.images import capture_image
 from old_news.fetch import Fetcher
+from old_news.politeness import ensure
 
 PNG = bytes.fromhex("89504e470d0a1a0a") + b"\x00" * 512
 HEADERS = {"Content-Type": "image/png"}
@@ -139,3 +140,40 @@ async def test_a_captured_slot_is_no_longer_due(
     await capture_image(slot_id, fetcher, settings)
 
     assert await images.due_images(limit=10) == []
+
+
+@db.transactional
+async def _error_page(session: AsyncSession, url: str) -> uuid.UUID:
+    """A capture that answered 404 with an HTML body, which is what a dead CDN link does."""
+    capture = ImageCapture(
+        url=url,
+        url_digest=images.digest_of(url),
+        host_id=await ensure(session, "loopback.example.com"),
+        status=404,
+        content_type="text/html; charset=UTF-8",
+        body_hash=b"e" * 32,
+        body=b"<html>not found</html>",
+        byte_size=22,
+    )
+    session.add(capture)
+    await session.flush()
+    return capture.id
+
+
+async def test_an_error_page_never_satisfies_a_slot(clean: None, image_slots):
+    """Twice now. `accept` refuses a body by its type in the fetcher but only below 300, so
+    a 404's HTML arrives untyped. The write path stopped taking it and the reuse path went
+    on handing the same row back, so the first repair lasted a single sweep."""
+    url = "https://loopback.example.com/gone.png"
+    (slot_id,) = await image_slots((url, ImageRole.LEAD))
+    await _error_page(url)
+
+    assert await images.link_existing(slot_id, url) is None
+
+    async with db.session() as session:
+        linked = (
+            await session.execute(
+                select(ExtractionImage.image_capture_id).where(ExtractionImage.id == slot_id)
+            )
+        ).scalar_one()
+    assert linked is None

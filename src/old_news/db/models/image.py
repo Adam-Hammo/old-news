@@ -3,6 +3,7 @@ import uuid
 
 from sqlalchemy import ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
@@ -46,3 +47,17 @@ class ImageCapture(UUIDPrimaryKey, Base):
     encoder_version: Mapped[str] = mapped_column(String(32), server_default="")
 
     error: Mapped[str] = mapped_column(Text, server_default="")
+
+    @hybrid_property
+    def usable(self) -> bool:
+        """Bytes a slot may point at: an answer, and actually an image."""
+        return (
+            bool(self.body) and 200 <= self.status < 300 and self.content_type.startswith("image/")
+        )
+
+    @usable.inplace.expression
+    @classmethod
+    def _usable_expression(cls):
+        return (
+            (cls.body != b"") & cls.status.between(200, 299) & cls.content_type.startswith("image/")
+        )
