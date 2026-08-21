@@ -131,7 +131,7 @@ ignore_names = [
   "subscription",
   "supersedes",
   "versions",
-  # pytest injects fixtures by parameter name.
+  # pytest calls its hooks and injects its fixtures by name.
   "blanket_ban",
   "clean",
   "clean_client",
@@ -145,6 +145,7 @@ ignore_names = [
   "no_jobs",
   "no_policies",
   "postgres",
+  "pytest_*",
   "queue_app",
   "queue_schema",
   "server",

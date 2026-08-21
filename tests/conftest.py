@@ -1,4 +1,5 @@
 import os
+import random
 import threading
 import zlib
 from collections.abc import Callable, Iterator, Mapping
@@ -18,15 +19,28 @@ os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 # prove.
 PAGES = Path(__file__).parent / "pages"
 
-# Fixed unless asked otherwise. Varied *fields* are the point — varied *runs* would mean a
-# suite that goes red on its own schedule, which is how people stop believing one.
-SEED = int(os.environ.get("OLD_NEWS_TEST_SEED", "20260821"))
+# A fresh draw per run, so every run is a chance to build a shape no run has built before.
+# That only works if a red one can be replayed, which is what the two hooks below are for:
+# the seed goes in the header and again beside the failures.
+SEED = int(os.environ.get("OLD_NEWS_TEST_SEED") or random.randrange(2**31))
+
+REPLAY = f"OLD_NEWS_TEST_SEED={SEED}"
+
+
+def pytest_report_header() -> str:
+    return f"test data seed: {SEED}  ({REPLAY} to replay this run)"
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    """Restated at the bottom, because that is where a failure is read from."""
+    if terminalreporter.stats.get("failed") or terminalreporter.stats.get("error"):
+        terminalreporter.write_line(f"replay: {REPLAY} just test")
 
 
 @pytest.fixture(autouse=True)
 def entropy(request: pytest.FixtureRequest) -> int:
-    """Reseeded per test off its own node id, so running one test builds the same rows a
-    full run builds. Set OLD_NEWS_TEST_SEED to sweep for shapes this seed never makes."""
+    """Reseeded per test off its own node id, so replaying the run reproduces every row and
+    `-k one_test` on its own builds exactly what it built inside the full run."""
     seed = SEED + zlib.crc32(request.node.nodeid.encode())
     reseed_random(seed)
     return seed
