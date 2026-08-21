@@ -5,7 +5,7 @@ import uuid
 
 from old_news import extract, fetch, politeness, robots
 from old_news.config import get_settings
-from old_news.extract import capture, images, service
+from old_news.extract import capture, encode, feed, images, service
 from old_news.observability import count
 from old_news.tasks.app import app
 from old_news.tasks.ingest import SCHEDULER_PRIORITY
@@ -77,6 +77,30 @@ async def schedule_extractions(timestamp: int) -> None:
         count("extract.extractions.deferred", deferred)
 
 
+@task(app, name="capture_feed", queue=QUEUE)
+async def capture_feed(document_id: str) -> None:
+    await feed.capture_feed(uuid.UUID(document_id), get_settings())
+
+
+@app.periodic(cron="*/2 * * * *", periodic_id="schedule_feed_captures")
+@app.task(name="schedule_feed_captures", queue=QUEUE, priority=SCHEDULER_PRIORITY)
+async def schedule_feed_captures(timestamp: int) -> None:
+    """One job per document, not per version: the parse is what costs, and it is shared."""
+    settings = get_settings()
+    due = await extract.due_feed_captures(settings.extract.extract_batch_size)
+
+    deferred = 0
+    for document_id in due:
+        deferred += await defer_unless_queued(
+            capture_feed.configure(queueing_lock=f"capture-feed:{document_id}"),
+            document_id=str(document_id),
+        )
+
+    if due:
+        logger.info("deferred %d of %d due feed captures", deferred, len(due))
+        count("extract.feed_captures.deferred", deferred)
+
+
 @task(app, name="extract_feed", queue=QUEUE)
 async def extract_feed(version_id: str) -> None:
     await service.extract_feed(uuid.UUID(version_id), get_settings().extract)
@@ -132,3 +156,27 @@ async def schedule_lead_images(timestamp: int) -> None:
     if due:
         logger.info("deferred %d of %d due images", deferred, len(due))
         count("extract.images.deferred", deferred)
+
+
+@task(app, name="encode_image", queue=QUEUE)
+async def encode_image(capture_id: str) -> None:
+    await encode.encode_image(uuid.UUID(capture_id), get_settings().extract)
+
+
+@app.periodic(cron="*/5 * * * *", periodic_id="schedule_encodes")
+@app.task(name="schedule_encodes", queue=QUEUE, priority=SCHEDULER_PRIORITY)
+async def schedule_encodes(timestamp: int) -> None:
+    """No network, so no politeness. Biggest images first, which is where the bytes are."""
+    settings = get_settings()
+    due = await extract.due_encodes(settings.extract, settings.extract.encode_batch_size)
+
+    deferred = 0
+    for capture_id in due:
+        deferred += await defer_unless_queued(
+            encode_image.configure(queueing_lock=f"encode:{capture_id}"),
+            capture_id=str(capture_id),
+        )
+
+    if due:
+        logger.info("deferred %d of %d due image encodes", deferred, len(due))
+        count("extract.images.encodes_deferred", deferred)

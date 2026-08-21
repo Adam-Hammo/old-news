@@ -1,10 +1,13 @@
 import os
+import random
 import threading
+import zlib
 from collections.abc import Callable, Iterator, Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from factory.random import reseed_random
 
 # Ryuk bind-mounts the docker socket, which Docker Desktop on macOS refuses.
 # testcontainers reads its config at import, so this must run first.
@@ -15,6 +18,33 @@ os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 # against the same bytes, and trimming them to fit a directory would change what they
 # prove.
 PAGES = Path(__file__).parent / "pages"
+
+# A fresh draw per run, so every run is a chance to build a shape no run has built before.
+# That only works if a red one can be replayed, which is what the two hooks below are for:
+# the seed goes in the header and again beside the failures.
+SEED = int(os.environ.get("OLD_NEWS_TEST_SEED") or random.randrange(2**31))
+
+REPLAY = f"OLD_NEWS_TEST_SEED={SEED}"
+
+
+def pytest_report_header() -> str:
+    return f"test data seed: {SEED}  ({REPLAY} to replay this run)"
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    """Restated at the bottom, because that is where a failure is read from."""
+    if terminalreporter.stats.get("failed") or terminalreporter.stats.get("error"):
+        terminalreporter.write_line(f"replay: {REPLAY} just test")
+
+
+@pytest.fixture(autouse=True)
+def entropy(request: pytest.FixtureRequest) -> int:
+    """Reseeded per test off its own node id, so replaying the run reproduces every row and
+    `-k one_test` on its own builds exactly what it built inside the full run."""
+    seed = SEED + zlib.crc32(request.node.nodeid.encode())
+    reseed_random(seed)
+    return seed
+
 
 # A reply, or something that decides one from the request headers — which is what
 # conditional GETs need, since the answer depends on If-None-Match.

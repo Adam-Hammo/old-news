@@ -18,6 +18,10 @@ class Document(UUIDPrimaryKey, Base):
     feed_id: Mapped[uuid.UUID] = mapped_column(
         PgUUID(as_uuid=True), ForeignKey("feeds.id", ondelete="CASCADE")
     )
+    # After redirects, so a re-parse resolves relative entry links the way the parse at
+    # ingest did. Without it a moved feed re-reads to different identities.
+    final_url: Mapped[str] = mapped_column(Text, server_default="")
+
     fetched_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
     status: Mapped[int] = mapped_column(Integer)
     body_hash: Mapped[bytes] = mapped_column(LargeBinary)

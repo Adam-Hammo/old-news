@@ -1,6 +1,7 @@
 """One worker per queue, which is the shape the deployment runs."""
 
 import asyncio
+import time
 
 from sqlalchemy import text
 
@@ -12,6 +13,21 @@ from old_news.tasks import ingest as ingest_tasks
 from old_news.tasks.app import app
 
 DEFERRED = ("schedule_polls", "schedule_lead_images")
+
+
+async def _drained(seconds: float) -> set[str]:
+    """Poll until nothing this test deferred is left, and report what is if time runs out.
+
+    A wall-clock deadline rather than a fixed count of sleeps, because each check costs a
+    round trip and the count drifts with load. And it returns the leftover rather than a
+    bool so a failure says whether a job is stuck or the box was just slow — the flake it
+    replaces asserted `== set()` and told you nothing about which.
+    """
+    deadline = time.monotonic() + seconds
+    # Polled: the state is a row in Postgres, so there is no event to wait on.
+    while (outstanding := await _outstanding()) and time.monotonic() < deadline:  # noqa: ASYNC110
+        await asyncio.sleep(0.05)
+    return outstanding
 
 
 @db.transactional
@@ -46,14 +62,11 @@ async def test_a_worker_per_queue_runs_jobs_on_both(
         assert await _outstanding() == set(DEFERRED)
 
         running = asyncio.create_task(_run_workers(queue_app, configured, stopping))
-        for _ in range(100):
-            if not await _outstanding():
-                break
-            await asyncio.sleep(0.1)
+        leftover = await _drained(seconds=30)
         stopping.set()
         await asyncio.wait_for(running, timeout=10)
 
-    assert await _outstanding() == set()
+    assert leftover == set(), f"still queued after 30s: {sorted(leftover)}"
 
 
 async def test_setting_the_event_shuts_every_worker_down(no_jobs: None, queue_app, settings):

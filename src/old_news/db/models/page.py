@@ -51,13 +51,22 @@ class PageCapture(UUIDPrimaryKey, Base):
         Index("ix_page_captures_version_fetched", "item_version_id", text("fetched_at DESC")),
         # What makes the 204 URLs arriving in more than one feed cost one fetch each.
         Index("ix_page_captures_url_body", "url", "body_hash"),
+        # Partial, so it must spell success the way `succeeded` does or Postgres stops
+        # using it — the predicate has to imply the index's.
         Index(
             "ix_page_captures_succeeded",
             "item_version_id",
-            postgresql_where=text("status BETWEEN 200 AND 299"),
+            postgresql_where=text("outcome = 'ok'"),
         ),
         # Counting a host's failures back to its last success reads this, newest first.
-        Index("ix_page_captures_host_fetched", "host_id", text("fetched_at DESC"), "outcome"),
+        # Both equalities lead, or the policy is a recheck on every row read.
+        Index(
+            "ix_page_captures_host_fetched",
+            "host_id",
+            "capture_policy",
+            text("fetched_at DESC"),
+            "outcome",
+        ),
     )
 
     item_version_id: Mapped[uuid.UUID] = mapped_column(
@@ -94,12 +103,12 @@ class PageCapture(UUIDPrimaryKey, Base):
     @hybrid_property
     def succeeded(self) -> bool:
         """The fetch answered with a body worth reading."""
-        return 200 <= self.status < 300
+        return self.outcome == CaptureOutcome.OK
 
     @succeeded.inplace.expression
     @classmethod
     def _succeeded_expression(cls):
-        return cls.status.between(200, 299)
+        return cls.outcome == CaptureOutcome.OK
 
     def __str__(self) -> str:
         return f"{self.outcome} {self.status} {self.url}"

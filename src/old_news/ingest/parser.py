@@ -1,6 +1,7 @@
 """The feedparser boundary. Nothing else in the codebase imports feedparser."""
 
 import datetime
+import hashlib
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,10 @@ import feedparser
 
 from old_news.ingest.normalise import canonical_url
 
+# Bumped when anything below changes which text comes out of an entry, so a stored
+# carving stays attributable to the rules that made it.
+RULES_REVISION = 1
+
 # <sy:updatePeriod> as seconds. <sy:updateFrequency> divides these.
 UPDATE_PERIODS = {
     "hourly": 3600,
@@ -18,6 +23,17 @@ UPDATE_PERIODS = {
     "monthly": 2592000,
     "yearly": 31536000,
 }
+
+
+def parser_version() -> str:
+    """What chose an item's text, stamped onto every feed capture."""
+    return f"{feedparser.__version__}+{RULES_REVISION}"
+
+
+@dataclass(frozen=True, slots=True)
+class Identity:
+    key: str
+    source: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +50,24 @@ class ParsedItem:
     enclosures: tuple[dict[str, str], ...] = ()
     published_at: datetime.datetime | None = None
     updated_at: datetime.datetime | None = None
+
+    @property
+    def identity(self) -> Identity:
+        """The key this article is recognised by, and which tier produced it."""
+        if self.guid:
+            return Identity(self.guid, "guid")
+        if self.canonical_url:
+            return Identity(self.canonical_url, "link")
+
+        digest = hashlib.sha256()
+        for part in (
+            self.title,
+            self.published_at.isoformat() if self.published_at else "",
+            self.summary,
+        ):
+            digest.update(part.encode())
+            digest.update(b"\x1f")
+        return Identity(digest.hexdigest(), "hash")
 
 
 @dataclass(frozen=True, slots=True)

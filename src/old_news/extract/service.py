@@ -1,11 +1,11 @@
-"""Turning a captured page into something readable. Head versions only."""
+"""Turning a captured artefact into something readable. Head versions only."""
 
 import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -18,6 +18,7 @@ from old_news.db import (
     Extraction,
     ExtractionImage,
     ExtractionSource,
+    FeedExtraction,
     ItemVersion,
     PageCapture,
     PageExtraction,
@@ -31,13 +32,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class Pending:
-    """An artefact waiting to be read. `capture_id` is None for a feed reading."""
+    """An artefact waiting to be read, and the capture row it came out of."""
 
     version_id: uuid.UUID
     source: ExtractionSource
+    capture_id: uuid.UUID
     body: bytes
     final_url: str
-    capture_id: uuid.UUID | None = None
 
 
 def _extracted(source: ExtractionSource):
@@ -77,15 +78,11 @@ async def due_extractions(
 
 @db.transactional
 async def due_feed_extractions(session: AsyncSession, limit: int) -> list[uuid.UUID]:
-    """Head versions whose feed text the current extractor has not read."""
+    """Head versions whose captured feed text the current extractor has not read."""
     done = _extracted(ExtractionSource.FEED)
     rows = await session.execute(
         select(ItemVersion.id)
-        .where(
-            ItemVersion.is_head,
-            ItemVersion.id.not_in(done),
-            func.length(ItemVersion.content) > 0,
-        )
+        .where(ItemVersion.is_head, ItemVersion.id.not_in(done), ItemVersion.has_feed_text)
         .order_by(ItemVersion.observed_at.desc())
         .limit(limit)
     )
@@ -94,23 +91,25 @@ async def due_feed_extractions(session: AsyncSession, limit: int) -> list[uuid.U
 
 @db.transactional
 async def pending_feed(session: AsyncSession, version_id: uuid.UUID) -> Pending | None:
-    """The version's own feed text. None when the feed carried none."""
-    row = (
+    """The version's newest feed capture, expanded. None when the feed carried no text."""
+    version = (
         await session.execute(
-            select(ItemVersion.content, ItemVersion.url, ItemVersion.canonical_url).where(
-                ItemVersion.id == version_id
-            )
+            select(ItemVersion)
+            .where(ItemVersion.id == version_id)
+            .options(joinedload(ItemVersion.feed_capture))
         )
-    ).first()
-    if row is None or not row.content:
+    ).scalar_one_or_none()
+    if version is None or version.feed_capture is None or not version.feed_capture.body:
         return None
 
+    capture = version.feed_capture
     return Pending(
         version_id=version_id,
         source=ExtractionSource.FEED,
-        body=row.content.encode(),
+        capture_id=capture.id,
+        body=await dictionaries.expand(session, capture.body),
         # Relative links in feed content resolve against the article, not the feed.
-        final_url=row.canonical_url or row.url,
+        final_url=version.canonical_url or version.url,
     )
 
 
@@ -137,9 +136,28 @@ async def pending(session: AsyncSession, version_id: uuid.UUID) -> Pending | Non
     )
 
 
+def _artefact(
+    found: Pending, parsed: article.Article, reading_id: uuid.UUID
+) -> tuple[type[Extraction], dict[str, object]]:
+    """The half of a reading only one kind of artefact has, and where it goes."""
+    if found.source == ExtractionSource.PAGE:
+        return PageExtraction, {
+            "id": reading_id,
+            "page_capture_id": found.capture_id,
+            "title": parsed.title,
+            "byline": parsed.byline,
+            "language": parsed.language[:32],
+            "site_name": parsed.site_name,
+            "page_type": parsed.page_type[:32],
+            "published_claim": parsed.published_claim[:32],
+        }
+    # A fragment has no head to claim anything, so the capture is all there is to name.
+    return FeedExtraction, {"id": reading_id, "feed_capture_id": found.capture_id}
+
+
 @db.transactional
 async def store(session: AsyncSession, found: Pending, parsed: article.Article) -> Extraction:
-    """Insert a reading and, for a page, what that page claimed about itself."""
+    """Insert a reading, and the half of it only its own kind of artefact has."""
     base = {
         "item_version_id": found.version_id,
         "source": found.source,
@@ -164,24 +182,14 @@ async def store(session: AsyncSession, found: Pending, parsed: article.Article) 
         )
     ).scalar_one()
 
-    if found.source == ExtractionSource.PAGE:
-        claims = {
-            "id": reading_id,
-            "page_capture_id": found.capture_id,
-            "title": parsed.title,
-            "byline": parsed.byline,
-            "language": parsed.language[:32],
-            "site_name": parsed.site_name,
-            "page_type": parsed.page_type[:32],
-            "published_claim": parsed.published_claim[:32],
-        }
-        await session.execute(
-            insert(PageExtraction)
-            .values(**claims)
-            .on_conflict_do_update(
-                index_elements=["id"], set_={key: claims[key] for key in claims if key != "id"}
-            )
+    child, values = _artefact(found, parsed, reading_id)
+    await session.execute(
+        insert(child)
+        .values(**values)
+        .on_conflict_do_update(
+            index_elements=["id"], set_={key: values[key] for key in values if key != "id"}
         )
+    )
 
     for position, image in enumerate(parsed.images):
         await session.execute(

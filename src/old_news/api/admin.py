@@ -19,6 +19,7 @@ from old_news.db import (
     Document,
     Extraction,
     Feed,
+    FeedCapture,
     FeedPoll,
     ImageCapture,
     Item,
@@ -162,6 +163,23 @@ class PageCaptureAdmin(ModelView, model=PageCapture):
     can_edit = False
 
 
+class FeedCaptureAdmin(ModelView, model=FeedCapture):
+    name = "Feed capture"
+    name_plural = "Feed captures"
+    icon = "fa-solid fa-scissors"
+    # `body` is the compressed item text, and listing it makes the page unusable.
+    column_list = [
+        FeedCapture.captured_at,
+        FeedCapture.parser_version,
+        FeedCapture.item_version_id,
+        FeedCapture.document_id,
+    ]
+    column_sortable_list = [FeedCapture.captured_at, FeedCapture.parser_version]
+    column_default_sort = [(FeedCapture.captured_at, True)]
+    can_create = False
+    can_edit = False
+
+
 class ExtractionAdmin(ModelView, model=Extraction):
     name_plural = "Extractions"
     icon = "fa-solid fa-align-left"
@@ -213,6 +231,7 @@ class ImageCaptureAdmin(ModelView, model=ImageCapture):
         ImageCapture.status,
         ImageCapture.byte_size,
         ImageCapture.content_type,
+        ImageCapture.spec,
         ImageCapture.url,
         ImageCapture.error,
     ]
@@ -259,6 +278,7 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
         ItemVersionAdmin,
         DocumentAdmin,
         PageCaptureAdmin,
+        FeedCaptureAdmin,
         ExtractionAdmin,
         PageExtractionAdmin,
         ImageCaptureAdmin,

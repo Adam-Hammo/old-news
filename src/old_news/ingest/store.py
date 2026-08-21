@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news.config import StorageSettings
-from old_news.db import Document, Feed, Item, ItemVersion, dictionaries
+from old_news.db import DictionaryScope, Document, Feed, Item, ItemVersion, dictionaries
 from old_news.db import bytes as codec
 from old_news.fetch import Response
 from old_news.ingest.normalise import content_fingerprint
@@ -28,24 +28,6 @@ class Applied:
     unchanged: int = 0
     guid_churn: int = 0
     duplicate_identity: int = 0
-
-
-def identity_of(item: ParsedItem) -> tuple[str, str]:
-    """The key an article is recognised by, and which tier produced it."""
-    if item.guid:
-        return item.guid, "guid"
-    if item.canonical_url:
-        return item.canonical_url, "link"
-
-    digest = hashlib.sha256()
-    for part in (
-        item.title,
-        item.published_at.isoformat() if item.published_at else "",
-        item.summary,
-    ):
-        digest.update(part.encode())
-        digest.update(b"\x1f")
-    return digest.hexdigest(), "hash"
 
 
 def fingerprint_of(item: ParsedItem) -> bytes:
@@ -88,9 +70,10 @@ async def record_document(
     if body_hash == await previous_document_hash(session, feed.id):
         return None
 
-    current = await dictionaries.current_for_feed(session, feed.id)
+    current = await dictionaries.current_for_feed(session, feed.id, DictionaryScope.FEED_DOCUMENT)
     document = Document(
         feed_id=feed.id,
+        final_url=response.url,
         status=response.status,
         body_hash=body_hash,
         body=codec.compress(
@@ -157,17 +140,17 @@ async def apply_items(
     seen: set[str] = set()
 
     for parsed in parsed_items:
-        key, source = identity_of(parsed)
+        identity = parsed.identity
 
         # The same identity twice in one document, so the first wins: a second insert
         # breaks the identity constraint and a second version invents an edit.
-        if key in seen:
+        if identity.key in seen:
             duplicates += 1
             continue
-        seen.add(key)
+        seen.add(identity.key)
 
         fingerprint = fingerprint_of(parsed)
-        found = existing.get(key)
+        found = existing.get(identity.key)
 
         if found is None:
             # A new key on a URL we hold means the publisher changed its guid scheme.
@@ -177,11 +160,16 @@ async def apply_items(
                 logger.warning(
                     "guid churn on feed %s: new key %r for known url %s",
                     feed.id,
-                    key[:120],
+                    identity.key[:120],
                     parsed.canonical_url,
                 )
 
-            item = Item(feed_id=feed.id, guid=parsed.guid, identity_key=key, identity_source=source)
+            item = Item(
+                feed_id=feed.id,
+                guid=parsed.guid,
+                identity_key=identity.key,
+                identity_source=identity.source,
+            )
             session.add(item)
             await session.flush()
             session.add(_version(parsed, item.id, document.id, fingerprint, observed_at, None))
@@ -226,8 +214,6 @@ def _version(
         author=parsed.author,
         url=parsed.url,
         canonical_url=parsed.canonical_url,
-        summary=parsed.summary,
-        content=parsed.content,
         tags=list(parsed.tags),
         enclosures=list(parsed.enclosures),
         comments_url=parsed.comments_url,

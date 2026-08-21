@@ -3,7 +3,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, extract
@@ -199,11 +199,19 @@ async def test_an_unfetchable_link_is_skipped(clean: None, feed_id, article):
     assert await _due_urls() == []
 
 
-async def test_article_hosts_are_reported_for_the_robots_refresh(clean: None, feed_id, article):
-    """The gap this closes: the feed host is not the article host."""
+async def test_article_hosts_are_reported_for_the_robots_refresh(
+    clean: None, feed_id, article, bystander_host
+):
+    """The gap this closes: the feed host is not the article host.
+
+    Compared as a set rather than with `in`, which is both a weaker claim — it would hold
+    for `news.example.org.attacker.test` — and the shape CodeQL reads as URL sanitisation.
+    """
     await article(feed_id, ("A story", "https://news.example.org/politics/a"))
 
-    assert await extract.article_hosts() == ["news.example.org"]
+    hosts = set(await extract.article_hosts()) - {bystander_host}
+
+    assert hosts == {"news.example.org"}
 
 
 async def test_a_host_whose_robots_txt_was_never_read_is_left_alone(clean: None, feed_id, article):
@@ -319,3 +327,21 @@ async def test_re_reading_the_rules_makes_a_forbidden_page_a_candidate_again(
     await _refresh_rules()
 
     assert await _due_urls() == ["https://loopback.example.com/a"]
+
+
+async def test_succeeded_reads_the_outcome_in_sql_too(clean: None, feed_id, article):
+    """Nothing writes a 2xx row with a declined outcome today, which is why this row is
+    built by hand: `succeeded` and `ix_page_captures_succeeded` are the same predicate, and
+    a partial index only serves a query whose predicate implies the index's. The two have
+    to move together, so what they mean is worth stating rather than inferring."""
+    versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
+    await _capture(versions[0], status=200, outcome=CaptureOutcome.DISALLOWED)
+
+    async with db.session() as session:
+        answered = (
+            await session.execute(
+                select(PageCapture.succeeded).where(PageCapture.item_version_id == versions[0])
+            )
+        ).scalar_one()
+
+    assert not answered

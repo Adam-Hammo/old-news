@@ -116,6 +116,27 @@ test suite="" *args:
 cov:
     uv run pytest --cov --cov-report=term-missing
 
+# Several runs in a row, each on its own seed. Every run already draws one, so this is
+# only for volume — a way to spend ten minutes hunting rather than one run's worth.
+sweep count="5":
+    #!/usr/bin/env bash
+    set -uo pipefail
+    log=$(mktemp)
+    trap 'rm -f "$log"' EXIT
+    worst=0
+    for _ in $(seq {{ count }}); do
+        seed=$RANDOM$RANDOM
+        printf 'seed %-12s ' "$seed"
+        if OLD_NEWS_TEST_SEED=$seed uv run pytest tests -q --no-header -x >"$log" 2>&1; then
+            echo ok
+        else
+            worst=1
+            echo "FAILED — replay with OLD_NEWS_TEST_SEED=$seed just test"
+            grep -E '^FAILED|^E  ' "$log" | head -5
+        fi
+    done
+    exit $worst
+
 # Dead code. Config, including what frameworks reach for by name, is in pyproject.toml.
 dead:
     uv run vulture

@@ -114,7 +114,10 @@ async def _store(
         )
     ).scalar_one()
 
-    if body:
+    # Only an answer satisfies the slot. `accept` refuses a body by its declared type in
+    # the fetcher, but only below 300 — so a 404's error page arrives untyped, and one of
+    # them was linked as an article's lead image.
+    if body and response is not None and response.ok:
         await session.execute(
             update(ExtractionImage)
             .where(ExtractionImage.id == slot_id)

@@ -1,6 +1,7 @@
 """A body must stay readable across a retrain, and a dictionary in use must stay put."""
 
 import uuid
+from compression import zstd
 
 import pytest
 from sqlalchemy import select, text
@@ -9,12 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
 from old_news.config import StorageSettings
-from old_news.db import Document, ZstdDictionary, dictionaries
+from old_news.db import DictionaryScope, Document, ZstdDictionary, dictionaries
 from old_news.db import bytes as codec
 from old_news.politeness import ensure
 from old_news.subscriptions.service import add
 
 SETTINGS = StorageSettings(dictionary_min_samples=10, dictionary_sample_limit=30)
+DOCUMENTS = DictionaryScope.FEED_DOCUMENT
 
 
 def _documents(count: int, *, era: str = "first") -> list[bytes]:
@@ -33,7 +35,7 @@ def _documents(count: int, *, era: str = "first") -> list[bytes]:
 async def _store_documents(session: AsyncSession, feed_id: uuid.UUID, bodies: list[bytes]) -> None:
     """Written the way a poll writes them, so whatever dictionary exists gets used."""
     for body in bodies:
-        current = await dictionaries.current_for_feed(session, feed_id)
+        current = await dictionaries.current_for_feed(session, feed_id, DOCUMENTS)
         session.add(
             Document(
                 feed_id=feed_id,
@@ -57,10 +59,10 @@ async def _read_back(session: AsyncSession, feed_id: uuid.UUID) -> list[bytes]:
 
 
 async def _train(feed_id: uuid.UUID) -> ZstdDictionary:
-    samples = await dictionaries.feed_samples(feed_id, SETTINGS.dictionary_sample_limit)
+    samples = await dictionaries.samples(DOCUMENTS, feed_id, SETTINGS.dictionary_sample_limit)
     trained = dictionaries.train(samples, SETTINGS)
     assert trained is not None
-    return await dictionaries.store_for_feed(feed_id, trained)
+    return await dictionaries.store(DOCUMENTS, feed_id, trained)
 
 
 async def _feed() -> uuid.UUID:
@@ -122,9 +124,9 @@ async def test_a_feed_with_a_dictionary_is_not_offered_another(clean: None):
     feed_id = await _feed()
     await _store_documents(feed_id, _documents(10))
 
-    assert await dictionaries.feeds_wanting_a_dictionary(SETTINGS, 5) == [feed_id]
+    assert await dictionaries.wanting_a_dictionary(SETTINGS, DOCUMENTS, 5) == [feed_id]
     await _train(feed_id)
-    assert await dictionaries.feeds_wanting_a_dictionary(SETTINGS, 5) == []
+    assert await dictionaries.wanting_a_dictionary(SETTINGS, DOCUMENTS, 5) == []
 
 
 async def test_a_dictionary_in_use_cannot_be_dropped(clean: None):
@@ -150,6 +152,38 @@ async def test_a_dictionary_needs_exactly_one_scope(clean: None):
         with pytest.raises(IntegrityError):
             async with db.session() as session:
                 session.add(
-                    ZstdDictionary(dict_id=1, body=b"x", sample_count=1, sample_bytes=1, **scopes)
+                    ZstdDictionary(
+                        dict_id=1,
+                        scope=DOCUMENTS,
+                        body=b"x",
+                        sample_count=1,
+                        sample_bytes=1,
+                        **scopes,
+                    )
                 )
                 await session.flush()
+
+
+async def test_one_dict_id_under_two_scopes_still_reads(clean: None):
+    """`dict_id` hashes the dictionary's bytes, and the scope is part of the key, so one
+    feed can hold the same dictionary twice. Resolving a body by `dict_id` alone used to
+    demand exactly one row and raised on every read of anything compressed against it."""
+    feed_id = await _feed()
+    await _store_documents(feed_id, _documents(10))
+    trained = dictionaries.train(
+        await dictionaries.samples(DOCUMENTS, feed_id, SETTINGS.dictionary_sample_limit), SETTINGS
+    )
+    assert trained is not None
+
+    for scope in (DOCUMENTS, DictionaryScope.FEED_ITEM):
+        await dictionaries.store(scope, feed_id, trained)
+
+    body = codec.compress(
+        b"<p>an item as the feed served it</p>",
+        level=SETTINGS.compression_level,
+        dictionary=zstd.ZstdDict(trained.body),
+    )
+    # The loader caches by `dict_id`, so a warm cache would never reach the query.
+    dictionaries._loaded.clear()
+    async with db.session() as session:
+        assert await dictionaries.expand(session, body) == b"<p>an item as the feed served it</p>"
