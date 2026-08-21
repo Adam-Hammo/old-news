@@ -26,6 +26,9 @@ dependencies = [
   # query it matches against, so a rule like `Disallow: /*/*source=` can never fire.
   "protego>=0.6.2",
   "trafilatura>=2.2",
+  # Renditions only — originals are never re-encoded. Declares free-thread safety, so
+  # unlike older lxml it does not re-enable the GIL for the whole worker.
+  "pillow>=12.3",
   "lxml>=7.0.0a3",
   "logfire[httpx,sqlalchemy,system-metrics]>=4.40",
   "uvicorn[standard]>=0.52.1",
@@ -186,6 +189,7 @@ ignore = [
 "feedparser".msg = "feedparser belongs to ingest/parser.py"
 "defusedxml".msg = "defusedxml belongs to subscriptions/opml.py"
 "trafilatura".msg = "trafilatura belongs to extract/"
+"PIL".msg = "pillow belongs to extract/"
 "sqladmin".msg = "sqladmin belongs to api/admin.py"
 "urllib.robotparser".msg = "urllib.robotparser belongs to robots/parse.py"
 

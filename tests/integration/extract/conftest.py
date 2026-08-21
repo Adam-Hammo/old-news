@@ -225,6 +225,15 @@ def stored_feed_text() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
     return store
 
 
+BYSTANDER_HOST = "bystander.example.com"
+
+
+@pytest.fixture
+def bystander_host() -> str:
+    """Named, so a test asserting on an exact set can say which member is not its own."""
+    return BYSTANDER_HOST
+
+
 @db.transactional
 async def _bystander(session: AsyncSession) -> None:
     """A second article, settled, that no test is about.
@@ -240,8 +249,8 @@ async def _bystander(session: AsyncSession) -> None:
     extractor — anything due here would turn up in every sweep assertion in the suite.
     """
     fake = faker()
-    host_id = await ensure(session, "bystander.example.com")
-    feed = Feed(host_id=host_id, **FeedFields.kwargs(url="https://bystander.example.com/feed.xml"))
+    host_id = await ensure(session, BYSTANDER_HOST)
+    feed = Feed(host_id=host_id, **FeedFields.kwargs(url=f"https://{BYSTANDER_HOST}/feed.xml"))
     session.add(feed)
     await session.flush()
     session.add(Subscription(feed_id=feed.id, active=True))
@@ -262,7 +271,10 @@ async def _bystander(session: AsyncSession) -> None:
             supersedes_id=versions[-1].id if versions else None,
             # A distinctive prefix, so a leak is recognisable in the failure and a random
             # sentence can never collide with a phrase some test wrote a rule for.
-            **ItemVersionFields.kwargs(title=f"Bystander: {fake.sentence()}"),
+            **ItemVersionFields.kwargs(
+                title=f"Bystander: {fake.sentence()}",
+                url=f"https://{BYSTANDER_HOST}/{fake.slug()}",
+            ),
         )
         session.add(version)
         await session.flush()

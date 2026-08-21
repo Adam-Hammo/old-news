@@ -5,7 +5,7 @@ import uuid
 
 from old_news import extract, fetch, politeness, robots
 from old_news.config import get_settings
-from old_news.extract import capture, feed, images, service
+from old_news.extract import capture, feed, images, renditions, service
 from old_news.observability import count
 from old_news.tasks.app import app
 from old_news.tasks.ingest import SCHEDULER_PRIORITY
@@ -156,3 +156,27 @@ async def schedule_lead_images(timestamp: int) -> None:
     if due:
         logger.info("deferred %d of %d due images", deferred, len(due))
         count("extract.images.deferred", deferred)
+
+
+@task(app, name="render_image", queue=QUEUE)
+async def render_image(capture_id: str) -> None:
+    await renditions.render_image(uuid.UUID(capture_id), get_settings().extract)
+
+
+@app.periodic(cron="*/5 * * * *", periodic_id="schedule_renditions")
+@app.task(name="schedule_renditions", queue=QUEUE, priority=SCHEDULER_PRIORITY)
+async def schedule_renditions(timestamp: int) -> None:
+    """No network, so no politeness. Biggest captures first, which is where the bytes are."""
+    settings = get_settings()
+    due = await extract.due_renditions(settings.extract, settings.extract.rendition_batch_size)
+
+    deferred = 0
+    for capture_id in due:
+        deferred += await defer_unless_queued(
+            render_image.configure(queueing_lock=f"render:{capture_id}"),
+            capture_id=str(capture_id),
+        )
+
+    if due:
+        logger.info("deferred %d of %d due renditions", deferred, len(due))
+        count("extract.renditions.deferred", deferred)

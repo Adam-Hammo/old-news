@@ -199,14 +199,19 @@ async def test_an_unfetchable_link_is_skipped(clean: None, feed_id, article):
     assert await _due_urls() == []
 
 
-async def test_article_hosts_are_reported_for_the_robots_refresh(clean: None, feed_id, article):
-    """The gap this closes: the feed host is not the article host."""
+async def test_article_hosts_are_reported_for_the_robots_refresh(
+    clean: None, feed_id, article, bystander_host
+):
+    """The gap this closes: the feed host is not the article host.
+
+    Compared as a set rather than with `in`, which is both a weaker claim — it would hold
+    for `news.example.org.attacker.test` — and the shape CodeQL reads as URL sanitisation.
+    """
     await article(feed_id, ("A story", "https://news.example.org/politics/a"))
 
-    hosts = await extract.article_hosts()
+    hosts = set(await extract.article_hosts()) - {bystander_host}
 
-    assert "news.example.org" in hosts
-    assert "loopback.example.com" not in hosts
+    assert hosts == {"news.example.org"}
 
 
 async def test_a_host_whose_robots_txt_was_never_read_is_left_alone(clean: None, feed_id, article):

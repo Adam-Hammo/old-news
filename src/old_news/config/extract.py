@@ -28,6 +28,12 @@ class ExtractSettings(BaseModel):
     )
     image_batch_size: int = 25
 
+    # What a phone renders. Two publishers ship 1.6 MB photographs as 5000px PNG, which is
+    # 99% of those bytes wasted; a 1200px AVIF is what a reader actually sees.
+    rendition_max_width: int = 1200
+    rendition_quality: int = 55
+    rendition_batch_size: int = 25
+
     # Steeper and shorter-lived than a feed's: a 403 on one article is usually policy.
     capture_retry: RetrySettings = Field(
         default_factory=lambda: RetrySettings(

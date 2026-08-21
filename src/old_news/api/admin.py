@@ -22,6 +22,7 @@ from old_news.db import (
     FeedCapture,
     FeedPoll,
     ImageCapture,
+    ImageRendition,
     Item,
     ItemVersion,
     PageCapture,
@@ -241,6 +242,25 @@ class ImageCaptureAdmin(ModelView, model=ImageCapture):
     can_edit = False
 
 
+class ImageRenditionAdmin(ModelView, model=ImageRendition):
+    name = "Image rendition"
+    name_plural = "Image renditions"
+    icon = "fa-solid fa-compress"
+    # `byte_size` beside the capture's is the whole point of the table.
+    column_list = [
+        ImageRendition.spec,
+        ImageRendition.byte_size,
+        ImageRendition.width,
+        ImageRendition.height,
+        ImageRendition.encoder_version,
+        ImageRendition.created_at,
+    ]
+    column_sortable_list = [ImageRendition.byte_size, ImageRendition.created_at]
+    column_default_sort = [(ImageRendition.byte_size, True)]
+    can_create = False
+    can_edit = False
+
+
 class TrainingRuleAdmin(ModelView, model=TrainingRule):
     name = "Training rule"
     name_plural = "Training rules"
@@ -281,6 +301,7 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
         ExtractionAdmin,
         PageExtractionAdmin,
         ImageCaptureAdmin,
+        ImageRenditionAdmin,
         TrainingRuleAdmin,
     )
     for view in views:
