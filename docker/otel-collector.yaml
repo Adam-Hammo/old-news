@@ -1,5 +1,4 @@
 # Feeds Logfire's Hosts and Docker views, and queue-and-host.json.
-# 60s everywhere: the collection interval is the only real lever on ingest volume.
 #
 # The `utilization` metrics are all opt-in — by default the scrapers emit only the
 # raw `time` and `usage` counters, and every percentage panel comes up blank.
@@ -8,7 +7,7 @@ receivers:
   hostmetrics:
     # Without root_path the scrapers report the container's limits, not the host's.
     root_path: /hostfs
-    collection_interval: 60s
+    collection_interval: 300s
     scrapers:
       cpu:
         metrics:
@@ -33,7 +32,7 @@ receivers:
 
   docker_stats:
     endpoint: unix:///var/run/docker.sock
-    collection_interval: 60s
+    collection_interval: 300s
     metrics:
       container.restarts:
         enabled: true
@@ -54,7 +53,7 @@ receivers:
     username: old_news
     password: ${env:POSTGRES_PASSWORD}
     databases: [old_news]
-    collection_interval: 60s
+    collection_interval: 600s
     tls:
       insecure: true
     metrics:

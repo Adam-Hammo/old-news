@@ -45,8 +45,9 @@ def configure(settings: TelemetrySettings, *, environment: str, component: str) 
         scrubbing=logfire.ScrubbingOptions(extra_patterns=SENSITIVE_FIELDS),
     )
 
-    # Log records carry the active trace id, so a line links to the span it happened in.
-    logging.getLogger().addHandler(logfire.LogfireLoggingHandler())
+    handler = logfire.LogfireLoggingHandler()
+    handler.setLevel(logging.WARNING)
+    logging.getLogger().addHandler(handler)
 
     # Pydantic's plugin decides whether to record when a model builds its validator,
     # which for anything imported at startup happens before this runs — so its switch
