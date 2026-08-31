@@ -4,6 +4,8 @@ app_dir: /opt/old-news
 # Loopback only: Tailscale Serve fronts the API on the tailnet and terminates TLS.
 app_bind: 127.0.0.1
 api_host_port: 8000
+# Its own mount, and the app is told the same value so the two cannot drift.
+admin_path: /admin
 web_host_port: 3000
 
 # Public packages, so the box holds no registry credential.

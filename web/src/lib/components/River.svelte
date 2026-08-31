@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { navigating } from '$app/state';
 	import * as api from '#lib/api/client.ts';
 	import type { Entry, River } from '#lib/api/client.ts';
 	import { stamp } from '#lib/format.ts';
@@ -41,6 +42,10 @@
 	function href(id: string): string {
 		return section ? `/item/${id}?section=${encodeURIComponent(section)}` : `/item/${id}`;
 	}
+
+	// The article's own load has to answer before the pane can swap, so without this a tap
+	// on a slow connection looks like a tap that missed.
+	const opening = $derived(navigating.to?.params?.id ?? '');
 </script>
 
 <ol>
@@ -51,6 +56,7 @@
 				class="row"
 				class:read={entry.read || opened.has(entry.id)}
 				class:selected={entry.id === selected}
+				class:opening={entry.id === opening}
 			>
 				<h2>{entry.title}</h2>
 				<p class="by">
@@ -96,9 +102,28 @@
 		max-width: var(--measure);
 	}
 
-	.row.selected {
+	.row.selected,
+	.row.opening {
 		background: var(--paper-read);
 		border-left-color: var(--rule);
+	}
+
+	/* Only while the load is out. It settles into `.selected`, which looks the same
+	   without the pulse, so nothing moves when the article arrives. */
+	.row.opening {
+		animation: waiting 1.1s ease-in-out infinite;
+	}
+
+	@keyframes waiting {
+		50% {
+			border-left-color: var(--hair);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.row.opening {
+			animation: none;
+		}
 	}
 
 	.row.read h2 {
