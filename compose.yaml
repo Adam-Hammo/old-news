@@ -74,7 +74,7 @@ services:
   app:
     <<: *app
     ports:
-      - "${APP_BIND:-127.0.0.1}:${API_HOST_PORT:-8000}:8000"
+      - "${APP_BIND:-127.0.0.1}:${API_HOST_PORT:-16051}:8000"
     healthcheck:
       test:
         [
@@ -89,6 +89,46 @@ services:
       resources:
         limits:
           memory: ${APP_MEMORY_LIMIT:-1g}
+
+  # No database: the client renders in the browser and reaches the API through the same
+  # prefix `tailscale serve` publishes it under. OLD_NEWS_API is what stands in for that
+  # prefix here, where there is no tailnet — unset on the box, so the hook is inert.
+  web:
+    image: ${REGISTRY:-ghcr.io/adam-hammo}/old-news-web:${IMAGE_TAG:-latest}
+    build:
+      context: ./web
+    environment:
+      OLD_NEWS_API: ${OLD_NEWS_API:-http://app:8000}
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${WEB_HOST_PORT:-16052}:3000"
+    # CMD, not CMD-SHELL: the probe is one line of JavaScript with quotes in it, and
+    # nesting it inside a shell string is how that stops being readable.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *logging
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY_LIMIT:-256m}
 
   worker:
     <<: *app

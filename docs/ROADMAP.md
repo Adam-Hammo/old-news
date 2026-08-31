@@ -167,19 +167,25 @@ a step inside the poll**. A poll stays one fast job, a failing extractor doesn't
 retries are independent, and re-extracting an old article runs down exactly the same path as
 extracting a new one.
 
-## Then: Kindle, via Calibre
+## Done elsewhere: Kindle, via Calibre
 
-An output feed of full text and images. A Calibre recipe eats it and sends it to the Kindle.
+An output feed of full text and images, eaten by a Calibre recipe. It works, and it lives outside
+this repo, so nothing here has to carry it.
 
-Small, and it does three jobs. It's the offline answer, so the web UI never has to become a proper
-app with sync. It's somewhere to read before the UI exists. And it's an honest test of extraction —
-bad extraction is obvious on a Kindle page in a way it never is in a query.
+It was meant to do three jobs. It is still the offline answer, which is why the web UI does not have
+to become a proper app with sync. The other two lapsed: the subscription expiring meant the UI could
+not wait behind it, and testing extraction moved onto the article screen, where the same bad
+extraction is just as obvious.
 
-## Then: somewhere to read it
+## Now: somewhere to read it
 
-Own web UI. Phone first, plain server-rendered pages.
+Own web UI, phone first. Scoped in `docs/PHASE-3.md`; what follows is what the roadmap called and
+what survived the scoping.
 
-**No login.** Tailnet-only, so there's nothing to log into and a pile of work vanishes.
+**Plain server-rendered pages** did not survive. It is a SvelteKit client against a JSON API, with
+Python staying the backend and stopping there. The reasoning is in PHASE-3.
+
+**No login** did. Tailnet-only, so there's nothing to log into and a pile of work vanishes.
 
 GReader stays dead. It can't express training, scoring, the river, Voices or labels — five features
 with no vocabulary in the protocol, and most of the point of the app.
@@ -193,9 +199,10 @@ What's in it:
   all, or the river eats the thing that was deliberately kept.
 - **Labels that do things.** Saved, send-to-kindle, download. One labelling idea where some labels
   carry behaviour, instead of a new boolean column every time.
-- Folders or Currents, whichever those turn out to be. Those are about feeds. Labels are about
-  articles.
-- **Thumbs, collected, unused.**
+- Folders or Currents turned out to be one idea, called sections. Those are about feeds. Labels are
+  about articles.
+- **Thumbs, collected, unused.** Overruled for the first cut — training starts fresh, later, and the
+  item row only has to leave room for it.
 
 Authors need sorting out around here. Two features want them — following a person instead of a feed,
 and training on an author — and right now they're 673 messy strings with a third of them blank.
@@ -349,15 +356,14 @@ recorded, which also lets a retired feed look healthy. Small. Worth fixing whene
 
 ## Still undecided
 
+Three came off this list in PHASE-3: what "read" means, what the river sorts on, and whether folders
+and Currents are one idea.
+
 - What to call the extraction output table. Body, byline, images and links in it, so not "text".
 - Lead image only, or every image in the body. Roughly 10x the storage between them, and probably
   unanswerable until the extractor can scope them.
 - Whether feeds that already ship full text get their pages fetched anyway — more traffic and
   storage, but it's where the images and the citation links live.
-- What "read" means in a river with no unread counts.
-- What the river sorts on. Publisher dates are already dodgy, and backfill would flood the top with
-  2019 articles.
-- Whether folders and Currents are one idea or two.
 - Whether a filtered-out article is hidden, or collapsed to a line that expands.
 - Whether the free URL-match dedup is worth doing before relatedness exists, or just shuffles rows
   around for nothing.

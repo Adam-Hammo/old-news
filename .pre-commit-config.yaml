@@ -1,7 +1,7 @@
 # Every hook is pinned. `just lint` runs exactly what CI runs.
 default_install_hook_types: [pre-commit, commit-msg]
 # Generated code
-exclude: ^(src/old_news/db/migrations/|infra/sdks/|tests/pages/)
+exclude: ^(src/old_news/db/migrations/|infra/sdks/|tests/pages/|web/src/lib/api/schema\.d\.ts)
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -38,7 +38,9 @@ repos:
     hooks:
       - id: prettier
         types_or: [markdown, yaml, json]
-        exclude: ^infra/ansible/.*\.j2$
+        # web/ has its own prettier below: this one cannot load the Svelte plugin its
+        # config asks for, and would fail on the json files there for that alone.
+        exclude: ^(infra/ansible/.*\.j2|web/)
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.49.1
@@ -75,6 +77,8 @@ repos:
     rev: v2.4.3
     hooks:
       - id: codespell
+        # A lockfile is integrity hashes and package names, not prose.
+        exclude: ^web/package-lock\.json$
         additional_dependencies: [tomli]
 
   - repo: https://github.com/gitleaks/gitleaks
@@ -89,6 +93,36 @@ repos:
         entry: just --unstable --fmt --check
         language: system
         files: ^justfile$
+        pass_filenames: false
+
+      # web/ is a second toolchain, so it needs its own four: format, lint, types and
+      # a vulnerability check. These mirror ruff-format, ruff, ty and uv-audit above.
+      # All of them are `npm --prefix`, which runs with web/ as the working directory.
+      - id: prettier-web
+        name: prettier (web)
+        entry: npm --prefix web exec -- prettier --write
+        language: system
+        files: ^web/(src|static)/.*\.(svelte|ts|css|html|json)$|^web/[a-z]+\.config\.(ts|js)$
+
+      - id: eslint-web
+        name: eslint (web)
+        entry: npm --prefix web run --silent lint
+        language: system
+        files: ^web/(src/|eslint\.config\.js|package\.json)
+        pass_filenames: false
+
+      - id: svelte-check
+        name: svelte-check (web)
+        entry: npm --prefix web run --silent check
+        language: system
+        files: ^web/(src/|package\.json|tsconfig\.json|vite\.config\.ts)
+        pass_filenames: false
+
+      - id: npm-audit
+        name: npm audit (web)
+        entry: npm --prefix web audit --audit-level=high
+        language: system
+        files: ^web/package-lock\.json$
         pass_filenames: false
 
       - id: ty

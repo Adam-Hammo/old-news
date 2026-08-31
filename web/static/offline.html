@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>old news</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<style>
+			:root {
+				color-scheme: light dark;
+				--paper: #f7f4ee;
+				--ink: #17150f;
+				--ink-soft: #5b5648;
+				--rule: #b3ab98;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--paper: #131210;
+					--ink: #ece6da;
+					--ink-soft: #a09a8b;
+					--rule: #4b463d;
+				}
+			}
+			body {
+				margin: 0;
+				min-height: 100dvh;
+				display: grid;
+				place-content: center;
+				gap: 0.9rem;
+				padding: 2rem;
+				background: var(--paper);
+				color: var(--ink);
+				font-family: ui-serif, Georgia, serif;
+				text-align: center;
+			}
+			h1 {
+				margin: 0;
+				font-size: 1.5rem;
+				font-variant-caps: small-caps;
+				letter-spacing: 0.02em;
+				border-bottom: 1px solid var(--rule);
+				padding-bottom: 0.7rem;
+			}
+			p {
+				margin: 0;
+				max-width: 22rem;
+				color: var(--ink-soft);
+				line-height: 1.55;
+			}
+			button {
+				justify-self: center;
+				margin-top: 0.5rem;
+				padding: 0.5rem 1.4rem;
+				font: inherit;
+				font-size: 0.95rem;
+				color: inherit;
+				background: none;
+				border: 1px solid var(--rule);
+				border-radius: 2px;
+				cursor: pointer;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>old news</h1>
+		<p id="why">The app cannot be reached.</p>
+		<button onclick="location.reload()">Try again</button>
+		<script>
+			// Replaced by the service worker, which is the only thing that can tell the two apart.
+			var reason = '%reason%';
+			document.getElementById('why').textContent =
+				reason === 'tailnet'
+					? 'Nothing answered. Check that Tailscale is connected, then try again.'
+					: 'The box answered but the app did not. It is probably restarting.';
+		</script>
+	</body>
+</html>

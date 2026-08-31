@@ -4,7 +4,7 @@ services:
   db:
     ports:
       # Deliberately not 5432 — this should never collide with a local Postgres.
-      - "127.0.0.1:${PG_HOST_PORT:-55432}:5432"
+      - "127.0.0.1:${PG_HOST_PORT:-16054}:5432"
 
   # uv installs the project editable, so mounting src is enough to get reload.
   app:

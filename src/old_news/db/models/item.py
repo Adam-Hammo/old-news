@@ -155,6 +155,9 @@ class Item(UUIDPrimaryKey, Base):
     __table_args__ = (
         UniqueConstraint("feed_id", "identity_key", name="uq_items_feed_identity"),
         Index("ix_items_feed_first_seen", "feed_id", text("first_seen_at DESC"), "id"),
+        # What the river pages on. The id is in it because CURRENT_TIMESTAMP is the
+        # transaction's, so every item one poll wrote shares a first_seen_at.
+        Index("ix_items_river", text("first_seen_at DESC"), text("id DESC")),
     )
 
     feed_id: Mapped[uuid.UUID] = mapped_column(
@@ -164,9 +167,7 @@ class Item(UUIDPrimaryKey, Base):
     identity_key: Mapped[str] = mapped_column(Text)
     identity_source: Mapped[str] = mapped_column(String(8), server_default="guid")
 
-    first_seen_at: Mapped[datetime.datetime] = mapped_column(
-        Timestamptz, server_default=NOW, index=True
-    )
+    first_seen_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
 
     read: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     read_at: Mapped[datetime.datetime | None] = mapped_column(Timestamptz, nullable=True)

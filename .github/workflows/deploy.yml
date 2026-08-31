@@ -72,9 +72,9 @@ jobs:
 
       - run: just deploy "$IMAGE_TAG"
 
-      - name: Verify the API answers over the tailnet
+      - name: Verify both halves answer over the tailnet
         run: |
-          curl -fsS --max-time 10 --resolve "${BOX_FQDN}:443:${ANSIBLE_HOST}" \
-            "https://${BOX_FQDN}/health/ready"
-          curl -fsS --max-time 10 --resolve "${BOX_FQDN}:443:${ANSIBLE_HOST}" \
-            "https://${BOX_FQDN}/health/queue"
+          for path in /api/health/ready /api/health/queue /; do
+            curl -fsS --max-time 10 --resolve "${BOX_FQDN}:443:${ANSIBLE_HOST}" \
+              "https://${BOX_FQDN}${path}" >/dev/null
+          done

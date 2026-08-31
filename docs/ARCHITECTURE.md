@@ -24,6 +24,7 @@ src/old_news/
 
   # what the reader wants
   training/          rules about what is worth keeping
+  ui/                what the reading UI asks for: a river, an article, sections
 
   # edges
   api/               Litestar app, routes, admin mount
@@ -36,6 +37,23 @@ through a parent is harder to move than one that doesn't.
 `tests/unit/test_architecture.py` asserts this list against the filesystem, so growing a new
 top-level package fails in the diff that grows it. That is the point: sprawl is cheapest to argue
 about at the moment it appears.
+
+### The tree governs `src/old_news/` and nothing else
+
+The reading UI is a SvelteKit client in `web/` — a sibling of `src/`, not a package under it
+(`docs/PHASE-3.md`). It is a different language with different conventions, and the rules in
+CLAUDE.md — one library per package, one transaction per function, services holding the logic — are
+about Python and do not translate. Making `web/` a carve-out inside them would weaken rules that
+currently have no exceptions.
+
+The contract between the two is generated rather than written: Litestar publishes OpenAPI at
+`/schema`, and the client's types come from it, so the two halves cannot drift quietly. `api/`
+remains the only thing `web/` talks to, which is the same direction rule as everywhere else.
+
+`ui/` is the Python half of that pairing and stays inside the tree: it is a service like any other,
+holding the queries the two screens are made of. It renders nothing. The split is what stops the
+river's ordering, its keyset cursor and what counts as opened from being written again in TypeScript
+where no test would reach them.
 
 ### There is no ports/adapters layer, deliberately
 

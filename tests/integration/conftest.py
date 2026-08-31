@@ -1,18 +1,34 @@
+import datetime
+import hashlib
 import subprocess
-from collections.abc import AsyncIterator, Iterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from litestar.testing import AsyncTestClient
 from procrastinate import PsycopgConnector
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 from testcontainers.community.postgres import PostgresContainer
 
 from old_news import db, fetch
 from old_news.api.app import create_app
 from old_news.config import DatabaseSettings, Settings
+from old_news.db import Document, FeedCapture, FeedExtraction, Item, ItemVersion
+from old_news.db import bytes as codec
 from old_news.db.migrate import upgrade
+from old_news.subscriptions.service import add, unsubscribe
 from old_news.tasks import app as procrastinate_app
+
+from factories import (
+    DocumentFields,
+    ExtractionFields,
+    FeedCaptureFields,
+    ItemFields,
+    ItemVersionFields,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 POSTGRES_IMAGE = "old-news-postgres:test"
@@ -130,3 +146,114 @@ async def client(migrated: None, settings: Settings) -> AsyncIterator[AsyncTestC
     """The app builds its own engine, exactly as it does in production."""
     async with AsyncTestClient(app=create_app(settings)) as test_client:
         yield test_client
+
+
+@pytest.fixture
+async def served(client: AsyncTestClient, clean: None) -> Callable[[], Awaitable[AsyncTestClient]]:
+    """The app over an empty archive. Await it once the rows are built, then make requests.
+
+    `AsyncTestClient` runs the app on an event loop of its own, and asyncpg binds a
+    connection to the loop that opened it. So the pool a test filled writing its rows has to
+    be emptied before the app reads them, or the request inherits a connection it cannot
+    drive. Skipping the handover is a 500, not a silent pass.
+    """
+
+    async def handover() -> AsyncTestClient:
+        await db.engine().dispose()
+        return client
+
+    return handover
+
+
+# --- rows for the reading screens, built by hand: a poll is not what they are about ---
+
+
+@pytest.fixture
+def feed() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
+    """A subscribed feed, filed under a category unless told otherwise."""
+
+    async def build(host: str, *, category: str = "", active: bool = True) -> uuid.UUID:
+        made = await add(f"https://{host}/feed.xml", title=host, category=category)
+        assert made is not None
+        if not active:
+            await unsubscribe(made.url)
+        return made.id
+
+    return build
+
+
+@db.transactional
+async def _story(
+    session: AsyncSession,
+    feed_id: uuid.UUID,
+    *,
+    title: str,
+    body: str,
+    first_seen_at: datetime.datetime | None,
+    published_at: datetime.datetime | None,
+    url: str,
+) -> uuid.UUID:
+    document = Document(feed_id=feed_id, **DocumentFields.kwargs())
+    session.add(document)
+    await session.flush()
+
+    item = Item(feed_id=feed_id, **ItemFields.kwargs(guid=url, identity_key=url))
+    if first_seen_at is not None:
+        item.first_seen_at = first_seen_at
+    session.add(item)
+    await session.flush()
+
+    version = ItemVersion(
+        item_id=item.id,
+        document_id=document.id,
+        **ItemVersionFields.kwargs(
+            title=title, url=url, canonical_url=url, published_at=published_at
+        ),
+    )
+    session.add(version)
+    await session.flush()
+
+    if body:
+        capture = FeedCapture(
+            item_version_id=version.id,
+            document_id=document.id,
+            body=codec.compress(body.encode(), level=12),
+            **FeedCaptureFields.kwargs(body_hash=hashlib.sha256(body.encode()).digest()),
+        )
+        session.add(capture)
+        await session.flush()
+        session.add(
+            FeedExtraction(
+                item_version_id=version.id,
+                feed_capture_id=capture.id,
+                **ExtractionFields.kwargs(body=body),
+            )
+        )
+        await session.flush()
+
+    return item.id
+
+
+@pytest.fixture
+def story() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
+    """One item with a head version, and a feed reading when given a body."""
+    counter = iter(range(1_000))
+
+    async def build(
+        feed_id: uuid.UUID,
+        title: str,
+        *,
+        body: str = "",
+        first_seen_at: datetime.datetime | None = None,
+        published_at: datetime.datetime | None = None,
+    ) -> uuid.UUID:
+        return await _story(
+            feed_id,
+            title=title,
+            body=body,
+            first_seen_at=first_seen_at,
+            published_at=published_at,
+            url=f"https://loopback.example.com/{next(counter)}",
+        )
+
+    return build

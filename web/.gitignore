@@ -1,0 +1,5 @@
+node_modules
+/build
+/.svelte-kit
+/openapi.json
+__screenshots__

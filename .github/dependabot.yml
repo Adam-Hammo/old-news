@@ -22,8 +22,18 @@ updates:
       actions:
         patterns: ["*"]
 
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      web:
+        patterns: ["*"]
+
   - package-ecosystem: docker
-    directories: ["/", "/docker"]
+    directories: ["/", "/docker", "/web"]
     schedule:
       interval: monthly
     cooldown:
