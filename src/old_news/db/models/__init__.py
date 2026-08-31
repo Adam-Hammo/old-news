@@ -16,7 +16,7 @@ from old_news.db.models.feed import Feed
 from old_news.db.models.feed_capture import FeedCapture
 from old_news.db.models.host import Host
 from old_news.db.models.image import ImageCapture
-from old_news.db.models.item import Item, ItemVersion
+from old_news.db.models.item import Item, ItemVersion, item_reading
 from old_news.db.models.page import CAPTURE_POLICY, CaptureOutcome, PageCapture
 from old_news.db.models.poll import FeedPoll, PollOutcome
 from old_news.db.models.robots import RobotsPolicy
@@ -51,4 +51,5 @@ __all__ = [
     "Subscription",
     "TrainingRule",
     "ZstdDictionary",
+    "item_reading",
 ]

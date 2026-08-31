@@ -45,7 +45,7 @@ async def test_opening_an_article_records_it(served, feed, story):
     assert opened.status_code == 201
     assert opened.json()["read_at"]
     assert article.json()["read"] is True
-    assert article.json()["body"] == "Text."
+    assert article.json()["feed_body"] == "Text."
 
 
 async def test_a_limit_past_the_ceiling_is_refused(client: AsyncTestClient):

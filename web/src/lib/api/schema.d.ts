@@ -136,7 +136,9 @@ export interface components {
 			outlet: string;
 			author: string;
 			deck: string;
-			body: string;
+			feed_body: string;
+			page_body: string;
+			reading: string;
 			published_at: string | null;
 			/** Format: date-time */
 			first_seen_at: string;

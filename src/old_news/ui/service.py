@@ -8,7 +8,7 @@ from sqlalchemy import RowMapping, and_, func, literal, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, training
-from old_news.db import Extraction, ExtractionSource, Feed, Item, ItemVersion, Subscription
+from old_news.db import ExtractionSource, Feed, Item, ItemVersion, Subscription, item_reading
 from old_news.ui import cursor
 from old_news.ui.deck import deck
 
@@ -50,7 +50,7 @@ class River:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Article:
-    """One item, with the fullest reading held for it."""
+    """One item, with every reading held for it."""
 
     id: uuid.UUID
     title: str
@@ -58,7 +58,10 @@ class Article:
     outlet: str
     author: str
     deck: str
-    body: str
+    # Both readings and which of them opens, so a reader can cross to the other.
+    feed_body: str
+    page_body: str
+    reading: str
     published_at: datetime.datetime | None
     first_seen_at: datetime.datetime
     read: bool
@@ -67,23 +70,6 @@ class Article:
     # The kicker. A row cannot carry one — a section is a set of feeds and a row would be
     # claiming a topic the model does not hold — but one article has exactly one feed.
     section: str
-
-
-def _feed_reading():
-    """What the feed carried for this item — `Item.reading_body` pinned to one source."""
-    versions = select(ItemVersion.id).where(ItemVersion.item_id == Item.id).correlate(Item)
-    return func.coalesce(
-        select(Extraction.body)
-        .where(
-            Extraction.item_version_id.in_(versions),
-            Extraction.source == ExtractionSource.FEED,
-        )
-        .order_by(func.length(Extraction.body).desc())
-        .correlate(Item)
-        .limit(1)
-        .scalar_subquery(),
-        "",
-    )
 
 
 def _last_poll():
@@ -173,7 +159,8 @@ async def article(session: AsyncSession, item_id: uuid.UUID) -> Article | None:
     query = _reading(
         *_shared(),
         Item.reading_body.label("body"),
-        func.left(_feed_reading(), DECK_SOURCE_CHARS).label("teaser"),
+        item_reading(ExtractionSource.FEED).label("feed"),
+        item_reading(ExtractionSource.PAGE).label("page"),
         ItemVersion.comments_url.label("comments_url"),
         Item.version_count.label("versions"),
         func.coalesce(Subscription.category, "").label("section"),
@@ -184,7 +171,14 @@ async def article(session: AsyncSession, item_id: uuid.UUID) -> Article | None:
         return None
 
     fields = dict(row)
-    return Article(deck=_standfirst(fields.pop("teaser"), fields["body"]), **fields)
+    feed, page, body = fields.pop("feed"), fields.pop("page"), fields.pop("body")
+    return Article(
+        deck=_standfirst(feed, body),
+        feed_body=feed,
+        page_body=page,
+        reading=ExtractionSource.FEED if body == feed else ExtractionSource.PAGE,
+        **fields,
+    )
 
 
 def _standfirst(teaser: str, body: str) -> str:
@@ -192,7 +186,7 @@ def _standfirst(teaser: str, body: str) -> str:
     opening = teaser.strip()[:STANDFIRST_MATCH]
     if not opening or body.strip().startswith(opening):
         return ""
-    return deck(teaser, DECK_CHARS)
+    return deck(teaser[:DECK_SOURCE_CHARS], DECK_CHARS)
 
 
 @db.transactional

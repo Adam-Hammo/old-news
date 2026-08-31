@@ -1,6 +1,6 @@
 [project]
 name = "old-news"
-version = "0.1.0"
+version = "1.0.0"
 description = "Single-user feed reader: cross-source dedup, personalised ranking, permanent searchable archive. Postgres does everything."
 readme = "README.md"
 requires-python = ">=3.14"

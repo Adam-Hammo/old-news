@@ -6,8 +6,21 @@
 	let { article, back }: { article: Article; back: string } = $props();
 
 	let sheet = $state<HTMLDialogElement | undefined>();
+	let picked = $state<string | null>(null);
 
-	const body = $derived(render(article.body));
+	$effect(() => {
+		// A different article opens on its own fuller reading.
+		void article.id;
+		picked = null;
+	});
+
+	const source = $derived(picked ?? article.reading);
+	const text = $derived(source === 'feed' ? article.feed_body : article.page_body);
+	const both = $derived(Boolean(article.feed_body && article.page_body));
+	// The standfirst is cut from the feed's own text, so it would only repeat it.
+	const standfirst = $derived(source === 'feed' ? '' : article.deck);
+
+	const body = $derived(render(text));
 	const dated = $derived(dateline(article.published_at ?? article.first_seen_at));
 	const origin = $derived(new URL(article.url).hostname.replace(/^www\./, ''));
 </script>
@@ -21,18 +34,31 @@
 	<article>
 		{#if article.section}<p class="kicker">{article.section}</p>{/if}
 		<h1>{article.title}</h1>
-		{#if article.deck}<p class="standfirst">{article.deck}</p>{/if}
+		{#if standfirst}<p class="standfirst">{standfirst}</p>{/if}
 
 		<div class="hair"></div>
 		<p class="by">
 			<span class="outlet">{article.outlet}</span>
 			{#if article.author}<span>{article.author}</span>{/if}
 			{#if dated}<span>{dated}</span>{/if}
-			{#if article.versions > 1}<em>v{article.versions} of {article.versions}</em>{/if}
+			{#if article.versions > 1 || both}
+				<span class="meta">
+					{#if article.versions > 1}<em>v{article.versions} of {article.versions}</em
+						>{/if}
+					{#if both}
+						<button aria-pressed={source === 'feed'} onclick={() => (picked = 'feed')}>
+							Feed
+						</button>
+						<button aria-pressed={source === 'page'} onclick={() => (picked = 'page')}>
+							Web
+						</button>
+					{/if}
+				</span>
+			{/if}
 		</p>
 		<div class="thin"></div>
 
-		{#if article.body}
+		{#if text}
 			<!-- Scrubbed in #lib/markdown.ts, the one place publisher html is let through. -->
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 			<div class="body">{@html body}</div>
@@ -102,12 +128,17 @@
 	}
 
 	/* `--measure` is the width of the text, not of the box around it, so the gutter is
-	   added rather than eaten. Left-aligned, not centred: the column sits against the
-	   rule the list draws, and the paper left over reads as a margin. */
+	   added rather than eaten. The back-link shares it so its rule lands on the column's
+	   edges rather than the pane's. */
+	.top,
 	article {
-		flex: 1;
 		width: 100%;
 		max-width: calc(var(--measure) + 2 * var(--gutter));
+		margin-inline: auto;
+	}
+
+	article {
+		flex: 1;
 		padding: 0 var(--gutter) calc(61px + 1.5rem);
 	}
 
@@ -178,9 +209,32 @@
 		content: '·\00a0\00a0';
 	}
 
-	.by em {
+	.by .meta::before {
+		content: none;
+	}
+
+	.meta {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
 		margin-left: auto;
+	}
+
+	.by em {
 		font-style: normal;
+	}
+
+	.meta button {
+		font: inherit;
+		letter-spacing: inherit;
+		text-transform: inherit;
+		color: var(--ink-faint);
+	}
+
+	.meta button[aria-pressed='true'] {
+		color: var(--ink);
+		font-weight: 700;
+		border-bottom: 1px solid var(--underline);
 	}
 
 	.body {
@@ -291,10 +345,12 @@
 		background: var(--hair);
 	}
 
+	/* A modal dialog is laid out against the viewport, but the app is a sheet centred in
+	   it, so the corner the control sits in has to be worked out rather than asked for. */
 	dialog {
-		margin: auto auto 0;
+		margin: auto max(0px, (100vw - var(--sheet)) / 2) 0 auto;
 		width: 100%;
-		max-width: 430px;
+		max-width: var(--column);
 		padding: 0 0 env(safe-area-inset-bottom);
 		color: var(--ink);
 		background: var(--paper);

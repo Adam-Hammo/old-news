@@ -30,7 +30,7 @@ async def river(
         raise ClientException(detail="unreadable cursor") from exc
 
 
-@get("/items/{item_id:uuid}", summary="One article, with the fullest text held for it.")
+@get("/items/{item_id:uuid}", summary="One article, with every reading held for it.")
 async def article(item_id: FromPath[uuid.UUID]) -> ui.Article:
     found = await ui.article(item_id)
     if found is None:

@@ -21,7 +21,11 @@ async def test_an_article_carries_the_text_and_the_outlet(clean: None, feed, sto
     found = await ui.article(item_id)
 
     assert found is not None
-    assert (found.title, found.body, found.outlet) == ("A headline", LONGER, "outlet.example.com")
+    assert (found.title, found.feed_body, found.outlet) == (
+        "A headline",
+        LONGER,
+        "outlet.example.com",
+    )
 
 
 async def test_an_article_from_a_dropped_subscription_still_opens(clean: None, feed, story):
@@ -108,7 +112,7 @@ async def test_a_feed_summary_becomes_the_standfirst_once_the_page_gives_the_art
 
     assert found is not None
     assert found.deck == SUMMARY
-    assert found.body.startswith(OPENING)
+    assert found.page_body.startswith(OPENING)
 
 
 async def test_a_teaser_the_article_simply_opens_with_is_not_a_standfirst(clean: None, feed, story):
@@ -128,3 +132,33 @@ async def test_where_the_feed_is_the_whole_article_there_is_no_standfirst(clean:
     found = await ui.article(item_id)
 
     assert found is not None and found.deck == ""
+
+
+async def test_both_readings_are_held_and_the_fuller_one_opens(clean: None, feed, story):
+    whole = f"{OPENING} {LONGER}"
+    item_id = await story(await feed("outlet.example.com"), "A headline", body=SUMMARY)
+    await _page_reading(item_id, whole)
+
+    found = await ui.article(item_id)
+
+    assert found is not None
+    assert (found.feed_body, found.page_body, found.reading) == (SUMMARY, whole, "page")
+
+
+async def test_the_feed_opens_where_it_carries_more_than_the_page_gave(clean: None, feed, story):
+    """Length picks what opens, so a stub of a page reading does not take the screen."""
+    item_id = await story(await feed("outlet.example.com"), "A headline", body=LONGER)
+    await _page_reading(item_id, "A stub.")
+
+    found = await ui.article(item_id)
+
+    assert found is not None
+    assert (found.feed_body, found.page_body, found.reading) == (LONGER, "A stub.", "feed")
+
+
+async def test_a_reading_nobody_holds_is_empty_rather_than_absent(clean: None, feed, story):
+    item_id = await story(await feed("outlet.example.com"), "A headline", body=LONGER)
+
+    found = await ui.article(item_id)
+
+    assert found is not None and found.page_body == ""

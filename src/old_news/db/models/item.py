@@ -77,6 +77,14 @@ def _fullest_reading(scope, correlate):
     )
 
 
+def item_reading(source: ExtractionSource):
+    """The fullest current reading of one source, across every version of an item."""
+    versions = select(ItemVersion.id).where(ItemVersion.item_id == Item.id).correlate(Item)
+    return _fullest_reading(
+        lambda reading: and_(reading.item_version_id.in_(versions), reading.source == source), Item
+    )
+
+
 def _current_version_join():
     return and_(Item.id == ItemVersion.item_id, ItemVersion.is_head)
 

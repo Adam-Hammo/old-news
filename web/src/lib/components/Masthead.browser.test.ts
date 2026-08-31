@@ -5,7 +5,11 @@ import Masthead from './Masthead.svelte';
 // Not a count of anything. The roadmap ruled unread counts out; what a reader actually
 // wants to know on arrival is whether the thing is still collecting.
 test('the masthead carries the last successful poll', async () => {
-	const screen = await render(Masthead, { updated: '2026-08-31T09:41:00Z' });
+	// Built from today rather than written down: `stamp` gives a date once the poll is
+	// not today's, so a fixed one turns this into a question about what day it is.
+	const polled = new Date();
+	polled.setHours(9, 41, 0, 0);
+	const screen = await render(Masthead, { updated: polled.toISOString() });
 
 	// Anchored: the masthead answers "is this working", never "how many have you missed".
 	expect(screen.container.querySelector('.poll')!.textContent).toMatch(/^Updated \d{2}\.\d{2}$/);
