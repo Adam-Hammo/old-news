@@ -1,18 +1,53 @@
 ---
-# Tailscale terminates TLS on the MagicDNS name, so the app binds 127.0.0.1 and
-# nothing listens on the tailnet directly. No DNS records, no certificate renewal,
-# and no hostname baked into the app's config.
+# Tailscale terminates TLS on the MagicDNS name, so both processes bind 127.0.0.1 and
+# nothing listens on the tailnet directly. No DNS records, no certificate renewal, and
+# no hostname baked into either app's config.
+#
+# Two mounts, one origin: the reading UI at the root and Litestar under /api. Same
+# origin is what means no CORS and no login, and `funnel` stays off — tailnet-only is
+# what makes no-auth safe.
 
 - name: Read the current serve config
   ansible.builtin.command: tailscale serve status --json
   register: serve_status
   changed_when: false
 
-- name: Publish the API over HTTPS on the tailnet
+# Applying an unchanged config is a no-op, so these run every time and only report a
+# change when the mount was not already there.
+- name: Publish the reading UI at the tailnet root
   ansible.builtin.command:
-    argv: [tailscale, serve, --bg, "{{ api_host_port }}"]
+    argv: [tailscale, serve, --bg, "{{ web_host_port }}"]
+  register: serve_web
+  changed_when: serve_web.rc == 0 and web_target not in serve_status.stdout
   vars:
-    proxy_target: "http://127.0.0.1:{{ api_host_port }}"
-  when: proxy_target not in serve_status.stdout
-  register: serve_applied
-  changed_when: serve_applied.rc == 0
+    web_target: "http://127.0.0.1:{{ web_host_port }}"
+
+- name: Publish the API under /api
+  ansible.builtin.command:
+    argv: [tailscale, serve, --bg, --set-path, /api, "{{ api_host_port }}"]
+  register: serve_api
+  changed_when: serve_api.rc == 0 and api_target not in serve_status.stdout
+  vars:
+    api_target: "http://127.0.0.1:{{ api_host_port }}"
+
+- name: Read this node's MagicDNS name
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+
+# `--set-path` strips the prefix before proxying, so Litestar is never told about it and
+# `/api/health/live/` has to arrive as `/health/live/`. That is an assumption about
+# somebody else's proxy, so it is checked here rather than discovered in a browser.
+- name: Verify both mounts answer over the tailnet
+  ansible.builtin.uri:
+    url: "https://{{ magicdns }}{{ item }}"
+    status_code: 200
+  loop:
+    - /api/health/live/
+    - /
+  vars:
+    magicdns: "{{ (tailscale_status.stdout | from_json).Self.DNSName | regex_replace('\\.$', '') }}"
+  register: mounted
+  retries: 20
+  delay: 3
+  until: mounted.status == 200

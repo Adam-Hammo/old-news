@@ -1,0 +1,9 @@
+{
+	"extends": "$app/tsconfig",
+	"exclude": ["src/service-worker.ts", "build", ".svelte-kit"],
+	"compilerOptions": {
+		"strict": true,
+		"checkJs": true,
+		"sourceMap": true
+	}
+}

@@ -1,11 +1,17 @@
+import os
+
 import pytest
 from sqlalchemy.engine import make_url
 
 from old_news.config import AdminSettings, DatabaseSettings, Settings
 
 
-def test_defaults_need_no_environment():
-    settings = Settings()
+def test_defaults_need_no_environment(monkeypatch: pytest.MonkeyPatch):
+    """Neither .env nor the shell: a developer's local ports must not decide a default."""
+    for name in [key for key in os.environ if key.startswith("OLD_NEWS_")]:
+        monkeypatch.delenv(name)
+
+    settings = Settings(_env_file=None)
 
     assert settings.environment == "local"
     assert settings.api.port == 8000

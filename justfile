@@ -25,6 +25,7 @@ default:
 
 install:
     uv sync --all-extras
+    npm --prefix web ci
     uv run pre-commit install --install-hooks
 
 # --- local running ---
@@ -32,9 +33,10 @@ install:
 up:
     docker compose up -d --build
     @just wait
-    @echo "api      http://localhost:${API_HOST_PORT:-8000}"
-    @echo "schema   http://localhost:${API_HOST_PORT:-8000}/schema"
-    @echo "admin    http://localhost:${API_HOST_PORT:-8000}/admin"
+    @echo "web      http://localhost:${WEB_HOST_PORT:-16052}"
+    @echo "api      http://localhost:${API_HOST_PORT:-16051}"
+    @echo "schema   http://localhost:${API_HOST_PORT:-16051}/schema"
+    @echo "admin    http://localhost:${API_HOST_PORT:-16051}/admin"
 
 down:
     docker compose down
@@ -168,7 +170,34 @@ types:
 audit:
     uv audit --preview-features audit-command
 
-check: lint test
+# `lint` already runs the client's format, lint and type checks as hooks.
+check: lint test web-test
+
+# --- the web client ---
+#
+# Node, not uv: `web/` is a sibling of `src/`, with its own toolchain and its own
+# conventions. See docs/ARCHITECTURE.md.
+
+# Vite on :16053, proxying /api to whatever `just serve` is listening on.
+web-dev:
+    npm --prefix web run dev
+
+web-check:
+    npm --prefix web run check
+
+web-lint:
+    npm --prefix web run lint
+
+# A real browser for the component tests, node for the rest. `--project` picks one.
+web-test *args:
+    npm --prefix web run test -- {{ args }}
+
+web-build:
+    npm --prefix web run build
+
+# Regenerate the client's types from the API's own OpenAPI. Needs the API running.
+web-types:
+    npm --prefix web run api
 
 # --- images ---
 

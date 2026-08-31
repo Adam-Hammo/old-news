@@ -27,6 +27,7 @@ from old_news.db.models import (
     Subscription,
     TrainingRule,
     ZstdDictionary,
+    item_reading,
 )
 from old_news.db.session import configure, dispose, engine, session, transactional
 
@@ -62,6 +63,7 @@ __all__ = [
     "configure",
     "dispose",
     "engine",
+    "item_reading",
     "session",
     "transactional",
 ]

@@ -25,6 +25,11 @@ jobs:
         with:
           enable-cache: true
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/pre-commit
@@ -32,6 +37,9 @@ jobs:
           # Without a fallback, changing one hook rebuilds every environment.
           restore-keys: pre-commit-
       - run: uv sync --all-extras --locked
+      # prettier, eslint and svelte-check run as hooks now, so the client's dependencies
+      # are part of linting.
+      - run: npm --prefix web ci
       - run: just lint
 
   test:
@@ -48,6 +56,27 @@ jobs:
       # Docker is preinstalled on the runner; the integration fixtures build the
       # Postgres image themselves.
       - run: just cov
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - run: npm --prefix web ci
+      # A real browser for the component tests, for the same reason the Python suite
+      # does not mock Postgres.
+      - run: npm --prefix web exec -- playwright install --with-deps chromium
+      - run: just web-test
+      # The contract is generated from the API, so a build is also the check that the
+      # two languages still agree.
+      - run: just web-build
 
   # arm64 under QEMU is slow, so it only runs where it earns its keep: on main
   # (publishing what the box will pull) or on a PR labelled `docker`.
@@ -70,6 +99,9 @@ jobs:
           - name: old-news-backup
             context: ./docker
             file: ./docker/backup.Dockerfile
+          - name: old-news-web
+            context: ./web
+            file: ./web/Dockerfile
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -173,7 +205,7 @@ jobs:
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # infra before deploy: the playbook's variables are this stack's outputs.
-    needs: [lint, test, image, infra]
+    needs: [lint, test, web, image, infra]
     uses: ./.github/workflows/deploy.yml
     with:
       sha: ${{ github.sha }}
