@@ -5,6 +5,7 @@ export type Entry = components['schemas']['Entry'];
 export type River = components['schemas']['River'];
 export type Article = components['schemas']['Article'];
 export type Report = components['schemas']['Report'];
+export type Following = components['schemas']['Following'];
 
 // A prefix, not a host. `tailscale serve --set-path=/api` puts Litestar behind it in the
 // deployment and the dev proxy does the same, so nothing here knows where the API lives.
@@ -49,6 +50,42 @@ export function article(fetcher: Fetcher, id: string): Promise<Article> {
 
 export function sections(fetcher: Fetcher): Promise<string[]> {
 	return get<string[]>(fetcher, '/sections/');
+}
+
+export function following(fetcher: Fetcher): Promise<Following[]> {
+	return get<Following[]>(fetcher, '/subscriptions/');
+}
+
+/** The API's own words on the way out: it knows why, and the screen only has to say it. */
+async function send(path: string, method: string, body?: unknown): Promise<string> {
+	let response: Response;
+	try {
+		response = await fetch(`${BASE}${path}`, {
+			method,
+			signal: AbortSignal.timeout(TIMEOUT),
+			...(body === undefined
+				? {}
+				: { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+		});
+	} catch {
+		return 'The tailnet did not answer.';
+	}
+	if (response.ok) return '';
+	return (
+		((await response.json().catch(() => ({}))) as { detail?: string }).detail ?? 'That failed.'
+	);
+}
+
+export function follow(url: string, category: string): Promise<string> {
+	return send('/subscriptions/', 'POST', { url, category });
+}
+
+export function file(id: string, category: string): Promise<string> {
+	return send(`/subscriptions/${id}/`, 'PATCH', { category });
+}
+
+export function unfollow(id: string): Promise<string> {
+	return send(`/subscriptions/${id}/`, 'DELETE');
 }
 
 export function markOpened(id: string): Promise<Response> {

@@ -1,9 +1,11 @@
 """Managing what we are subscribed to. Operator-triggered, unlike polling."""
 
+import datetime
 import logging
+import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
@@ -17,6 +19,22 @@ logger = logging.getLogger(__name__)
 
 class UnpollableUrl(ValueError):
     """No host, so nothing to poll. `feeds.host_id` is not nullable by design."""
+
+
+class NoFeedFound(ValueError):
+    """Not a feed, and the page it served names none."""
+
+
+@dataclass(frozen=True, slots=True)
+class Following:
+    """One feed we follow, as a screen for managing them needs it."""
+
+    id: uuid.UUID
+    title: str
+    url: str
+    site_url: str
+    category: str
+    last_success_at: datetime.datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,18 +111,82 @@ async def import_opml(data: bytes, fetcher: Fetcher) -> ImportResult:
     return ImportResult(added, present, tuple(failed), tuple(unfetchable))
 
 
+async def _following(session: AsyncSession, where: ColumnElement[bool]) -> Subscription | None:
+    return (
+        await session.execute(
+            select(Subscription).join(Feed, Feed.id == Subscription.feed_id).where(where)
+        )
+    ).scalar_one_or_none()
+
+
 @db.transactional
 async def unsubscribe(session: AsyncSession, url: str) -> bool:
     """Stop polling without touching the archive. The feed and its items remain."""
-    subscription = (
-        await session.execute(
-            select(Subscription).join(Feed, Feed.id == Subscription.feed_id).where(Feed.url == url)
-        )
-    ).scalar_one_or_none()
+    return _drop(await _following(session, Feed.url == url))
+
+
+@db.transactional
+async def drop(session: AsyncSession, feed_id: uuid.UUID) -> bool:
+    """`unsubscribe`, keyed the way a screen with rows on it has to key it."""
+    return _drop(await _following(session, Feed.id == feed_id))
+
+
+def _drop(subscription: Subscription | None) -> bool:
     if subscription is None or not subscription.active:
         return False
     subscription.active = False
     return True
+
+
+@db.transactional
+async def already_following(session: AsyncSession, url: str) -> bool:
+    """Whether this exact address is one we follow. Asked before reaching for the network."""
+    subscription = await _following(session, Feed.url == url)
+    return subscription is not None and subscription.active
+
+
+@db.transactional
+async def refile(session: AsyncSession, feed_id: uuid.UUID, category: str) -> bool:
+    """Move a feed to another section. Empty is unfiled, which the river still carries."""
+    subscription = await _following(session, Feed.id == feed_id)
+    if subscription is None or not subscription.active:
+        return False
+    subscription.category = category
+    return True
+
+
+@db.transactional
+async def listing(session: AsyncSession) -> tuple[Following, ...]:
+    """Everything we follow, filed the way the river slices it."""
+    rows = await session.execute(
+        select(
+            Feed.id,
+            Feed.title,
+            Feed.url,
+            Feed.site_url,
+            Subscription.category,
+            Feed.last_success_at,
+        )
+        .join(Subscription, Subscription.feed_id == Feed.id)
+        .where(Subscription.active.is_(True))
+        .order_by(Subscription.category, Feed.title, Feed.url)
+    )
+    return tuple(Following(*row) for row in rows.all())
+
+
+async def subscribe(url: str, fetcher: Fetcher, *, category: str = "") -> Feed | None:
+    """Follow whatever somebody pasted: a feed, or a page naming one. None if already on."""
+    if not fetchable(url):
+        raise UnpollableUrl(url)
+    # Before the fetch, or pasting a feed twice reports whatever the network said.
+    if await already_following(url):
+        return None
+
+    found = await discover.discover(url, fetcher)
+    if found is None:
+        raise NoFeedFound(url)
+
+    return await add(found, category=category, site_url="" if found == url else url)
 
 
 @db.transactional

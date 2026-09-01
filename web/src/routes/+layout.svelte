@@ -12,7 +12,8 @@
 
 	let pane = $state<HTMLDivElement | undefined>();
 
-	const reading = $derived(page.route.id?.startsWith('/item') ?? false);
+	// Anything that is not the river gets the second pane: an article, or settings.
+	const open = $derived(page.route.id !== '/');
 	const selected = $derived(page.params.id ?? '');
 
 	// A navigation that lands on an article and leaves the river on screen is the fault
@@ -22,7 +23,7 @@
 		requestAnimationFrame(() => {
 			if (!pane) return;
 			const showing = getComputedStyle(pane).visibility === 'visible';
-			if (showing !== reading) {
+			if (showing !== open) {
 				report('mismatch', `route=${page.route.id} pane=${showing}`, page.url.pathname);
 			}
 		});
@@ -32,7 +33,7 @@
 <div class="sheet">
 	<Masthead section={data.section} updated={data.river.updated} />
 
-	<div class="shell" class:reading>
+	<div class="shell" class:open>
 		<div class="list scroller">
 			<SectionStrip sections={data.sections} current={data.section} />
 			<River page={data.river} section={data.section} {selected} />
@@ -78,11 +79,11 @@
 		visibility: hidden;
 	}
 
-	.shell.reading > .list {
+	.shell.open > .list {
 		visibility: hidden;
 	}
 
-	.shell.reading > .reading-pane {
+	.shell.open > .reading-pane {
 		visibility: visible;
 	}
 
@@ -97,17 +98,17 @@
 			--gutter: 34px;
 		}
 
-		.shell.reading {
+		.shell.open {
 			grid-template-columns: var(--column) minmax(0, 1fr);
 		}
 
-		.shell.reading > .list {
+		.shell.open > .list {
 			grid-area: 1 / 1;
 			visibility: visible;
 			border-right: 1px solid var(--rule);
 		}
 
-		.shell.reading > .reading-pane {
+		.shell.open > .reading-pane {
 			grid-area: 1 / 2;
 		}
 	}
