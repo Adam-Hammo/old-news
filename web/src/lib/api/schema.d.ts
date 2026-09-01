@@ -140,6 +140,42 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/subscriptions': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every feed we follow, and how it is filed. */
+		get: operations['SubscriptionsFollowing'];
+		put?: never;
+		/** Follow a feed, or a page that names one. */
+		post: operations['SubscriptionsFollow'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/subscriptions/{feed_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		/** Stop following, keeping the archive. */
+		delete: operations['SubscriptionsFeedIdUnfollow'];
+		options?: never;
+		head?: never;
+		/** File a feed under a section. */
+		patch: operations['SubscriptionsFeedIdRefile'];
+		trace?: never;
+	};
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -177,6 +213,26 @@ export interface components {
 			/** Format: date-time */
 			first_seen_at: string;
 			read: boolean;
+		};
+		/** Filing */
+		Filing: {
+			category: string;
+		};
+		/** Following */
+		Following: {
+			/** Format: uuid */
+			id: string;
+			title: string;
+			url: string;
+			site_url: string;
+			category: string;
+			last_success_at: string | null;
+		};
+		/** NewFeed */
+		NewFeed: {
+			url: string;
+			/** @default  */
+			category: string;
 		};
 		/** Opened */
 		Opened: {
@@ -426,6 +482,146 @@ export interface operations {
 		requestBody: {
 			content: {
 				'application/json': components['schemas']['Report'];
+			};
+		};
+		responses: {
+			/** @description Request fulfilled, nothing follows */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	SubscriptionsFollowing: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Following'][];
+				};
+			};
+		};
+	};
+	SubscriptionsFollow: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['NewFeed'];
+			};
+		};
+		responses: {
+			/** @description Document created, URL follows */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	SubscriptionsFeedIdUnfollow: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				feed_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, nothing follows */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	SubscriptionsFeedIdRefile: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				feed_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['Filing'];
 			};
 		};
 		responses: {

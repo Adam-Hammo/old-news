@@ -150,6 +150,11 @@ naming: building somewhere new for a thing that already has a home. What would j
 something none of those can do &mdash; filing a feed from a phone, or subscribing from a pasted URL
 through `subscriptions/discover.py`, which is the one capability with no interface at all.
 
+**There is one now, and it is only that.** `/settings` follows a pasted address, files a feed under
+a section and drops it, because those are the three that fail the test above. Everything else about
+a feed is still sqladmin's: nothing here reads a poll outcome, an error or a schedule. Dropping is
+the subscription going inactive, so the archive survives what a person changes their mind about.
+
 **No Next on the article.** With no Prev beside it, one mis-tap loses the article with no way back
 to it, which is a poor trade for saving a tap. Back to the river is the whole of the article's
 navigation, and gestures can revisit it later. That makes **restoring the river's scroll position a

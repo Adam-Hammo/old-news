@@ -17,6 +17,7 @@
 			<span class="dated">{dated}</span><span class="poll"
 				>{polled ? `Updated ${polled}` : 'Not polled yet'}</span
 			>
+			<a href="/settings" class="settings">Settings</a>
 		</span>
 	</div>
 	<div class="hair"></div>
@@ -60,6 +61,15 @@
 		.dated::after {
 			content: '\00a0\00a0·\00a0\00a0';
 		}
+	}
+
+	.settings {
+		border-bottom: 1px solid var(--underline);
+	}
+
+	.settings::before {
+		content: '\00a0\00a0·\00a0\00a0';
+		border-bottom: 0;
 	}
 
 	.polled {
