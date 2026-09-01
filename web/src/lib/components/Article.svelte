@@ -17,8 +17,6 @@
 	const source = $derived(picked ?? article.reading);
 	const text = $derived(source === 'feed' ? article.feed_body : article.page_body);
 	const both = $derived(Boolean(article.feed_body && article.page_body));
-	// The standfirst is cut from the feed's own text, so it would only repeat it.
-	const standfirst = $derived(source === 'feed' ? '' : article.deck);
 
 	const body = $derived(render(text));
 	const dated = $derived(dateline(article.published_at ?? article.first_seen_at));
@@ -34,7 +32,6 @@
 	<article>
 		{#if article.section}<p class="kicker">{article.section}</p>{/if}
 		<h1>{article.title}</h1>
-		{#if standfirst}<p class="standfirst">{standfirst}</p>{/if}
 
 		<div class="hair"></div>
 		<p class="by">
@@ -174,15 +171,6 @@
 
 	.kicker + h1 {
 		padding-top: 0;
-	}
-
-	.standfirst {
-		margin: 0;
-		padding-top: 11px;
-		font-size: clamp(16px, 0.9rem + 0.4cqi, 19px);
-		line-height: 1.43;
-		color: var(--ink-soft);
-		text-wrap: pretty;
 	}
 
 	.by {

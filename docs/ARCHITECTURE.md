@@ -91,12 +91,43 @@ hour every time a publisher touched it. `ItemVersion.reading_body` answers the n
 about one version, which is what a history view wants.
 
 `reading_body` is a `hybrid_property`, so a river can select and sort on it without loading every
-body into Python. That puts one policy — which reading is fuller — in the model layer rather than a
-service, which is the exception to the rule below and is why it is written down here. It is one
-ordered subquery over the newest reading per source, longest first with the source breaking a tie,
-rather than a `CASE` comparing two: two spellings of "which one won" is what the column it replaced
-already cost us. `Item.reading_body` raises in Python for the reason `Feed.consecutive_failures`
-does — it only exists as SQL, and answering from a half-loaded row would be a stale answer.
+body into Python. That puts one policy — which reading a reader gets — in the model layer rather
+than a service, which is the exception to the rule below and is why it is written down here. It is
+one ordered subquery over the newest reading per source rather than a `CASE` comparing two: two
+spellings of "which one won" is what the column it replaced already cost us. `Item.reading_body`
+raises in Python for the reason `Feed.consecutive_failures` does — it only exists as SQL, and
+answering from a half-loaded row would be a stale answer.
+
+Length used to decide that on its own, and it was wrong at both ends. A page whose article the
+extractor missed still hands back a few hundred characters of template, which beat a feed item that
+was a comic and a caption. And a feed that syndicates the whole piece but drops the subheadings beat
+the page that kept them, by a margin of about fifty characters in eight thousand. So the ordering
+asks four questions instead: does this carry the whole article — prose, and within a share of the
+longest reading held; failing that, is it prose at all; failing that, which kept the most headings,
+quotes and pictures, since that is all a comic has; and only then, which is longer. The preference
+still breaks a tie. The share and the paragraph floor sit next to it in `db/models/item.py`, because
+they are what "the same article told twice" means rather than a measure of extraction quality — that
+one is `judge()`, and its thresholds are config.
+
+### The extractor writes markdown trafilatura will not
+
+Two things get done to trafilatura on the way past, both in `extract/article.py` and both because
+the alternative is a reading that lies. Quoted blocks are marked before the tree goes in, since
+trafilatura's markdown drops the mark entirely and a quotation then arrives as the author's own next
+paragraph — about one page in ten carries one. And a feed fragment trafilatura returns nothing for
+gets taken at face value instead, because a fragment is the publisher's own payload rather than a
+page to find an article inside: an item that is a picture and a caption has nothing to select and
+everything to keep.
+
+Marking the way in rather than the way out means the tree has to be parsed here, which means
+matching the parser trafilatura loads a string with. Its heading pass retags a node's children and
+raises outright on a comment, so a tree carrying comments crashes an extraction that a string of the
+same bytes survives.
+
+One upstream defect is worth knowing about: lxml's free-threaded build asserts when it releases a
+write lock on a tree it is collecting, on a minority of real pages. It is raised in a destructor and
+reproduces on stock trafilatura with a plain string, so nothing comes out wrong, but it is why
+`pyproject.toml` carries a narrow `filterwarnings` ignore rather than a blanket one.
 
 ## Where services live
 

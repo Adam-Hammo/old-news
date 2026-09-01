@@ -23,3 +23,22 @@ test('a script smuggled through the extractor does not survive', () => {
 test('nor does an event handler hiding on an image', () => {
 	expect(render('<img src=x onerror="window.stolen = 1">')).not.toContain('onerror');
 });
+
+// Two things the extractor now puts in a body that nothing here used to be shown.
+test('a quoted block is set as a quotation, not as the surrounding prose', () => {
+	const html = render('The minister said this:\n\n> We heard you.\n\nNobody believed it.');
+
+	expect(html).toContain('<blockquote>');
+	expect(html).toContain('We heard you.');
+});
+
+// An item that is a comic or a photo has nothing else in it.
+test('a picture survives with the words the publisher hung off it', () => {
+	const html = render(
+		'![Geology Class](https://imgs.example.com/c.png "The joke, in the title.")',
+	);
+
+	expect(html).toContain('src="https://imgs.example.com/c.png"');
+	expect(html).toContain('alt="Geology Class"');
+	expect(html).toContain('title="The joke, in the title."');
+});

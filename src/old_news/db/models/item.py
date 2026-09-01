@@ -37,6 +37,16 @@ if TYPE_CHECKING:
 # A source added to the enum and not to this ranks last instead of by its spelling.
 READING_PREFERENCE = (ExtractionSource.FEED, ExtractionSource.PAGE)
 
+# Within this much of the longest reading is the same article told twice, not a teaser
+# and the article. Two readings of one piece differ by an editor's note, not by half.
+FULL_TEXT_SHARE = 0.8
+
+# Below this a reading is a caption or a scrap of template, and length stops being
+# evidence: 300 characters of footer is not more article than a comic, so
+# `structure_count` decides instead. Characters rather than paragraphs, because plenty
+# of publishers extract as one unbroken block.
+ARTICLE_CHARS = 500
+
 
 def _preferred():
     # Compared against the column rather than passed as a `value=` mapping, which binds
@@ -47,11 +57,43 @@ def _preferred():
     )
 
 
-def _fullest_reading(scope, correlate):
-    """The fuller of the newest reading per source among `scope`, as a scalar subquery.
+def _ranked(reading: Extraction, fullest: int) -> tuple[bool, bool, int, int, int]:
+    """`_fullest_reading`'s ordering for a loaded row. Highest wins, so rank is negated."""
+    substantial = reading.char_count >= ARTICLE_CHARS
+    ranked = (
+        READING_PREFERENCE.index(reading.source)
+        if reading.source in READING_PREFERENCE
+        else len(READING_PREFERENCE)
+    )
+    return (
+        substantial and reading.char_count >= FULL_TEXT_SHARE * fullest,
+        substantial,
+        reading.structure_count,
+        reading.char_count,
+        -ranked,
+    )
 
-    Length decides and `READING_PREFERENCE` breaks a tie, so a full-text feed still beats
-    its own page. Per source, or a superseded extractor's longer output would win.
+
+def _substantial():
+    return Extraction.char_count >= ARTICLE_CHARS
+
+
+def _whole_article():
+    """Enough to be an article, and substantially the most of it rather than its teaser."""
+    # The window runs over the rows this subquery already filtered to, so "most" is most
+    # of what one item holds rather than the longest thing in the archive.
+    return and_(
+        _substantial(),
+        Extraction.char_count >= FULL_TEXT_SHARE * func.max(Extraction.char_count).over(),
+    )
+
+
+def _fullest_reading(scope, correlate):
+    """The best of the newest reading per source among `scope`, as a scalar subquery.
+
+    Whichever carries the whole article, else whichever has enough to be one, else
+    whichever kept the most headings, quotes and pictures — all a comic has.
+    `READING_PREFERENCE` breaks a tie. Per source, or a superseded one would win.
     """
     newer = aliased(Extraction, name="newer_reading")
     # `correlate_except`, or the inner half puts `item_versions` in its own FROM and asks
@@ -69,7 +111,13 @@ def _fullest_reading(scope, correlate):
     return func.coalesce(
         select(Extraction.body)
         .where(scope(Extraction), ~superseded)
-        .order_by(func.length(Extraction.body).desc(), _preferred())
+        .order_by(
+            _whole_article().desc(),
+            _substantial().desc(),
+            Extraction.structure_count.desc(),
+            Extraction.char_count.desc(),
+            _preferred(),
+        )
         .correlate(correlate)
         .limit(1)
         .scalar_subquery(),
@@ -352,9 +400,12 @@ class ItemVersion(UUIDPrimaryKey, Base):
 
     @hybrid_property
     def reading_body(self) -> str:
-        """The text a reader should be shown: whichever reading of this version is fuller."""
-        bodies = [read.body for read in (self.feed_extraction, self.page_extraction) if read]
-        return max(bodies, key=len, default="")
+        """The text a reader should be shown: whichever reading of this version reads best."""
+        readings = [read for read in (self.feed_extraction, self.page_extraction) if read]
+        if not readings:
+            return ""
+        fullest = max(read.char_count for read in readings)
+        return max(readings, key=lambda read: _ranked(read, fullest)).body
 
     @reading_body.inplace.expression
     @classmethod

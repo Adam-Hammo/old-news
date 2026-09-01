@@ -50,7 +50,29 @@ def test_the_preference_reaches_the_sql():
     ranked = ranked[ranked.index("ORDER BY") :]
 
     assert ranked.index("'feed'") < ranked.index("'page'")
-    assert "length(extractions.body) DESC" in ranked
+
+
+def test_the_ordering_asks_its_questions_in_order():
+    """Whole article, then enough to be one, then what was kept, then length. Reordered,
+    a page of boilerplate beats a comic and a heading-stripped feed beats its own page."""
+    ranked = _sql(ItemVersion.reading_body, ItemVersion)
+    ranked = ranked[ranked.index("ORDER BY") :]
+
+    # Each anchor is the tail of one key, so the window's own mention of `char_count`
+    # cannot be mistaken for the key that follows it.
+    keys = [
+        ranked.index(key)
+        for key in ("OVER ()) DESC", ">= 500 DESC", "structure_count DESC", "char_count DESC")
+    ]
+    assert keys == sorted(keys), ranked
+
+
+def test_the_share_is_measured_against_the_readings_being_ranked():
+    """An unpartitioned window over the subquery's own rows. Partitioned or hoisted, the
+    comparison becomes "the longest thing in the archive" and every reading loses it."""
+    ranked = _sql(ItemVersion.reading_body, ItemVersion)
+
+    assert "max(extractions.char_count) OVER ()" in ranked
 
 
 # Everything here answers a question about *one* row using a subquery over the same table
