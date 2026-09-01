@@ -1,15 +1,32 @@
 <script lang="ts">
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import Masthead from '#lib/components/Masthead.svelte';
 	import River from '#lib/components/River.svelte';
 	import SectionStrip from '#lib/components/SectionStrip.svelte';
+	import { report } from '#lib/report.ts';
 	import '../app.css';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
 
+	let pane = $state<HTMLDivElement | undefined>();
+
 	const reading = $derived(page.route.id?.startsWith('/item') ?? false);
 	const selected = $derived(page.params.id ?? '');
+
+	// A navigation that lands on an article and leaves the river on screen is the fault
+	// worth catching. A paint that went stale is invisible from here and reports nothing,
+	// which is the answer too: a wrong screen and no report means it was never the state.
+	afterNavigate(() => {
+		requestAnimationFrame(() => {
+			if (!pane) return;
+			const showing = getComputedStyle(pane).visibility === 'visible';
+			if (showing !== reading) {
+				report('mismatch', `route=${page.route.id} pane=${showing}`, page.url.pathname);
+			}
+		});
+	});
 </script>
 
 <div class="sheet">
@@ -20,7 +37,7 @@
 			<SectionStrip sections={data.sections} current={data.section} />
 			<River page={data.river} section={data.section} {selected} />
 		</div>
-		<div class="reading-pane scroller">
+		<div class="reading-pane scroller" bind:this={pane}>
 			{@render children?.()}
 		</div>
 	</div>
