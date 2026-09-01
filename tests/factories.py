@@ -17,7 +17,7 @@ from typing import Any, cast
 import factory
 
 from old_news.db import CAPTURE_POLICY, CaptureOutcome, ExtractionSource
-from old_news.extract.article import EXTRACTOR, extractor_version
+from old_news.extract.article import EXTRACTOR, Article, extractor_version
 from old_news.ingest.parser import parser_version
 
 
@@ -109,8 +109,18 @@ class ExtractionFields(Fields):
     body = factory.Faker("paragraph", nb_sentences=20)
     links = factory.LazyFunction(list)
 
+    # Measured off the body by the same code the extractor measures with, so a built row
+    # cannot claim a shape its own text does not have — which is what the reading order
+    # now sorts on. `str` for the type checker: inside a lazy attribute a sibling reads as
+    # the declaration, and only at build time is it the string it resolved to.
     @factory.lazy_attribute
     def char_count(self) -> int:
-        # `str` for the type checker: inside a lazy attribute a sibling reads as the
-        # declaration, and only at build time is it the string it resolved to.
-        return len(str(self.body))
+        return Article(body=str(self.body)).char_count
+
+    @factory.lazy_attribute
+    def paragraph_count(self) -> int:
+        return Article(body=str(self.body)).paragraph_count
+
+    @factory.lazy_attribute
+    def structure_count(self) -> int:
+        return Article(body=str(self.body)).structure_count

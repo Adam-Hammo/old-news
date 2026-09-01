@@ -44,6 +44,7 @@ old-news = "old_news.__main__:main"
 [dependency-groups]
 dev = [
   "factory-boy>=3.3.3",
+  "lxml-stubs>=0.5.1",
   "pre-commit>=4.0",
   "pytest-asyncio>=0.25",
   "pytest-cov>=6.0",
@@ -228,6 +229,10 @@ filterwarnings = [
   # Piccolo pings the server when the engine is constructed, which happens on
   # import. Unit tests have no database and don't need one.
   "ignore:.*Unable to fetch server version.*:Warning",
+  # lxml's free-threaded build asserts releasing a write lock it collects a tree under.
+  # Upstream, raised in a destructor, and reproducible on stock trafilatura with a plain
+  # string, so the reading is unaffected — but it fires on some real pages. See docs.
+  "ignore:.*RWLock.unlock_write.*:pytest.PytestUnraisableExceptionWarning",
 ]
 
 [tool.coverage.run]

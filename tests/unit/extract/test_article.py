@@ -66,3 +66,64 @@ def test_nothing_extractable_is_not_an_error():
 
     assert got.body == ""
     assert not judge(got.char_count, got.paragraph_count, ExtractSettings())[0]
+
+
+CONVERSATION_URL = (
+    "https://theconversation.com/who-should-assume-the-risk-when-art-gets-controversial-"
+    "the-artist-or-their-employer-289492"
+)
+XKCD_URL = "https://xkcd.com/3292/"
+QUOTED = "it is much more about managing the different perspectives"
+
+
+def test_a_quoted_block_is_marked_as_one(page):
+    """Trafilatura's markdown drops the mark, so a quotation arrived as the author's
+    own next paragraph and nothing in the reading said otherwise."""
+    got = article.parse(page("conversation-article.html"), CONVERSATION_URL)
+
+    quoted = [line for line in got.body.splitlines() if line.startswith("> ")]
+    assert any(QUOTED in line for line in quoted)
+
+
+def test_a_quotation_reaches_the_reader_only_as_a_quotation(page):
+    got = article.parse(page("conversation-article.html"), CONVERSATION_URL)
+
+    carrying = [line for line in got.body.splitlines() if QUOTED in line]
+    assert carrying and all(line.startswith("> ") for line in carrying)
+
+
+def test_headings_and_quotes_are_what_a_reading_is_measured_to_have_kept(page):
+    got = article.parse(page("conversation-article.html"), CONVERSATION_URL)
+
+    marked = [line for line in got.body.splitlines() if line.startswith(("#", ">"))]
+
+    assert got.structure_count == len(marked) > 1
+
+
+def test_a_feed_item_that_is_only_a_picture_keeps_the_picture(page):
+    """A comic or a photo has no prose to find, and trafilatura returns nothing for it.
+    Dropped, the item reads as a fetch that failed rather than as what was published."""
+    got = article.parse_fragment(page("xkcd-feed-item.html"), XKCD_URL)
+
+    assert got.images and got.images[0].url.endswith("geology_class.png")
+    assert got.structure_count == 1
+
+
+def test_a_salvaged_picture_carries_the_words_hung_off_it(page):
+    got = article.parse_fragment(page("xkcd-feed-item.html"), XKCD_URL)
+
+    assert "AI review bombing" in got.body
+    assert got.body.endswith('")')
+
+
+def test_a_feed_item_with_prose_is_still_read_rather_than_salvaged():
+    """The salvage is a fallback. Anything trafilatura will call an article stays its own."""
+    got = article.parse_fragment(
+        "<div><p>The council voted on Tuesday to defer the rezoning for another year, "
+        "after a submission period that drew nine hundred responses.</p>"
+        "<blockquote><p>We heard you.</p></blockquote></div>",
+        "https://example.com/a",
+    )
+
+    assert got.body.startswith("The council voted")
+    assert "> We heard you." in got.body

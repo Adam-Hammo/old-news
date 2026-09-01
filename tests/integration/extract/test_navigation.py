@@ -240,3 +240,38 @@ async def test_the_feed_wins_a_tie_by_name_not_by_spelling(
         await session.flush()
 
     assert await _version_reading_body(version_id) == "feed reading, tied."
+
+
+async def test_a_page_of_boilerplate_does_not_beat_a_feed_that_carries_the_picture(
+    clean: None, feed_id, article, page, stored_page, stored_feed_text
+):
+    """The comic case. Neither reading is prose, so length stops being evidence: 300
+    characters of template is not more article than the picture that was published."""
+    version_id = (await article(feed_id, ("Geology Class", "https://loopback.example.com/a")))[0]
+    await stored_page(version_id, page("xkcd-page.html").encode())
+    boilerplate = await extract_page(version_id, SETTINGS)
+    assert boilerplate is not None
+    await stored_feed_text(version_id, page("xkcd-feed-item.html"))
+    comic = await extract_feed(version_id, SETTINGS)
+    assert comic is not None
+
+    assert len(comic.body) < len(boilerplate.body)
+    assert await _version_reading_body(version_id) == comic.body
+
+
+async def test_a_feed_that_dropped_the_headings_does_not_beat_the_page_that_kept_them(
+    clean: None, feed_id, article, page, stored_page, stored_feed_text
+):
+    """Both carry the article and the feed is the longer by a hair, which used to settle
+    it. What the reader wants is the one still divided into sections."""
+    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
+    await stored_page(version_id, page("conversation-article.html").encode())
+    from_page = await extract_page(version_id, SETTINGS)
+    assert from_page is not None
+    await stored_feed_text(version_id, page("conversation-feed-item.html"))
+    from_feed = await extract_feed(version_id, SETTINGS)
+    assert from_feed is not None
+
+    assert from_feed.char_count > from_page.char_count
+    assert from_page.structure_count > from_feed.structure_count
+    assert await _version_reading_body(version_id) == from_page.body

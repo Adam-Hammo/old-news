@@ -167,6 +167,7 @@ async def store(session: AsyncSession, found: Pending, parsed: article.Article) 
         "links": [{"url": link.url, "anchor": link.anchor} for link in parsed.links],
         "char_count": parsed.char_count,
         "paragraph_count": parsed.paragraph_count,
+        "structure_count": parsed.structure_count,
         "link_density": parsed.link_density,
     }
     # `insert(Model)` targets that model's own table, which is what each half needs.

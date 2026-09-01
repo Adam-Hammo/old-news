@@ -4,19 +4,12 @@ import dataclasses
 import datetime
 import uuid
 
-from sqlalchemy import RowMapping, and_, func, literal, select, tuple_, update
+from sqlalchemy import and_, func, literal, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, training
 from old_news.db import ExtractionSource, Feed, Item, ItemVersion, Subscription, item_reading
 from old_news.ui import cursor
-from old_news.ui.deck import deck
-
-DECK_CHARS = 220
-# Enough of the teaser to tell "this is the first paragraph" from "this is a summary".
-STANDFIRST_MATCH = 100
-# Generously more than the deck needs, so stripping marks cannot leave it short.
-DECK_SOURCE_CHARS = DECK_CHARS * 4
 
 DEFAULT_LIMIT = 40
 MAX_LIMIT = 100
@@ -31,7 +24,6 @@ class Entry:
     url: str
     outlet: str
     author: str
-    deck: str
     published_at: datetime.datetime | None
     first_seen_at: datetime.datetime
     read: bool
@@ -57,7 +49,6 @@ class Article:
     url: str
     outlet: str
     author: str
-    deck: str
     # Both readings and which of them opens, so a reader can cross to the other.
     feed_body: str
     page_body: str
@@ -116,11 +107,6 @@ def _before(seen: datetime.datetime, item_id: uuid.UUID):
     )
 
 
-def _entry(row: RowMapping) -> Entry:
-    fields = dict(row)
-    return Entry(deck=deck(fields.pop("body"), DECK_CHARS), **fields)
-
-
 @db.transactional
 async def river(
     session: AsyncSession,
@@ -133,7 +119,7 @@ async def river(
     limit = max(1, min(limit, MAX_LIMIT))
 
     query = (
-        _reading(*_shared(), func.left(Item.reading_body, DECK_SOURCE_CHARS).label("body"))
+        _reading(*_shared())
         .where(Subscription.active.is_(True), ~training.blocked(ItemVersion, Item))
         .order_by(Item.first_seen_at.desc(), Item.id.desc())
         .limit(limit + 1)
@@ -144,7 +130,7 @@ async def river(
         query = query.where(_before(*cursor.decode(after)))
 
     rows = (await session.execute(query)).mappings().all()
-    entries = tuple(_entry(row) for row in rows[:limit])
+    entries = tuple(Entry(**row) for row in rows[:limit])
     more = len(rows) > limit
     return River(
         entries=entries,
@@ -173,20 +159,11 @@ async def article(session: AsyncSession, item_id: uuid.UUID) -> Article | None:
     fields = dict(row)
     feed, page, body = fields.pop("feed"), fields.pop("page"), fields.pop("body")
     return Article(
-        deck=_standfirst(feed, body),
         feed_body=feed,
         page_body=page,
         reading=ExtractionSource.FEED if body == feed else ExtractionSource.PAGE,
         **fields,
     )
-
-
-def _standfirst(teaser: str, body: str) -> str:
-    """The feed's teaser, unless the article simply opens with it."""
-    opening = teaser.strip()[:STANDFIRST_MATCH]
-    if not opening or body.strip().startswith(opening):
-        return ""
-    return deck(teaser[:DECK_SOURCE_CHARS], DECK_CHARS)
 
 
 @db.transactional

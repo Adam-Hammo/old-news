@@ -68,6 +68,8 @@ class Extraction(UUIDPrimaryKey, Base):
     # Measurements, not judgements. The thresholds live in config.
     char_count: Mapped[int] = mapped_column(Integer, server_default="0")
     paragraph_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    # Headings, quotes and images. What separates two readings of the same article.
+    structure_count: Mapped[int] = mapped_column(Integer, server_default="0")
     link_density: Mapped[float] = mapped_column(Float, server_default="0")
 
     # RUF012 wants ClassVar, which `ty` then rejects against SQLAlchemy's declaration.

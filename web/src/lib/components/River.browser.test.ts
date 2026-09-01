@@ -15,7 +15,6 @@ function entry(over: Partial<Entry> = {}): Entry {
 		url: 'https://example.com/a',
 		outlet: 'The Guardian',
 		author: 'Priya Raman',
-		deck: 'For three years the residents have been told the smell is seasonal.',
 		published_at: now,
 		first_seen_at: now,
 		read: false,
@@ -31,13 +30,6 @@ test('a row is a headline and a byline', async () => {
 	await expect.element(screen.getByText('A quiet street in Leeds')).toBeVisible();
 	await expect.element(screen.getByText('The Guardian')).toBeVisible();
 	await expect.element(screen.getByText('Priya Raman')).toBeVisible();
-});
-
-// The deck is the article's standfirst. A row is the headline and where it came from.
-test('a row carries no deck, however much of one the API sends', async () => {
-	const screen = await render(River, { page: page([entry()]), section: '', selected: '' });
-
-	await expect.element(screen.getByRole('link')).not.toHaveTextContent(/smell is seasonal/);
 });
 
 // A feed in two sections has no correct one to show, so the outlet does that work.

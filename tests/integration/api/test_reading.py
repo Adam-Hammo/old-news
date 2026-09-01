@@ -13,7 +13,6 @@ async def test_the_river_serialises_a_row_whole(served, feed, story):
     assert response.status_code == 200
     entry = response.json()["entries"][0]
     assert entry["title"] == "A headline"
-    assert entry["deck"] == "Text."
     assert entry["outlet"] == "outlet.example.com"
     assert entry["read"] is False
 

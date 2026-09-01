@@ -11,7 +11,6 @@ function article(over: Partial<Article> = {}): Article {
 		url: 'https://example.com/a',
 		outlet: 'The Guardian',
 		author: 'Priya Raman',
-		deck: 'Eleven employees, no website, and location traces bought from six apps.',
 		feed_body: '',
 		page_body: 'The residents have been **told** the smell is seasonal.',
 		reading: 'page',
@@ -98,10 +97,10 @@ test('the kicker is the section, and absent when the feed is unfiled', async () 
 	expect(loose.container.querySelector('.kicker')).toBeNull();
 });
 
-test('the standfirst sits under the headline, which is where the deck went', async () => {
+test('the headline is followed by the byline, with nothing derived in between', async () => {
 	const screen = await render(ArticleView, { article: article(), back: '/' });
 
-	await expect.element(screen.getByText(/Eleven employees/)).toBeVisible();
+	expect(screen.container.querySelector('h1 + .hair')).not.toBeNull();
 });
 
 test('the version count shows only when there is more than one to choose between', async () => {
@@ -160,18 +159,6 @@ test('one reading leaves nothing to toggle between', async () => {
 	const screen = await render(ArticleView, { article: article(), back: '/' });
 
 	expect(screen.container.querySelector('.meta')).toBeNull();
-});
-
-// The standfirst is cut from the feed's own text, so it would sit above a copy of itself.
-test('the feed reading drops the standfirst', async () => {
-	const screen = await render(ArticleView, {
-		article: article({ feed_body: TEASER }),
-		back: '/',
-	});
-
-	await screen.getByRole('button', { name: 'Feed' }).click();
-
-	expect(screen.container.querySelector('.standfirst')).toBeNull();
 });
 
 test('the version count keeps its corner when the toggle joins it', async () => {

@@ -188,7 +188,6 @@ export interface components {
 			url: string;
 			outlet: string;
 			author: string;
-			deck: string;
 			feed_body: string;
 			page_body: string;
 			reading: string;
@@ -208,7 +207,6 @@ export interface components {
 			url: string;
 			outlet: string;
 			author: string;
-			deck: string;
 			published_at: string | null;
 			/** Format: date-time */
 			first_seen_at: string;

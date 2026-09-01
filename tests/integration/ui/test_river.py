@@ -102,25 +102,12 @@ async def test_a_blocked_item_never_shows(clean: None, feed, story):
     assert await _titles() == ["A real article"]
 
 
-async def test_each_row_carries_its_own_deck(clean: None, feed, story):
-    """One correlated subquery per row, so a lost correlation shows here and nowhere else."""
-    feed_id = await feed("outlet.example.com")
-    await story(feed_id, "First", body="# Alpha\n\nThe alpha body.", first_seen_at=NOW)
-    await story(
-        feed_id, "Second", body="The beta body, which is longer.", first_seen_at=NOW - MINUTE
-    )
-
-    decks = {entry.title: entry.deck for entry in (await ui.river()).entries}
-
-    assert decks == {"First": "Alpha The alpha body.", "Second": "The beta body, which is longer."}
-
-
 async def test_an_item_with_nothing_extracted_yet_still_shows(clean: None, feed, story):
     await story(await feed("outlet.example.com"), "Just arrived")
 
     entry = (await ui.river()).entries[0]
 
-    assert (entry.title, entry.deck, entry.read) == ("Just arrived", "", False)
+    assert (entry.title, entry.read) == ("Just arrived", False)
 
 
 async def test_sections_are_the_categories_of_active_subscriptions(clean: None, feed):

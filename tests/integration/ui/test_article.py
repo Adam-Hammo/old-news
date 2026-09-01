@@ -76,7 +76,7 @@ async def test_the_kicker_is_the_feeds_own_category(clean: None, feed, story):
 
 @db.transactional
 async def _page_reading(session: AsyncSession, item_id: uuid.UUID, body: str) -> None:
-    """A fuller reading of the page behind the teaser, which is what makes a standfirst."""
+    """A reading of the page behind the teaser, so an item holds one of each."""
     version = (
         await session.execute(select(ItemVersion).where(ItemVersion.item_id == item_id))
     ).scalar_one()
@@ -102,36 +102,16 @@ SUMMARY = "Eleven employees, no website, and traces resold by the postcode."
 OPENING = "The portal asks for a postcode and a date range, and then a purchase order."
 
 
-async def test_a_feed_summary_becomes_the_standfirst_once_the_page_gives_the_article(
-    clean: None, feed, story
-):
+async def test_the_feed_teaser_is_kept_whole_rather_than_cut_down(clean: None, feed, story):
+    """Both readings reach the screen whole. Nothing is cut down to a subtitle."""
     item_id = await story(await feed("outlet.example.com"), "A headline", body=SUMMARY)
     await _page_reading(item_id, f"{OPENING} There is no sign-up flow and no pricing page.")
 
     found = await ui.article(item_id)
 
     assert found is not None
-    assert found.deck == SUMMARY
+    assert found.feed_body == SUMMARY
     assert found.page_body.startswith(OPENING)
-
-
-async def test_a_teaser_the_article_simply_opens_with_is_not_a_standfirst(clean: None, feed, story):
-    """A publisher syndicating full text gives a teaser that is the first paragraph, and
-    repeating that above the first paragraph is worse than having none."""
-    item_id = await story(await feed("outlet.example.com"), "A headline", body=OPENING)
-    await _page_reading(item_id, f"{OPENING} There is no sign-up flow and no pricing page.")
-
-    found = await ui.article(item_id)
-
-    assert found is not None and found.deck == ""
-
-
-async def test_where_the_feed_is_the_whole_article_there_is_no_standfirst(clean: None, feed, story):
-    item_id = await story(await feed("outlet.example.com"), "A headline", body="All of it, here.")
-
-    found = await ui.article(item_id)
-
-    assert found is not None and found.deck == ""
 
 
 async def test_both_readings_are_held_and_the_fuller_one_opens(clean: None, feed, story):
