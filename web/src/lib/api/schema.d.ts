@@ -79,7 +79,7 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/** One article, with the fullest text held for it. */
+		/** One article, with every reading held for it. */
 		get: operations['ItemsItemIdArticle'];
 		put?: never;
 		post?: never;
@@ -117,6 +117,23 @@ export interface paths {
 		get: operations['SectionsSections'];
 		put?: never;
 		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/client-reports': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Record something the reading UI could not recover from. */
+		post: operations['ClientReportsClientReport'];
 		delete?: never;
 		options?: never;
 		head?: never;
@@ -165,6 +182,14 @@ export interface components {
 		Opened: {
 			/** Format: date-time */
 			read_at: string;
+		};
+		/** Report */
+		Report: {
+			kind: string;
+			message: string;
+			url: string;
+			display: string;
+			since_visible: number;
 		};
 		/** River */
 		River: {
@@ -387,6 +412,46 @@ export interface operations {
 				};
 				content: {
 					'application/json': string[];
+				};
+			};
+		};
+	};
+	ClientReportsClientReport: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['Report'];
+			};
+		};
+		responses: {
+			/** @description Request fulfilled, nothing follows */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
 				};
 			};
 		};

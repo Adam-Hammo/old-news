@@ -4,6 +4,7 @@ import type { components } from './schema';
 export type Entry = components['schemas']['Entry'];
 export type River = components['schemas']['River'];
 export type Article = components['schemas']['Article'];
+export type Report = components['schemas']['Report'];
 
 // A prefix, not a host. `tailscale serve --set-path=/api` puts Litestar behind it in the
 // deployment and the dev proxy does the same, so nothing here knows where the API lives.
@@ -52,4 +53,15 @@ export function sections(fetcher: Fetcher): Promise<string[]> {
 
 export function markOpened(id: string): Promise<Response> {
 	return fetch(`${BASE}/items/${id}/opened/`, { method: 'POST' });
+}
+
+/** Fire and forget, and `keepalive` so a report outlives the page that made it. A failed
+ *  report must not become a second failure. */
+export function sendReport(report: Report): void {
+	void fetch(`${BASE}/client-reports/`, {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify(report),
+		keepalive: true,
+	}).catch(() => {});
 }
