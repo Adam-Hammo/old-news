@@ -9,6 +9,10 @@ export type Article = components['schemas']['Article'];
 // deployment and the dev proxy does the same, so nothing here knows where the API lives.
 const BASE = '/api';
 
+// A navigation waits on its load, so a request that never answers is a tap that never
+// does anything. Better to give up and say so than to hang on a phone's dead signal.
+export const TIMEOUT = 10_000;
+
 type Fetcher = typeof globalThis.fetch;
 type Query = Record<string, string | number | undefined>;
 
@@ -18,7 +22,16 @@ async function get<T>(fetcher: Fetcher, path: string, query: Query = {}): Promis
 		.map(([key, value]) => [key, String(value)]);
 	const search = pairs.length ? `?${new URLSearchParams(pairs)}` : '';
 
-	const response = await fetcher(`${BASE}${path}${search}`);
+	let response: Response;
+	try {
+		response = await fetcher(`${BASE}${path}${search}`, {
+			signal: AbortSignal.timeout(TIMEOUT),
+		});
+	} catch {
+		// A thrown fetch is the tailnet, not the API: no status, so one is chosen here
+		// rather than left to surface as an unhandled 500.
+		error(504, `${path} did not answer`);
+	}
 	if (!response.ok) {
 		error(response.status, `${path} answered ${response.status}`);
 	}

@@ -1,7 +1,11 @@
 import type { Entry, River as Page } from '#lib/api/client.ts';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import River from './River.svelte';
+
+// Nothing is routing in a component test, so the navigation in flight is stated here.
+const nav = vi.hoisted(() => ({ to: null as { params: { id: string } } | null }));
+vi.mock('$app/state', () => ({ navigating: nav }));
 
 function entry(over: Partial<Entry> = {}): Entry {
 	const now = new Date().toISOString();
@@ -141,4 +145,24 @@ test('the outlet is never the part that gets cut either', async () => {
 	});
 
 	expect(screen.container.querySelector('.by b')!.textContent).toBe('London Review of Books');
+});
+
+// A tap has to wait for the article's own load, and silence for that long reads as a
+// tap that missed.
+test('the row being opened is marked while its load is still out', async () => {
+	const row = entry();
+	nav.to = { params: { id: row.id } };
+
+	const screen = await render(River, { page: page([row]), section: '', selected: '' });
+
+	expect(screen.container.querySelector('.row')!.classList).toContain('opening');
+	nav.to = null;
+});
+
+test('with nothing in flight no row is marked', async () => {
+	nav.to = null;
+
+	const screen = await render(River, { page: page([entry()]), section: '', selected: '' });
+
+	expect(screen.container.querySelector('.row')!.classList).not.toContain('opening');
 });

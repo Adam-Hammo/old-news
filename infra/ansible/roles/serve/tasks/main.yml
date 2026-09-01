@@ -3,9 +3,13 @@
 # nothing listens on the tailnet directly. No DNS records, no certificate renewal, and
 # no hostname baked into either app's config.
 #
-# Two mounts, one origin: the reading UI at the root and Litestar under /api. Same
+# Three mounts, one origin: the reading UI at the root and Litestar under /api. Same
 # origin is what means no CORS and no login, and `funnel` stays off — tailnet-only is
 # what makes no-auth safe.
+#
+# Admin gets its own mount at the path it thinks it is on. sqladmin builds absolute
+# URLs — the login redirect and its statics — and `--set-path` strips the prefix before
+# proxying, so reaching it under /api sends the browser to /admin/login and a 404.
 
 - name: Read the current serve config
   ansible.builtin.command: tailscale serve status --json
@@ -30,6 +34,20 @@
   vars:
     api_target: "http://127.0.0.1:{{ api_host_port }}"
 
+- name: Publish the admin console at the path sqladmin builds its own URLs from
+  ansible.builtin.command:
+    argv:
+      - tailscale
+      - serve
+      - --bg
+      - --set-path
+      - "{{ admin_path }}"
+      - "{{ admin_target }}"
+  register: serve_admin
+  changed_when: serve_admin.rc == 0 and admin_target not in serve_status.stdout
+  vars:
+    admin_target: "http://127.0.0.1:{{ api_host_port }}{{ admin_path }}"
+
 - name: Read this node's MagicDNS name
   ansible.builtin.command: tailscale status --json
   register: tailscale_status
@@ -38,13 +56,15 @@
 # `--set-path` strips the prefix before proxying, so Litestar is never told about it and
 # `/api/health/live/` has to arrive as `/health/live/`. That is an assumption about
 # somebody else's proxy, so it is checked here rather than discovered in a browser.
-- name: Verify both mounts answer over the tailnet
+- name: Verify every mount answers over the tailnet
   ansible.builtin.uri:
     url: "https://{{ magicdns }}{{ item }}"
     status_code: 200
   loop:
     - /api/health/live/
     - /
+    # The login form rather than the console, which redirects to it.
+    - "{{ admin_path }}/login"
   vars:
     magicdns: "{{ (tailscale_status.stdout | from_json).Self.DNSName | regex_replace('\\.$', '') }}"
   register: mounted
