@@ -1,4 +1,4 @@
-"""How stored bodies are compressed. The only module that imports zstd."""
+"""How stored bodies are compressed."""
 
 from compression import zstd
 

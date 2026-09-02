@@ -85,8 +85,8 @@ compose.override.yaml   local dev only; auto-loaded, not used on the server
 Each package owns its own dataclasses. There's no ports/adapters layer: swapping a library means
 rewriting one module, and the dataclass it returns is what keeps callers honest.
 
-Feature packages land as siblings of `fetch/` when they're built — `extract/`, `enrich/`,
-`backfill/`, `library/`. See [CLAUDE.md](CLAUDE.md).
+Feature packages land as siblings of `fetch/` when they're built. `extract/` is; `enrich/`,
+`backfill/` and `library/` are not. See [CLAUDE.md](CLAUDE.md).
 
 ## Picking the admin password
 
