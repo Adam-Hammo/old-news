@@ -44,11 +44,7 @@ async def _item_reading_body(session: AsyncSession, item_id: uuid.UUID) -> str:
     return (await session.execute(select(Item.reading_body).where(Item.id == item_id))).scalar_one()
 
 
-async def test_an_item_with_nothing_extracted_has_no_current_extraction(
-    clean: None, feed_id, article
-):
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
-
+async def test_an_item_with_nothing_extracted_has_no_current_extraction(clean: None, version_id):
     assert await _item_extraction(await _item_id(version_id)) is None
 
 
@@ -73,17 +69,14 @@ async def test_an_edit_does_not_blank_the_article_while_its_page_waits(
     assert current.id == extracted.id
 
 
-async def test_a_version_nothing_has_read_has_no_reading_body(clean: None, feed_id, article):
+async def test_a_version_nothing_has_read_has_no_reading_body(clean: None, version_id):
     """A version scoped question, unlike the item's: nothing has read this one yet."""
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
-
     assert await _version_reading_body(version_id) == ""
 
 
 async def test_the_reading_body_prefers_the_extraction_over_a_teaser(
-    clean: None, feed_id, article, page, stored_page
+    clean: None, version_id, page, stored_page
 ):
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
     await stored_page(version_id, page("guardian-article.html").encode())
     extracted = await extract_page(version_id, SETTINGS)
     assert extracted is not None
@@ -113,11 +106,10 @@ async def test_the_item_reading_body_survives_an_edit(
 
 
 async def test_the_reading_body_prefers_a_fuller_feed(
-    clean: None, feed_id, article, page, stored_page, stored_feed_text
+    clean: None, version_id, page, stored_page, stored_feed_text
 ):
     """A full-text feed beats its own page, so the page reading does not always win. Both
     are readings of one version now, which is the comparison this replaced."""
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
     await stored_page(version_id, page("guardian-article.html").encode())
     extracted = await extract_page(version_id, SETTINGS)
     assert extracted is not None
@@ -150,11 +142,10 @@ async def test_another_article_s_readings_do_not_answer_this_one(
 
 
 async def test_a_superseded_extractor_does_not_win_on_length(
-    clean: None, feed_id, article, stored_feed_text
+    clean: None, version_id, stored_feed_text
 ):
     """Per source, and the newest of each: an older extractor that happened to keep more
     of the page is a stale reading, not a fuller one."""
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
     capture_id = await stored_feed_text(version_id, "<p>x</p>")
 
     async with db.session() as session:
@@ -191,11 +182,10 @@ async def _loaded(session: AsyncSession, version_id: uuid.UUID) -> ItemVersion:
 
 
 async def test_the_python_half_agrees_with_the_sql_half(
-    clean: None, feed_id, article, page, stored_page, stored_feed_text
+    clean: None, version_id, page, stored_page, stored_feed_text
 ):
     """`lazy="raise"` means the only way to find out that a bridge is wrong is to load it,
     and the Python getter is the caller that keeps the two definitions honest."""
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
     await stored_feed_text(version_id, f"<p>{'a teaser. ' * 30}</p>" * 4)
     assert await extract_feed(version_id, SETTINGS) is not None
     await stored_page(version_id, page("guardian-article.html").encode())
@@ -210,11 +200,10 @@ async def test_the_python_half_agrees_with_the_sql_half(
 
 
 async def test_the_feed_wins_a_tie_by_name_not_by_spelling(
-    clean: None, feed_id, article, page, stored_page, stored_feed_text
+    clean: None, version_id, stored_page, stored_feed_text
 ):
     """`READING_PREFERENCE`, not `ORDER BY source`. Two readings of equal length used to be
     ranked by how their discriminators happened to sort."""
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
     capture_id = await stored_feed_text(version_id, "<p>x</p>")
     page_capture_id = await stored_page(version_id, b"<html></html>")
 
@@ -240,14 +229,14 @@ async def test_the_feed_wins_a_tie_by_name_not_by_spelling(
         await session.flush()
 
     assert await _version_reading_body(version_id) == "feed reading, tied."
+    assert (await _loaded(version_id)).reading_body == await _version_reading_body(version_id)
 
 
 async def test_a_page_of_boilerplate_does_not_beat_a_feed_that_carries_the_picture(
-    clean: None, feed_id, article, page, stored_page, stored_feed_text
+    clean: None, version_id, page, stored_page, stored_feed_text
 ):
     """The comic case. Neither reading is prose, so length stops being evidence: 300
     characters of template is not more article than the picture that was published."""
-    version_id = (await article(feed_id, ("Geology Class", "https://loopback.example.com/a")))[0]
     await stored_page(version_id, page("xkcd-page.html").encode())
     boilerplate = await extract_page(version_id, SETTINGS)
     assert boilerplate is not None
@@ -257,14 +246,14 @@ async def test_a_page_of_boilerplate_does_not_beat_a_feed_that_carries_the_pictu
 
     assert len(comic.body) < len(boilerplate.body)
     assert await _version_reading_body(version_id) == comic.body
+    assert (await _loaded(version_id)).reading_body == await _version_reading_body(version_id)
 
 
 async def test_a_feed_that_dropped_the_headings_does_not_beat_the_page_that_kept_them(
-    clean: None, feed_id, article, page, stored_page, stored_feed_text
+    clean: None, version_id, page, stored_page, stored_feed_text
 ):
     """Both carry the article and the feed is the longer by a hair, which used to settle
     it. What the reader wants is the one still divided into sections."""
-    version_id = (await article(feed_id, ("An article", "https://loopback.example.com/a")))[0]
     await stored_page(version_id, page("conversation-article.html").encode())
     from_page = await extract_page(version_id, SETTINGS)
     assert from_page is not None
@@ -275,3 +264,4 @@ async def test_a_feed_that_dropped_the_headings_does_not_beat_the_page_that_kept
     assert from_feed.char_count > from_page.char_count
     assert from_page.structure_count > from_feed.structure_count
     assert await _version_reading_body(version_id) == from_page.body
+    assert (await _loaded(version_id)).reading_body == await _version_reading_body(version_id)

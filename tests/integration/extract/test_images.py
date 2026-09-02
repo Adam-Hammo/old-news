@@ -54,6 +54,7 @@ async def _linked(session: AsyncSession, slot_id: uuid.UUID) -> uuid.UUID | None
 async def test_a_lead_image_is_captured_and_linked(
     clean: None, no_policies: None, image_slots, cdn: str, fetcher, settings
 ):
+    """Kept exactly as served: a downscaled rendition is derived later and cannot be undone."""
     slot_id = (await image_slots((f"{cdn}/lead.png", ImageRole.LEAD)))[0]
 
     stored = await capture_image(slot_id, fetcher, settings)
@@ -63,19 +64,6 @@ async def test_a_lead_image_is_captured_and_linked(
     assert stored.body == PNG
     assert stored.byte_size == len(PNG)
     assert await _linked(slot_id) == stored.id
-
-
-async def test_bytes_are_kept_exactly_as_served(
-    clean: None, no_policies: None, image_slots, cdn: str, fetcher, settings
-):
-    """Rule one. A downscaled rendition is derived later; one that replaced these could
-    never be undone."""
-    slot_id = (await image_slots((f"{cdn}/lead.png", ImageRole.LEAD)))[0]
-
-    stored = await capture_image(slot_id, fetcher, settings)
-
-    assert stored is not None
-    assert stored.body == PNG
 
 
 async def test_one_image_shared_by_two_articles_is_fetched_once(
@@ -169,11 +157,4 @@ async def test_an_error_page_never_satisfies_a_slot(clean: None, image_slots):
     await _error_page(url)
 
     assert await images.link_existing(slot_id, url) is None
-
-    async with db.session() as session:
-        linked = (
-            await session.execute(
-                select(ExtractionImage.image_capture_id).where(ExtractionImage.id == slot_id)
-            )
-        ).scalar_one()
-    assert linked is None
+    assert await _linked(slot_id) is None

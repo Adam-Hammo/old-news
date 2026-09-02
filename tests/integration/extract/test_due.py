@@ -1,7 +1,6 @@
 """What is worth fetching. Every condition in `due_captures`, one at a time."""
 
 import datetime
-import uuid
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from old_news import db, extract
 from old_news.config import ExtractSettings
 from old_news.db import (
-    CAPTURE_POLICY,
     CaptureOutcome,
     Dimension,
     PageCapture,
@@ -21,38 +19,6 @@ from old_news.politeness import ensure
 
 SETTINGS = ExtractSettings()
 MINUTE = datetime.timedelta(minutes=1)
-
-
-@db.transactional
-async def _capture(
-    session: AsyncSession,
-    version_id: uuid.UUID,
-    *,
-    status: int,
-    ago: datetime.timedelta = datetime.timedelta(0),
-    times: int = 1,
-    policy: str = CAPTURE_POLICY,
-    outcome: str | None = None,
-    host: str = "loopback.example.com",
-    url: str = "https://loopback.example.com/a",
-) -> None:
-    host_id = await ensure(session, host)
-    if outcome is None:
-        outcome = CaptureOutcome.OK if 200 <= status < 300 else CaptureOutcome.FAILED
-    for _ in range(times):
-        session.add(
-            PageCapture(
-                item_version_id=version_id,
-                host_id=host_id,
-                url=url,
-                status=status,
-                outcome=outcome,
-                body_hash=b"0" * 32,
-                fetched_at=datetime.datetime.now(datetime.UTC) - ago,
-                capture_policy=policy,
-            )
-        )
-    await session.flush()
 
 
 @db.transactional
@@ -97,19 +63,20 @@ async def test_a_first_version_is_due_immediately(clean: None, feed_id, article)
     assert await _due_urls() == ["https://loopback.example.com/a"]
 
 
-async def test_a_later_version_waits_for_the_settle_window(clean: None, feed_id, article):
+async def test_a_later_version_waits_for_the_settle_window(clean: None, feed_id, article, captures):
+    await _rules_read()
     versions = await article(
         feed_id,
         ("First cut", "https://loopback.example.com/a"),
         ("Rewritten", "https://loopback.example.com/a"),
         aged=False,
     )
-    await _capture(versions[0], status=200)
+    await captures(versions[0], status=200)
 
     assert await _due_urls() == []
 
 
-async def test_a_settled_later_version_is_due(clean: None, feed_id, article):
+async def test_a_settled_later_version_is_due(clean: None, feed_id, article, captures):
     """The 404 Media case: the replacement gets captured too."""
     await _rules_read()
     versions = await article(
@@ -117,7 +84,7 @@ async def test_a_settled_later_version_is_due(clean: None, feed_id, article):
         ("Full article", "https://loopback.example.com/a"),
         ("Truncated", "https://loopback.example.com/a"),
     )
-    await _capture(versions[0], status=200)
+    await captures(versions[0], status=200)
 
     assert await _due_urls() == ["https://loopback.example.com/a"]
 
@@ -134,36 +101,43 @@ async def test_a_superseded_version_is_never_due(clean: None, feed_id, article):
     assert await _due_urls() == ["https://loopback.example.com/new"]
 
 
-async def test_a_captured_version_is_not_due_again(clean: None, feed_id, article):
+async def test_a_captured_version_is_not_due_again(clean: None, feed_id, article, captures):
+    await _rules_read()
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _capture(versions[0], status=200)
+    await captures(versions[0], status=200)
 
     assert await _due_urls() == []
 
 
-async def test_a_failed_capture_waits_before_being_asked_again(clean: None, feed_id, article):
+async def test_a_failed_capture_waits_before_being_asked_again(
+    clean: None, feed_id, article, captures
+):
     """Worth retrying, but not a minute later."""
     await _rules_read()
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _capture(versions[0], status=403)
+    await captures(versions[0], status=403)
 
     assert await _due_urls() == []
 
 
-async def test_a_failed_capture_is_due_once_its_backoff_elapses(clean: None, feed_id, article):
+async def test_a_failed_capture_is_due_once_its_backoff_elapses(
+    clean: None, feed_id, article, captures
+):
     """Backing off is not giving up — a publisher having a bad afternoon gets asked again."""
     await _rules_read()
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _capture(versions[0], status=403, ago=datetime.timedelta(hours=2))
+    await captures(versions[0], status=403, ago=datetime.timedelta(hours=2))
 
     assert await _due_urls() == ["https://loopback.example.com/a"]
 
 
-async def test_a_version_that_keeps_refusing_is_given_up_on(clean: None, feed_id, article):
+async def test_a_version_that_keeps_refusing_is_given_up_on(
+    clean: None, feed_id, article, captures
+):
     """However long we wait."""
     await _rules_read()
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _capture(
+    await captures(
         versions[0],
         status=403,
         times=SETTINGS.capture_retry.max_failures,
@@ -175,6 +149,7 @@ async def test_a_version_that_keeps_refusing_is_given_up_on(clean: None, feed_id
 
 async def test_an_item_over_the_version_cap_is_dropped(clean: None, feed_id, article):
     """The backstop. A live blog runs to forty-three rewrites and must not cost that."""
+    await _rules_read()
     rewrites = tuple(
         (f"Update {n}", "https://loopback.example.com/rolling")
         for n in range(SETTINGS.max_versions_per_item + 1)
@@ -186,6 +161,7 @@ async def test_an_item_over_the_version_cap_is_dropped(clean: None, feed_id, art
 
 async def test_a_blocked_item_is_never_due(clean: None, feed_id, article):
     """With the first version captured unconditionally, this is what caps a live blog."""
+    await _rules_read()
     await article(feed_id, ("Politics live", "https://loopback.example.com/politics/live/a"))
     await _rule(dimension=Dimension.URL_PATTERN, pattern="/live/")
 
@@ -224,11 +200,11 @@ async def test_a_host_whose_robots_txt_was_never_read_is_left_alone(clean: None,
     assert await _due_urls() == ["https://unasked.example.com/a"]
 
 
-async def test_refusals_under_an_older_policy_do_not_count(clean: None, feed_id, article):
+async def test_refusals_under_an_older_policy_do_not_count(clean: None, feed_id, article, captures):
     """Failures against a name that could never answer must not spend the limit."""
     await _rules_read()
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _capture(
+    await captures(
         versions[0],
         status=0,
         times=SETTINGS.capture_retry.max_failures * 2,
@@ -239,11 +215,13 @@ async def test_refusals_under_an_older_policy_do_not_count(clean: None, feed_id,
     assert await _due_urls() == ["https://loopback.example.com/a"]
 
 
-async def test_refusals_under_the_current_policy_still_count(clean: None, feed_id, article):
+async def test_refusals_under_the_current_policy_still_count(
+    clean: None, feed_id, article, captures
+):
     """Otherwise the forgiveness is unbounded and the retry loop comes straight back."""
     await _rules_read()
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _capture(
+    await captures(
         versions[0],
         status=403,
         times=SETTINGS.capture_retry.max_failures,
@@ -254,22 +232,24 @@ async def test_refusals_under_the_current_policy_still_count(clean: None, feed_i
 
 
 async def test_a_version_refused_on_a_shut_host_is_not_selected_again(
-    clean: None, feed_id, article
+    clean: None, feed_id, article, captures
 ):
     """The outage: a decline wrote nothing, so the version stayed due forever."""
     await _rules_read()
     doomed = (await article(feed_id, ("Blocked", "https://loopback.example.com/b")))[0]
-    await _capture(
+    await captures(
         doomed, status=0, outcome=CaptureOutcome.REFUSED, url="https://loopback.example.com/b"
     )
     # Enough real failures elsewhere on the host that it counts as refusing everyone.
     other = (await article(feed_id, ("Also blocked", "https://loopback.example.com/c")))[0]
-    await _capture(other, status=403, times=SETTINGS.host_failure_threshold)
+    await captures(other, status=403, times=SETTINGS.host_failure_threshold)
 
     assert await _due_urls() == []
 
 
-async def test_a_shut_host_does_not_crowd_out_a_healthy_one(clean: None, feed_id, article):
+async def test_a_shut_host_does_not_crowd_out_a_healthy_one(
+    clean: None, feed_id, article, captures
+):
     """The shape of the outage."""
     await _rules_read()
     await _rules_read("healthy.example.com")
@@ -279,14 +259,14 @@ async def test_a_shut_host_does_not_crowd_out_a_healthy_one(clean: None, feed_id
         version_id = (
             await article(feed_id, (f"Blocked {n}", f"https://loopback.example.com/b{n}"))
         )[0]
-        await _capture(
+        await captures(
             version_id,
             status=0,
             outcome=CaptureOutcome.REFUSED,
             url=f"https://loopback.example.com/b{n}",
         )
     shut = (await article(feed_id, ("Refusing", "https://loopback.example.com/x")))[0]
-    await _capture(shut, status=403, times=SETTINGS.host_failure_threshold)
+    await captures(shut, status=403, times=SETTINGS.host_failure_threshold)
 
     await article(feed_id, ("Fine", "https://healthy.example.com/fine"))
 
@@ -294,11 +274,13 @@ async def test_a_shut_host_does_not_crowd_out_a_healthy_one(clean: None, feed_id
     assert await _due_urls(limit=2) == ["https://healthy.example.com/fine"]
 
 
-async def test_a_refusal_we_declined_to_send_does_not_spend_a_try(clean: None, feed_id, article):
+async def test_a_refusal_we_declined_to_send_does_not_spend_a_try(
+    clean: None, feed_id, article, captures
+):
     """Only visits actually sent count against a page's tries."""
     await _rules_read()
     version_id = (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
-    await _capture(
+    await captures(
         version_id,
         status=0,
         outcome=CaptureOutcome.REFUSED,
@@ -308,34 +290,36 @@ async def test_a_refusal_we_declined_to_send_does_not_spend_a_try(clean: None, f
     assert await _due_urls() == ["https://loopback.example.com/a"]
 
 
-async def test_a_page_robots_forbade_is_not_asked_for_again(clean: None, feed_id, article):
+async def test_a_page_robots_forbade_is_not_asked_for_again(
+    clean: None, feed_id, article, captures
+):
     """The same starvation, different trigger."""
     await _rules_read()
     version_id = (await article(feed_id, ("Forbidden", "https://loopback.example.com/a")))[0]
-    await _capture(version_id, status=0, outcome=CaptureOutcome.DISALLOWED)
+    await captures(version_id, status=0, outcome=CaptureOutcome.DISALLOWED)
 
     assert await _due_urls() == []
 
 
 async def test_re_reading_the_rules_makes_a_forbidden_page_a_candidate_again(
-    clean: None, feed_id, article
+    clean: None, feed_id, article, captures
 ):
     """robots.txt is a cache, not a verdict. Dropping the rule brings the page back."""
     await _rules_read()
     version_id = (await article(feed_id, ("Forbidden", "https://loopback.example.com/a")))[0]
-    await _capture(version_id, status=0, outcome=CaptureOutcome.DISALLOWED, ago=MINUTE)
+    await captures(version_id, status=0, outcome=CaptureOutcome.DISALLOWED, ago=MINUTE)
     await _refresh_rules()
 
     assert await _due_urls() == ["https://loopback.example.com/a"]
 
 
-async def test_succeeded_reads_the_outcome_in_sql_too(clean: None, feed_id, article):
+async def test_succeeded_reads_the_outcome_in_sql_too(clean: None, feed_id, article, captures):
     """Nothing writes a 2xx row with a declined outcome today, which is why this row is
     built by hand: `succeeded` and `ix_page_captures_succeeded` are the same predicate, and
     a partial index only serves a query whose predicate implies the index's. The two have
     to move together, so what they mean is worth stating rather than inferring."""
     versions = await article(feed_id, ("A story", "https://loopback.example.com/a"))
-    await _capture(versions[0], status=200, outcome=CaptureOutcome.DISALLOWED)
+    await captures(versions[0], status=200, outcome=CaptureOutcome.DISALLOWED)
 
     async with db.session() as session:
         answered = (

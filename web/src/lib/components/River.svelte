@@ -68,11 +68,11 @@
 </ol>
 
 {#if entries.length === 0}
-	<p class="note">Nothing here yet.</p>
+	<p class="note label">Nothing here yet.</p>
 {:else if failed}
-	<p class="note"><button onclick={more}>Could not load more. Try again.</button></p>
+	<p class="note label"><button onclick={more}>Could not load more. Try again.</button></p>
 {:else if cursor}
-	<div use:whenVisible={more} class="note">{loading ? 'Loading…' : ''}</div>
+	<div use:whenVisible={more} class="note label">{loading ? 'Loading…' : ''}</div>
 {/if}
 
 <style>
@@ -170,10 +170,5 @@
 
 	.note {
 		padding: 1.4rem var(--gutter);
-		color: var(--ink-faint);
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
 	}
 </style>

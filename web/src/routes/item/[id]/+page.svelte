@@ -13,7 +13,7 @@
 		// fact about somebody reading, not about somebody nearly reading.
 		const id = data.article.id;
 		opened.add(id);
-		void markOpened(id);
+		markOpened(id);
 	});
 </script>
 

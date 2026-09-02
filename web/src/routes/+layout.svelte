@@ -66,6 +66,8 @@
 	// worth catching. A paint that went stale is invisible from here and reports nothing,
 	// which is the answer too: a wrong screen and no report means it was never the state.
 	afterNavigate(() => {
+		// The pane outlives the article in it, and nothing else puts the next one at its top.
+		if (pane) pane.scrollTop = 0;
 		requestAnimationFrame(() => {
 			if (!pane) return;
 			const showing = getComputedStyle(pane).visibility === 'visible';
@@ -87,7 +89,7 @@
 			use:pull={{ pulled: (next) => (phase = next), refresh }}
 		>
 			<div class="pulled">
-				<p class="asking">{note}</p>
+				<p class="asking label">{note}</p>
 				<SectionStrip sections={data.sections} current={data.section} />
 				<River page={river} section={data.section} {selected} />
 			</div>
@@ -127,22 +129,19 @@
 		container-type: inline-size;
 	}
 
-	/* Hidden rather than removed: a scroller that stops being displayed comes back at the
-	   top, and getting back to where you were is the article's only navigation. */
 	.reading-pane {
 		visibility: hidden;
+		background: var(--paper-read);
 	}
 
+	/* Hidden rather than removed: a scroller that stops being displayed comes back at the
+	   top, and getting back to where you were is the article's only navigation. */
 	.shell.open > .list {
 		visibility: hidden;
 	}
 
 	.shell.open > .reading-pane {
 		visibility: visible;
-	}
-
-	.reading-pane {
-		background: var(--paper-read);
 	}
 
 	/* What the pull moves. The line above it is outside the scroller's top edge, so it is
@@ -165,11 +164,6 @@
 		margin: 0;
 		padding: 1.2rem var(--gutter);
 		text-align: center;
-		color: var(--ink-faint);
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
 	}
 
 	@media (min-width: 62rem) {

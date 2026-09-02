@@ -98,49 +98,6 @@
 
 	dialog {
 		margin: auto auto 0;
-		width: 100%;
-		max-width: 430px;
-		padding: 0 0 env(safe-area-inset-bottom);
-		color: var(--ink);
-		background: var(--paper);
-		border: 0;
-		border-top: 4px solid var(--rule);
-	}
-
-	dialog::backdrop {
-		background: var(--scrim);
-	}
-
-	.sheethead {
-		margin: 0;
-		padding: 13px var(--gutter) 9px;
-		font-size: 10px;
-		font-weight: 700;
-		letter-spacing: 0.22em;
-		text-transform: uppercase;
-		color: var(--ink-faint);
-	}
-
-	.hair {
-		height: 1px;
-		background: var(--rule);
-	}
-
-	.full {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.full a {
-		display: flex;
-		align-items: center;
-		height: 56px;
-		padding: 0 var(--gutter);
-		border-bottom: 1px solid var(--hair);
-		font-size: 12px;
-		font-weight: 600;
-		letter-spacing: 0.1em;
 	}
 
 	.full a.current {

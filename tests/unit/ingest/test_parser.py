@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from old_news.ingest.parser import parse
+from old_news.ingest.parser import Identity, ParsedItem, parse
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FEED_URL = "https://www.example.com/feed.xml"
@@ -99,3 +99,47 @@ def test_empty_document_is_reported_as_empty():
     parsed = parse(b"", url=FEED_URL)
 
     assert parsed.empty
+
+
+BAD_PORT = b"""<rss version="2.0"><channel><title>T</title>
+<item><title>Story</title><link>http://ok.example.com:99999/story</link></item>
+</channel></rss>"""
+
+
+def test_a_link_with_a_port_no_parser_accepts_does_not_fail_the_document():
+    """One typo'd <link> used to raise out of `parse` and fail every poll of the feed."""
+    parsed = parse(BAD_PORT, url=FEED_URL)
+
+    assert len(parsed.items) == 1
+    assert parsed.items[0].identity.source == "link"
+
+
+WHEN = datetime.datetime(2026, 8, 3, 9, 0, tzinfo=datetime.UTC)
+
+
+def test_a_guid_wins_over_the_link():
+    item = ParsedItem(guid="tag:example.com,2026:1", canonical_url="https://example.com/a")
+
+    assert item.identity == Identity("tag:example.com,2026:1", "guid")
+
+
+def test_no_guid_falls_to_the_canonical_url():
+    item = ParsedItem(canonical_url="https://example.com/a")
+
+    assert item.identity == Identity("https://example.com/a", "link")
+
+
+def test_no_ids_at_all_hash_the_entry_itself():
+    """Without this tier an idless feed re-inserts every item on every poll."""
+    item = ParsedItem(title="Story", summary="A summary", published_at=WHEN)
+
+    assert item.identity.source == "hash"
+    assert (
+        item.identity.key
+        == ParsedItem(title="Story", summary="A summary", published_at=WHEN).identity.key
+    )
+
+
+def test_the_hash_distinguishes_field_boundaries():
+    """'ab' + '' must not hash the same as 'a' + 'b'."""
+    assert ParsedItem(title="ab").identity.key != ParsedItem(title="a", summary="b").identity.key

@@ -1,5 +1,6 @@
 from procrastinate.testing import InMemoryConnector
 
+from old_news.config import WorkerSettings
 from old_news.tasks import app
 from old_news.tasks.maintenance import heartbeat
 
@@ -18,12 +19,7 @@ async def test_deferring_records_a_job():
 
 def test_every_queue_a_task_declares_is_served():
     """A queue no worker listens to leaves its jobs at `todo` forever, quietly."""
-    import old_news.tasks.extract
-    import old_news.tasks.ingest
-    import old_news.tasks.maintenance
-    import old_news.tasks.robots  # noqa: F401
-    from old_news.config import WorkerSettings
-    from old_news.tasks.app import app
+    app.perform_import_paths()
 
     declared = {task.queue for task in app.tasks.values()}
 

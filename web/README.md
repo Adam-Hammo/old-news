@@ -64,9 +64,12 @@ would mean the node process calling back out through `tailscale serve` to reach 
 
 Plain CSS. Every colour, face and rhythm is a custom property in `src/app.css`; components style
 themselves with those and scope the rest, which is what lets the whole design follow the system's
-light and dark setting from one pair of blocks. `src/design.test.ts` keeps it that way. No utility framework: this design is set by type and
-rules, which is the thing utility classes are worst at. Faces are the platform's serif and sans
-today — self-hosting is a drop-in at the two font tokens.
+light and dark setting from one pair of blocks. What more than one screen shares — the measured
+column, the bottom sheet, the small uppercase label — sits there too, rather than being written out
+twice and drifting apart. `src/design.test.ts` keeps it that way. No utility framework: this design
+is set by type and rules, which is the thing utility classes are worst at. The faces are
+self-hosted from `static/fonts`, subset to latin and latin-ext, and declared at the top of the same
+file.
 
 ## The service worker
 

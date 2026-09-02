@@ -39,6 +39,7 @@ def test_parameters_are_read_back_from_the_stored_hash():
         "bcrypt:32768:8:1:c2FsdA==:a2V5",
         "scrypt:abc:8:1:c2FsdA==:a2V5",
         "scrypt:32768:8:1:!!!notbase64!!!:a2V5",
+        "scrypt:3:8:1:c2FsdA==:a2V5",
     ],
 )
 def test_malformed_hashes_are_rejected_rather_than_raising(encoded: str):

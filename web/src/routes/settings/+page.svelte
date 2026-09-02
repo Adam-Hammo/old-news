@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Feeds from '#lib/components/Feeds.svelte';
+	import Pane from '#lib/components/Pane.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -7,53 +8,14 @@
 
 <svelte:head><title>Settings — old news</title></svelte:head>
 
-<div class="pane">
-	<div class="top">
-		<a href="/" class="up">&larr;&nbsp;&nbsp;River</a>
-		<div class="hair"></div>
-	</div>
-
-	<div class="body">
+<Pane back="/">
+	<div class="body measured">
 		<p class="kicker">Settings</p>
 		<Feeds feeds={data.feeds} sections={data.sections} />
 	</div>
-</div>
+</Pane>
 
 <style>
-	.pane {
-		display: flex;
-		flex-direction: column;
-		min-height: 100%;
-		background: var(--paper-read);
-	}
-
-	.top {
-		flex: none;
-		padding: max(env(safe-area-inset-top), 0.75rem) var(--gutter) 0;
-	}
-
-	.up {
-		display: inline-block;
-		padding-bottom: 9px;
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: var(--ink-faint);
-	}
-
-	.hair {
-		height: 1px;
-		background: var(--rule);
-	}
-
-	.top,
-	.body {
-		width: 100%;
-		max-width: calc(var(--measure) + 2 * var(--gutter));
-		margin-inline: auto;
-	}
-
 	.body {
 		flex: 1;
 		padding: 0 var(--gutter) 3rem;

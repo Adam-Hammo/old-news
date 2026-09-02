@@ -102,18 +102,6 @@ SUMMARY = "Eleven employees, no website, and traces resold by the postcode."
 OPENING = "The portal asks for a postcode and a date range, and then a purchase order."
 
 
-async def test_the_feed_teaser_is_kept_whole_rather_than_cut_down(clean: None, feed, story):
-    """Both readings reach the screen whole. Nothing is cut down to a subtitle."""
-    item_id = await story(await feed("outlet.example.com"), "A headline", body=SUMMARY)
-    await _page_reading(item_id, f"{OPENING} There is no sign-up flow and no pricing page.")
-
-    found = await ui.article(item_id)
-
-    assert found is not None
-    assert found.feed_body == SUMMARY
-    assert found.page_body.startswith(OPENING)
-
-
 async def test_both_readings_are_held_and_the_fuller_one_opens(clean: None, feed, story):
     whole = f"{OPENING} {LONGER}"
     item_id = await story(await feed("outlet.example.com"), "A headline", body=SUMMARY)

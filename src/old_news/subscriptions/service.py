@@ -117,18 +117,9 @@ async def _following(session: AsyncSession, where: ColumnElement[bool]) -> Subsc
 
 
 @db.transactional
-async def unsubscribe(session: AsyncSession, url: str) -> bool:
-    """Stop polling without touching the archive. The feed and its items remain."""
-    return _drop(await _following(session, Feed.url == url))
-
-
-@db.transactional
 async def drop(session: AsyncSession, feed_id: uuid.UUID) -> bool:
-    """`unsubscribe`, keyed the way a screen with rows on it has to key it."""
-    return _drop(await _following(session, Feed.id == feed_id))
-
-
-def _drop(subscription: Subscription | None) -> bool:
+    """Stop polling without touching the archive. The feed and its items remain."""
+    subscription = await _following(session, Feed.id == feed_id)
     if subscription is None or not subscription.active:
         return False
     subscription.active = False

@@ -6,9 +6,7 @@ synchronously and every session here is an `AsyncSession`, and primary keys come
 So these produce kwargs and the fixtures that own a transaction do the inserting, in
 dependency order, which is also what keeps one function to one transaction.
 
-Callers override anything they assert on. What the factories are for is the rest — author,
-tags, enclosures, published_at — which every test used to leave at its server default, so
-nothing ever read a row where they were set.
+Callers override anything they assert on; the factories supply the rest.
 """
 
 import datetime
@@ -22,16 +20,14 @@ from old_news.ingest.parser import parser_version
 
 
 class Fields(factory.DictFactory):
-    """Kwargs for one row. `kwargs()` rather than calling the factory, because factory_boy
-    types a build as the factory class and `**` needs a checkable mapping."""
+    """Kwargs for one row. `kwargs()` because the stubs type a build as the factory class,
+    though a `DictFactory` builds a `dict` and `**` needs a checkable mapping."""
 
     class Meta:
         abstract = True
 
     @classmethod
     def kwargs(cls, **overrides: Any) -> dict[str, Any]:
-        # `cast` because the stubs type a build as the factory class. `DictFactory` builds
-        # `dict`, which is the whole reason these are declared as one.
         return cast("dict[str, Any]", cls(**overrides))
 
 
@@ -109,18 +105,8 @@ class ExtractionFields(Fields):
     body = factory.Faker("paragraph", nb_sentences=20)
     links = factory.LazyFunction(list)
 
-    # Measured off the body by the same code the extractor measures with, so a built row
-    # cannot claim a shape its own text does not have — which is what the reading order
-    # now sorts on. `str` for the type checker: inside a lazy attribute a sibling reads as
-    # the declaration, and only at build time is it the string it resolved to.
-    @factory.lazy_attribute
-    def char_count(self) -> int:
-        return Article(body=str(self.body)).char_count
-
-    @factory.lazy_attribute
-    def paragraph_count(self) -> int:
-        return Article(body=str(self.body)).paragraph_count
-
-    @factory.lazy_attribute
-    def structure_count(self) -> int:
-        return Article(body=str(self.body)).structure_count
+    # Measured by the same code the extractor measures with, so a built row cannot claim
+    # a shape its own text does not have — which is what the reading order sorts on.
+    char_count = factory.LazyAttribute(lambda row: Article(body=str(row.body)).char_count)
+    paragraph_count = factory.LazyAttribute(lambda row: Article(body=str(row.body)).paragraph_count)
+    structure_count = factory.LazyAttribute(lambda row: Article(body=str(row.body)).structure_count)

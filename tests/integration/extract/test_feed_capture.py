@@ -14,7 +14,6 @@ from old_news.db import bytes as codec
 from old_news.extract.feed import capture_feed
 from old_news.extract.service import extract_feed
 from old_news.ingest import parser, store
-from old_news.subscriptions.service import add
 
 SETTINGS = Settings(_env_file=None)
 EXTRACT = ExtractSettings()
@@ -95,15 +94,8 @@ async def _version_of(session: AsyncSession, guid: str) -> uuid.UUID:
     ).scalar_one()
 
 
-async def _feed() -> uuid.UUID:
-    feed = await add("https://loopback.example.com/feed.xml")
-    assert feed is not None
-    return feed.id
-
-
-async def test_content_bearing_text_round_trips(clean: None):
+async def test_content_bearing_text_round_trips(clean: None, feed_id):
     """Ingest, carve, expand: what the feed said comes back byte for byte."""
-    feed_id = await _feed()
     document_id = await _ingest(feed_id, _document(_entry("a", content=ARTICLE)))
 
     assert await capture_feed(document_id, SETTINGS) == 1
@@ -113,10 +105,9 @@ async def test_content_bearing_text_round_trips(clean: None):
     assert capture.parser_version == parser.parser_version()
 
 
-async def test_a_summary_only_version_gets_a_capture_and_a_reading(clean: None):
+async def test_a_summary_only_version_gets_a_capture_and_a_reading(clean: None, feed_id):
     """The hole this closes: a feed that carries only a summary used to get no extraction
     at all, because the sweep asked for `content` and only `content`."""
-    feed_id = await _feed()
     document_id = await _ingest(feed_id, _document(_entry("a", summary=ARTICLE)))
     await capture_feed(document_id, SETTINGS)
     version_id = await _version_of("a")
@@ -128,9 +119,8 @@ async def test_a_summary_only_version_gets_a_capture_and_a_reading(clean: None):
     assert PARAGRAPH.strip() in reading.body
 
 
-async def test_a_version_the_feed_said_nothing_about_still_gets_a_row(clean: None):
+async def test_a_version_the_feed_said_nothing_about_still_gets_a_row(clean: None, feed_id):
     """Or the sweep offers this document again every two minutes for as long as we hold it."""
-    feed_id = await _feed()
     document_id = await _ingest(feed_id, _document(_entry("a")))
 
     await capture_feed(document_id, SETTINGS)
@@ -141,8 +131,7 @@ async def test_a_version_the_feed_said_nothing_about_still_gets_a_row(clean: Non
     assert await extract.due_feed_extractions(50) == []
 
 
-async def test_the_sweep_offers_a_document_once(clean: None):
-    feed_id = await _feed()
+async def test_the_sweep_offers_a_document_once(clean: None, feed_id):
     document_id = await _ingest(feed_id, _document(_entry("a", content="<p>Words.</p>")))
 
     assert await extract.due_feed_captures(50) == [document_id]
@@ -150,8 +139,7 @@ async def test_the_sweep_offers_a_document_once(clean: None):
     assert await extract.due_feed_captures(50) == []
 
 
-async def test_one_parse_serves_every_version_the_document_carries(clean: None):
-    feed_id = await _feed()
+async def test_one_parse_serves_every_version_the_document_carries(clean: None, feed_id):
     entries = [_entry(guid, content=f"<p>{guid}</p>{ARTICLE}") for guid in ("a", "b", "c")]
     document_id = await _ingest(feed_id, _document(*entries))
 
@@ -160,11 +148,10 @@ async def test_one_parse_serves_every_version_the_document_carries(clean: None):
     assert len(await _captures(document_id)) == 3
 
 
-async def test_re_carving_unchanged_text_moves_the_stamp(clean: None, stored_feed_text):
+async def test_re_carving_unchanged_text_moves_the_stamp(clean: None, feed_id, stored_feed_text):
     """What the migration hands over: a row whose text is right and whose provenance is
     not. Unchanged bytes conflict, so the row already there is the one re-attributed —
     and it has to be, or the sweep offers this document forever."""
-    feed_id = await _feed()
     document_id = await _ingest(feed_id, _document(_entry("a", content=ARTICLE)))
     version_id = await _version_of("a")
     await stored_feed_text(version_id, ARTICLE, parser_version="unknown")
@@ -177,9 +164,8 @@ async def test_re_carving_unchanged_text_moves_the_stamp(clean: None, stored_fee
     assert await extract.due_feed_captures(50) == []
 
 
-async def test_a_second_carving_supersedes_the_first(clean: None, stored_feed_text):
+async def test_a_second_carving_supersedes_the_first(clean: None, feed_id, stored_feed_text):
     """Append-only, so the earlier one stays; the reading path takes the later one."""
-    feed_id = await _feed()
     document_id = await _ingest(feed_id, _document(_entry("a", content=ARTICLE)))
     await capture_feed(document_id, SETTINGS)
     version_id = await _version_of("a")
@@ -193,9 +179,8 @@ async def test_a_second_carving_supersedes_the_first(clean: None, stored_feed_te
     assert "Rewritten" in reading.body
 
 
-async def test_a_carving_is_compressed_against_its_feed_dictionary(clean: None):
+async def test_a_carving_is_compressed_against_its_feed_dictionary(clean: None, feed_id):
     """Item text is its own dictionary scope: fragments, not whole feed XML."""
-    feed_id = await _feed()
     trained = dictionaries.train(
         [f"{ARTICLE}<p>{n}</p>".encode() for n in range(30)], SETTINGS.storage
     )
@@ -211,9 +196,8 @@ async def test_a_carving_is_compressed_against_its_feed_dictionary(clean: None):
     assert await _text(capture) == ARTICLE
 
 
-async def test_a_feed_keeps_a_dictionary_per_kind_of_body(clean: None):
+async def test_a_feed_keeps_a_dictionary_per_kind_of_body(clean: None, feed_id):
     """`(dict_id, feed_id, host_id)` could not hold both; the scope is what tells them apart."""
-    feed_id = await _feed()
     documents = dictionaries.train([_document(_entry(str(n))) for n in range(30)], SETTINGS.storage)
     items = dictionaries.train(
         [f"{ARTICLE}<p>{n}</p>".encode() for n in range(30)], SETTINGS.storage
@@ -246,11 +230,10 @@ async def test_a_feed_keeps_a_dictionary_per_kind_of_body(clean: None):
         assert current.dictionary.dict_id == trained.dict_id
 
 
-async def test_a_carving_can_be_rebuilt_from_the_document_alone(clean: None):
+async def test_a_carving_can_be_rebuilt_from_the_document_alone(clean: None, feed_id):
     """What makes `documents.body` the archive: bin every carving and the sweep puts the
     same bytes back. It is the only copy of this text now, so that has to be a property
     rather than a claim in a migration message."""
-    feed_id = await _feed()
     document_id = await _ingest(
         feed_id, _document(_entry("a", content=ARTICLE), _entry("b", summary=ARTICLE))
     )
@@ -277,11 +260,10 @@ MOVED = (
 ).encode()
 
 
-async def test_a_redirecting_feed_re_carves_to_the_same_identity(clean: None):
+async def test_a_redirecting_feed_re_carves_to_the_same_identity(clean: None, feed_id):
     """The parse at ingest used the URL the document came back from, so a re-parse has to
     as well. Reading `feeds.url` instead re-reads every relative link against the wrong
     base, matches no version, and carves the whole feed to nothing."""
-    feed_id = await _feed()
     served_from = "https://loopback.example.com/blog/feed.xml"
     document_id = await _ingest(feed_id, MOVED, served_from=served_from)
 
@@ -291,11 +273,12 @@ async def test_a_redirecting_feed_re_carves_to_the_same_identity(clean: None):
     assert await _text(capture) == ARTICLE
 
 
-async def test_a_carving_that_finds_nothing_leaves_the_one_it_held(clean: None, stored_feed_text):
+async def test_a_carving_that_finds_nothing_leaves_the_one_it_held(
+    clean: None, feed_id, stored_feed_text
+):
     """The failure mode of writing an empty row: `feed_capture` takes the newest, so text
     an earlier parse found would be hidden for good — `has_feed_text` goes false and no
     later extractor bump can reach it again."""
-    feed_id = await _feed()
     # A document the current parser can make nothing of, so no entry matches its version.
     document_id = await _ingest(feed_id, _document(_entry("a", content=ARTICLE)))
     version_id = await _version_of("a")
@@ -324,10 +307,9 @@ async def test_a_carving_that_finds_nothing_leaves_the_one_it_held(clean: None, 
     assert await extract.due_feed_captures(50) == []
 
 
-async def test_a_repeated_identity_keeps_the_entry_the_version_was_made_from(clean: None):
+async def test_a_repeated_identity_keeps_the_entry_the_version_was_made_from(clean: None, feed_id):
     """`apply_items` takes the first of a repeated identity, so the carving has to as well
     or the stored text belongs to an entry that was thrown away."""
-    feed_id = await _feed()
     first, second = f"<p>the first entry</p>{ARTICLE}", f"<p>the second entry</p>{ARTICLE}"
     document_id = await _ingest(
         feed_id, _document(_entry("a", content=first), _entry("a", content=second))
@@ -339,10 +321,9 @@ async def test_a_repeated_identity_keeps_the_entry_the_version_was_made_from(cle
     assert await _text(capture) == first
 
 
-async def test_has_feed_text_reads_the_newest_carving(clean: None, stored_feed_text):
+async def test_has_feed_text_reads_the_newest_carving(clean: None, feed_id, stored_feed_text):
     """The newest, not any: `pending_feed` expands that one, so a sweep asking anything
     wider hands it a version it returns nothing for and the job does no work forever."""
-    feed_id = await _feed()
     await _ingest(feed_id, _document(_entry("a", content=ARTICLE)))
     version_id = await _version_of("a")
     await stored_feed_text(version_id, ARTICLE)

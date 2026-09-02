@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 import pytest
 from logfire.testing import CaptureLogfire
 
+from conftest import finished
 from old_news.config.http import HttpSettings
 from old_news.fetch import Fetcher, Response, TooLarge
 from old_news.fetch.client import SPAN_NAME, _unresolvable
@@ -93,20 +94,12 @@ async def traced_fetcher(capfire: CaptureLogfire) -> AsyncIterator[Fetcher]:
     telemetry._enabled = False
 
 
-def _finished(capfire: CaptureLogfire) -> list[str]:
-    return [
-        span.name
-        for span in capfire.exporter.exported_spans
-        if (span.attributes or {}).get("logfire.span_type") != "pending_span"
-    ]
-
-
 async def test_the_client_itself_is_traced(traced_fetcher: Fetcher, server: str, capfire):
     """The hand-rolled span carries the domain — which feed, redacted, conditional or
     not. The client span underneath it carries the transport."""
     await traced_fetcher.get(f"{server}/conditional")
 
-    names = _finished(capfire)
+    names = [s.name for s in finished(capfire.exporter)]
     assert SPAN_NAME in names
     assert len(names) > 1, f"no client span beneath the feed span: {names}"
 
@@ -122,7 +115,7 @@ async def test_only_this_client_is_instrumented(capfire: CaptureLogfire, server:
     finally:
         await quiet.aclose()
 
-    assert _finished(capfire) == [SPAN_NAME]
+    assert [s.name for s in finished(capfire.exporter)] == [SPAN_NAME]
 
 
 SECRET = "SUPERSECRET"

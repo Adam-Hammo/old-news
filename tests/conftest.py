@@ -8,20 +8,19 @@ from pathlib import Path
 
 import pytest
 from factory.random import reseed_random
+from logfire.testing import TestExporter
+from opentelemetry.sdk.trace import ReadableSpan
 
 # Ryuk bind-mounts the docker socket, which Docker Desktop on macOS refuses.
 # testcontainers reads its config at import, so this must run first.
 os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
-# Real publisher pages, checked in whole. Shared rather than sitting beside one suite:
-# the extractor is unit-tested against them and the extraction path integration-tested
-# against the same bytes, and trimming them to fit a directory would change what they
-# prove.
+# Real publisher pages, checked in whole, shared by the unit and integration suites.
+# Trimming them to fit a directory would change what they prove.
 PAGES = Path(__file__).parent / "pages"
 
 # A fresh draw per run, so every run is a chance to build a shape no run has built before.
-# That only works if a red one can be replayed, which is what the two hooks below are for:
-# the seed goes in the header and again beside the failures.
+# That only works if a red one can be replayed, which is what the two hooks below are for.
 SEED = int(os.environ.get("OLD_NEWS_TEST_SEED") or random.randrange(2**31))
 
 REPLAY = f"OLD_NEWS_TEST_SEED={SEED}"
@@ -112,3 +111,12 @@ def page() -> Callable[[str], str]:
         return (PAGES / name).read_text(errors="replace")
 
     return read
+
+
+def finished(exporter: TestExporter) -> list[ReadableSpan]:
+    """Logfire emits a pending span alongside each real one."""
+    return [
+        span
+        for span in exporter.exported_spans
+        if (span.attributes or {}).get("logfire.span_type") != "pending_span"
+    ]

@@ -76,16 +76,8 @@ XKCD_URL = "https://xkcd.com/3292/"
 QUOTED = "it is much more about managing the different perspectives"
 
 
-def test_a_quoted_block_is_marked_as_one(page):
-    """Trafilatura's markdown drops the mark, so a quotation arrived as the author's
-    own next paragraph and nothing in the reading said otherwise."""
-    got = article.parse(page("conversation-article.html"), CONVERSATION_URL)
-
-    quoted = [line for line in got.body.splitlines() if line.startswith("> ")]
-    assert any(QUOTED in line for line in quoted)
-
-
 def test_a_quotation_reaches_the_reader_only_as_a_quotation(page):
+    """Trafilatura's markdown drops the mark, so a quotation arrived as the author's own prose."""
     got = article.parse(page("conversation-article.html"), CONVERSATION_URL)
 
     carrying = [line for line in got.body.splitlines() if QUOTED in line]

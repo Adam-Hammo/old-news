@@ -84,8 +84,6 @@
 	/* A hairline, a 2px gap, then a heavy rule. The one piece of newspaper furniture the
 	   whole design leans on. */
 	.hair {
-		height: 1px;
-		background: var(--rule);
 		margin-top: 9px;
 	}
 

@@ -15,7 +15,6 @@ from old_news.subscriptions.service import (
     listing,
     refile,
     subscribe,
-    unsubscribe,
 )
 
 FEED_XML = b"""<?xml version="1.0"?><rss version="2.0"><channel>
@@ -66,16 +65,6 @@ async def test_a_feed_we_dropped_is_not_in_the_listing(clean: None):
     assert await drop(feed.id) is True
 
     assert await listing() == ()
-
-
-# The archive outlives the subscription, so dropping is not deleting.
-async def test_dropping_by_id_and_by_url_are_the_same_thing(clean: None):
-    feed = await add(FEED)
-    assert feed is not None
-
-    assert await drop(feed.id) is True
-    assert await drop(feed.id) is False
-    assert await unsubscribe(FEED) is False
 
 
 async def test_a_feed_can_be_moved_to_another_section(clean: None):
