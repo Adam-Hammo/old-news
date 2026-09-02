@@ -9,6 +9,9 @@
 	let category = $state('');
 	let busy = $state(false);
 	let said = $state('');
+	// The feed whose Drop has been pressed once. One press used to be the whole gesture,
+	// which is a poll history gone on a mistap.
+	let arming = $state('');
 
 	// Every section already in use, plus any a feed carries that the river has not got to.
 	const known = $derived([...new Set([...sections, ...feeds.map((f) => f.category)])].sort());
@@ -29,6 +32,15 @@
 		busy = false;
 	}
 
+	function drop(id: string) {
+		if (arming !== id) {
+			arming = id;
+			return;
+		}
+		arming = '';
+		void act(() => api.unfollow(id));
+	}
+
 	const add = () =>
 		act(async () => {
 			const failed = await api.follow(url.trim(), category.trim());
@@ -41,7 +53,7 @@
 	<h2>Feeds</h2>
 	<p class="say">
 		Paste a feed, or the address of a site that has one &mdash; it will be found. Dropping a
-		feed stops the polling and keeps everything already read.
+		feed stops the polling and keeps everything already read; it takes two presses.
 	</p>
 
 	<form
@@ -102,8 +114,13 @@
 							/>
 							<button
 								disabled={busy}
-								onclick={() => act(() => api.unfollow(feed.id))}
-								aria-label="Drop {feed.title || feed.url}">Drop</button
+								class:arming={arming === feed.id}
+								onclick={() => drop(feed.id)}
+								onblur={() => arming === feed.id && (arming = '')}
+								aria-label={arming === feed.id
+									? `Confirm dropping ${feed.title || feed.url}`
+									: `Drop ${feed.title || feed.url}`}
+								>{arming === feed.id ? 'Confirm' : 'Drop'}</button
 							>
 						</div>
 					</li>
@@ -168,6 +185,17 @@
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
 		border: 1px solid var(--rule);
+	}
+
+	/* Armed, and inverted so it is plain that the next press is the one that does it. Wide
+	   enough for the longer word either way, so arming one does not move the row. */
+	li button {
+		min-width: 6.25rem;
+	}
+
+	button.arming {
+		color: var(--paper);
+		background: var(--ink);
 	}
 
 	button:disabled {

@@ -2,7 +2,6 @@
 	import { navigating } from '$app/state';
 	import * as api from '#lib/api/client.ts';
 	import type { Entry, River } from '#lib/api/client.ts';
-	import { stamp } from '#lib/format.ts';
 	import { opened } from '#lib/opened.ts';
 	import { whenVisible } from '#lib/visible.ts';
 
@@ -62,7 +61,6 @@
 				<p class="by">
 					<b>{entry.outlet}</b>
 					{#if entry.author}<span class="author">{entry.author}</span>{/if}
-					<span>{stamp(entry.published_at ?? entry.first_seen_at)}</span>
 				</p>
 			</a>
 		</li>
@@ -153,19 +151,15 @@
 		color: var(--ink-faint);
 	}
 
-	/* The author is the only part allowed to give way. The outlet is where it came from
-	   and the stamp is when, and a row that cut either of those would be lying. */
+	/* The author is the only part allowed to give way. The outlet is where it came from,
+	   and a row that cut that would be lying. */
 	.by .author {
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	.by b,
-	.by span:last-child {
-		flex: none;
-	}
-
 	.by b {
+		flex: none;
 		color: var(--ink);
 		font-weight: 700;
 	}

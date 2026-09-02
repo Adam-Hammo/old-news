@@ -14,5 +14,6 @@ export const load: LayoutLoad = async ({ fetch, url }) => {
 		api.sections(fetch),
 		api.river(fetch, { section }),
 	]);
-	return { sections, river, section };
+	// When, so the reading UI knows how old what it is showing has got.
+	return { sections, river, section, at: Date.now() };
 };

@@ -84,12 +84,29 @@ test('a feed is refiled by typing another section against it', async () => {
 	await expect.poll(() => calls).toEqual(['file aaaaaaaa-0000-4000-8000-000000000001 Science']);
 });
 
-test('a feed is dropped by its own control', async () => {
+// One press was the whole gesture, and the thing it takes away is a poll history.
+test('a feed is dropped by its own control, on the second press', async () => {
 	const screen = await setup([feed()]);
 
 	await screen.getByRole('button', { name: 'Drop Astral Codex Ten' }).click();
+	expect(calls).toEqual([]);
+
+	await screen.getByRole('button', { name: 'Confirm dropping Astral Codex Ten' }).click();
 
 	await expect.poll(() => calls).toEqual(['unfollow aaaaaaaa-0000-4000-8000-000000000001']);
+});
+
+test('an armed drop stands down when it is left alone', async () => {
+	const screen = await setup([feed()]);
+	const button = screen.getByRole('button', { name: 'Drop Astral Codex Ten' }).element();
+
+	await screen.getByRole('button', { name: 'Drop Astral Codex Ten' }).click();
+	(button as HTMLElement).blur();
+
+	await expect
+		.element(screen.getByRole('button', { name: 'Drop Astral Codex Ten' }))
+		.toBeVisible();
+	expect(calls).toEqual([]);
 });
 
 // The API knows why it refused; the screen only has to say it.

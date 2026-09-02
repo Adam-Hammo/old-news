@@ -58,7 +58,15 @@ out and nothing here reopens it.
 
 **The river sorts on first seen by us, not the publisher's date.** It is the only timestamp under
 this project's control, it is monotonic, and it is the one that stops backfill flooding the top with
-2019 the day someone reaches backwards. The publisher's date is displayed and never sorted on.
+2019 the day someone reaches backwards. A row carries no date at all: the masthead's last poll is
+the only clock the screen needs, and a date against a row that is ordered by something else only
+reads as an ordering that has gone wrong. The publisher's date belongs to the article, and shows
+there.
+
+What it still does in the river is break the tie a poll creates: `first_seen_at` is the
+transaction's clock, so a whole batch arrives sharing one, and the tiebreak underneath it was the
+order the items happened to be inserted in — the feed's own order, reversed. So it orders inside a
+poll, never across one, and never anywhere it can be read off a row.
 
 **No thumbs.** The roadmap wants opinions hoovered up from day one, and that is overruled: training
 starts fresh later rather than importing anything out of NewsBlur. What the design does owe it is

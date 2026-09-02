@@ -62,6 +62,42 @@ async def test_items_from_one_poll_share_a_timestamp_and_still_page_cleanly(
     assert len(seen) == len(set(seen))
 
 
+async def test_a_poll_reads_newest_first_by_the_date_the_row_shows(clean: None, feed, story):
+    """The tie every poll creates. Ordering fell to the id, which is the order they arrived in."""
+    feed_id = await feed("outlet.example.com")
+    await story(feed_id, "Mid-morning", first_seen_at=NOW, published_at=NOW - 30 * MINUTE)
+    await story(feed_id, "Overnight", first_seen_at=NOW, published_at=NOW - 8 * 60 * MINUTE)
+    await story(feed_id, "Minutes ago", first_seen_at=NOW, published_at=NOW - MINUTE)
+
+    assert await _titles() == ["Minutes ago", "Mid-morning", "Overnight"]
+
+
+async def test_an_undated_item_sorts_on_the_date_it_shows(clean: None, feed, story):
+    """A row with no publisher date shows ours, so that is the one it is placed by."""
+    feed_id = await feed("outlet.example.com")
+    await story(feed_id, "Dated", first_seen_at=NOW, published_at=NOW - MINUTE)
+    await story(feed_id, "Undated", first_seen_at=NOW)
+
+    assert await _titles() == ["Undated", "Dated"]
+
+
+async def test_paging_a_tied_batch_holds_the_order_across_pages(clean: None, feed, story):
+    feed_id = await feed("outlet.example.com")
+    for index in range(5):
+        await story(feed_id, f"Story {index}", first_seen_at=NOW, published_at=NOW - index * MINUTE)
+
+    seen: list[str] = []
+    cursor = ""
+    while True:
+        page = await ui.river(after=cursor, limit=2)
+        seen.extend(entry.title for entry in page.entries)
+        cursor = page.cursor
+        if not cursor:
+            break
+
+    assert seen == [f"Story {index}" for index in range(5)]
+
+
 async def test_the_last_page_ends_the_cursor(clean: None, feed, story):
     feed_id = await feed("outlet.example.com")
     await story(feed_id, "Only one")
