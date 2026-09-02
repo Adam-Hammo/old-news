@@ -15,10 +15,11 @@ from old_news.tasks.app import app
 
 DRAIN_SECONDS = 30
 
-# Procrastinate shields its own run loop, so a cancelled worker winds down gracefully
-# rather than promptly: it drains in-flight jobs and its 5s and 10s pollers see the stop
-# only between sleeps. Bounded generously, and asserted by one test rather than every one.
-SHUTDOWN_SECONDS = 60
+# Procrastinate shields its own run loop, so a cancelled worker winds down gracefully and
+# not promptly: no `shutdown_graceful_timeout` is set, so this bounds nothing but a hang.
+# Measured over a minute on the free-threaded build. What that costs a container is in
+# docs/ARCHITECTURE.md.
+SHUTDOWN_SECONDS = 180
 
 
 async def _drained(ids: set[int], seconds: float) -> set[int]:

@@ -471,6 +471,21 @@ delays whatever else that process was going to do. Separate worker processes are
 polls start lagging behind their schedule; the queue split is what makes that a deployment change
 rather than a code one.
 
+#### Winding down is graceful, and therefore unbounded
+
+Setting the stop event cancels each worker task, which is procrastinate's documented way of asking
+one to stop. It shields its own run loop from that cancellation and instead sets a stop flag, so the
+worker drains its in-flight jobs and its 5s and 10s pollers notice only between sleeps. Nothing
+bounds the total: `shutdown_graceful_timeout` is left unset, and a wind-down measured over a minute
+on the free-threaded build.
+
+Neither `compose.yaml` nor the systemd unit sets a stop timeout, so Docker's default 10 seconds
+applies and a worker that has not finished by then is killed rather than stopped. A job killed that
+way is left at `doing` until `stalled_worker_timeout` reclaims it, where one abandoned by a bounded
+shutdown would not be. Passing `shutdown_graceful_timeout` to `run_worker_async` is the fix, and the
+number is a real tradeoff — how long to let a capture finish against how long to hold a deploy — so
+it wants choosing rather than defaulting.
+
 ## Telemetry
 
 `observability/telemetry.py` is the only module that imports `logfire`. It installs the global
