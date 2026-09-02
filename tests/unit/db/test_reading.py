@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql
 
-from old_news.db import ExtractionSource, Feed, Host, Item, ItemVersion
+from old_news.db import Base, ExtractionSource, Feed, Host, Item, ItemVersion, item_reading
 from old_news.db.models.item import READING_PREFERENCE
 
 
@@ -17,11 +17,8 @@ def test_every_source_is_ranked():
 
 
 def _sql(expression: Any, entity: type | None = None) -> str:
-    """Compiled the way a real query would ask it: the entity anchors the outer FROM.
-
-    Without `select_from` a bare expression has nothing to correlate against, so a nested
-    select names the outer table legitimately and the check below reads a false positive.
-    """
+    """Compiled the way a real query would ask it: without `select_from` the expression has
+    nothing to correlate against and the check below reads a false positive."""
     statement = select(expression)
     if entity is not None:
         statement = statement.select_from(entity)
@@ -31,11 +28,8 @@ def _sql(expression: Any, entity: type | None = None) -> str:
 
 
 def _naming(sql: str, table: str) -> list[str]:
-    """FROM clauses that list `table` under its own name.
-
-    Aliased is a different reference — `is_head` self-joins `item_versions AS successor`
-    and that is not a lost correlation — so only a bare entry counts.
-    """
+    """FROM clauses that list `table` under its own name: aliased is a different reference,
+    not a lost correlation, so only a bare entry counts."""
     clauses = [line.strip() for line in sql.splitlines() if line.strip().startswith("FROM ")]
     return [
         clause
@@ -79,28 +73,33 @@ def test_the_share_is_measured_against_the_readings_being_ranked():
 # the outer query selects from. Each one is a place a lost correlation reads as valid SQL
 # and silently answers for the whole archive instead.
 CORRELATED = [
-    ("ItemVersion.reading_body", ItemVersion, ItemVersion.reading_body, "item_versions"),
-    ("ItemVersion.has_feed_text", ItemVersion, ItemVersion.has_feed_text, "item_versions"),
-    ("ItemVersion.is_head", ItemVersion, ItemVersion.is_head, "item_versions"),
-    ("Item.reading_body", Item, Item.reading_body, "items"),
-    ("Item.version_count", Item, Item.version_count, "items"),
-    ("Host.capture_failures", Host, Host.capture_failures, "hosts"),
-    ("Host.last_capture_failure", Host, Host.last_capture_failure, "hosts"),
-    ("Feed.consecutive_failures", Feed, Feed.consecutive_failures, "feeds"),
-    ("Feed.gone", Feed, Feed.gone, "feeds"),
+    (ItemVersion, "reading_body"),
+    (ItemVersion, "has_feed_text"),
+    (ItemVersion, "is_head"),
+    (Item, "reading_body"),
+    (Item, "version_count"),
+    (Host, "capture_failures"),
+    (Host, "last_capture_failure"),
+    (Feed, "consecutive_failures"),
+    (Feed, "gone"),
 ]
 
 
-@pytest.mark.parametrize(("name", "entity", "expression", "table"), CORRELATED)
-def test_a_correlated_subquery_does_not_re_list_its_outer_table(
-    name: str, entity: type, expression: Any, table: str
-):
-    """One `FROM` naming the outer table — its own. A second means a nested select put it
-    back in its own `FROM`, which turns "this row" into "any row" and compiles fine.
+@pytest.mark.parametrize(("entity", "attribute"), CORRELATED)
+def test_a_correlated_subquery_does_not_re_list_its_outer_table(entity: type[Base], attribute: str):
+    """One `FROM` naming the outer table — its own. A second turns "this row" into "any
+    row" and compiles fine. Textual, because correlation is decided at compile time rather
+    than stored: `get_final_froms()` reports the same thing either way."""
+    table = entity.__tablename__
+    naming = _naming(_sql(getattr(entity, attribute), entity), table)
 
-    Textual, because correlation is decided when the statement is compiled rather than
-    stored on the subquery: `get_final_froms()` reports the same thing either way.
-    """
-    naming = _naming(_sql(expression, entity), table)
+    assert len(naming) == 1, (
+        f"{entity.__name__}.{attribute} lost its correlation: {table} named in {naming}"
+    )
 
-    assert len(naming) == 1, f"{name} lost its correlation: {table} named in {naming}"
+
+def test_the_reading_of_an_item_survives_two_levels_of_nesting():
+    """The only one of the family with a correlated subquery inside another."""
+    naming = _naming(_sql(item_reading(ExtractionSource.FEED), Item), Item.__tablename__)
+
+    assert len(naming) == 1, f"item_reading lost its correlation: items named in {naming}"

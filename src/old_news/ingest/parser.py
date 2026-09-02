@@ -1,7 +1,6 @@
 """The feedparser boundary. Nothing else in the codebase imports feedparser."""
 
 import datetime
-import hashlib
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -9,7 +8,7 @@ from urllib.parse import urljoin
 
 import feedparser
 
-from old_news.ingest.normalise import canonical_url
+from old_news.ingest.normalise import canonical_url, digest_fields
 
 # Bumped when anything below changes which text comes out of an entry, so a stored
 # carving stays attributable to the rules that made it.
@@ -59,15 +58,8 @@ class ParsedItem:
         if self.canonical_url:
             return Identity(self.canonical_url, "link")
 
-        digest = hashlib.sha256()
-        for part in (
-            self.title,
-            self.published_at.isoformat() if self.published_at else "",
-            self.summary,
-        ):
-            digest.update(part.encode())
-            digest.update(b"\x1f")
-        return Identity(digest.hexdigest(), "hash")
+        published = self.published_at.isoformat() if self.published_at else ""
+        return Identity(digest_fields(self.title, published, self.summary).hex(), "hash")
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,11 +92,18 @@ def _timestamp(value: time.struct_time | None) -> datetime.datetime | None:
         return None
 
 
+def _resolve(base: str, href: str) -> str:
+    """Absolutise a link, or keep it as published when it will not parse."""
+    try:
+        return urljoin(base, href)
+    except ValueError:
+        return href
+
+
 def _terms(entries: list[Any] | None) -> tuple[str, ...]:
-    seen = {
-        term.strip() for tag in entries or [] if (term := (tag.get("term") or "")) and term.strip()
-    }
-    return tuple(sorted(seen))
+    return tuple(
+        sorted({stripped for tag in entries or [] if (stripped := (tag.get("term") or "").strip())})
+    )
 
 
 def _body(entry: Any) -> str:
@@ -118,7 +117,7 @@ def _body(entry: Any) -> str:
     if html:
         return max(html, key=len)
     if contents:
-        return max((c.get("value", "") for c in contents), key=len, default="")
+        return max((c.get("value", "") for c in contents), key=len)
     return entry.get("summary", "") or ""
 
 
@@ -130,7 +129,7 @@ def _enclosures(entry: Any, base: str) -> tuple[dict[str, str], ...]:
             continue
         found.append(
             {
-                "url": urljoin(base, href),
+                "url": _resolve(base, href),
                 "type": enclosure.get("type") or "",
                 "length": str(enclosure.get("length") or ""),
             }
@@ -190,7 +189,7 @@ def parse(body: bytes, *, url: str) -> ParsedFeed:
 
     items = []
     for entry in parsed.get("entries") or []:
-        link = urljoin(base, entry.get("link") or "") if entry.get("link") else ""
+        link = _resolve(base, raw_link) if (raw_link := entry.get("link")) else ""
         items.append(
             ParsedItem(
                 guid=_guid(entry),
@@ -200,7 +199,7 @@ def parse(body: bytes, *, url: str) -> ParsedFeed:
                 author=(entry.get("author") or "").strip(),
                 summary=entry.get("summary", "") or "",
                 content=_body(entry),
-                comments_url=urljoin(base, entry["comments"]) if entry.get("comments") else "",
+                comments_url=_resolve(base, raw) if (raw := entry.get("comments")) else "",
                 tags=_terms(entry.get("tags")),
                 enclosures=_enclosures(entry, base),
                 published_at=_timestamp(_present(entry, "published_parsed")),

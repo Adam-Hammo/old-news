@@ -29,9 +29,6 @@ class ExtractSettings(BaseModel):
     image_batch_size: int = 25
 
     # The only form kept of an image, so it answers to both the archive and the phone.
-    # Measured across the corpus: 1200px/q55 stores it in 42 MB and 2000px/q75 in 88 MB,
-    # and 14% of these are charts and screenshots where low quality smears the type. The
-    # middle rung buys the headroom for a 2x display and the legibility, for 23 MB.
     image_max_width: int = 1600
     image_quality: int = 65
     encode_batch_size: int = 25

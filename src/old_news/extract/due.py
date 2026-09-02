@@ -40,10 +40,9 @@ async def due_captures(
     settled_by = now - datetime.timedelta(seconds=settings.settle_seconds)
     policy = backoff.policy_for(settings.capture_retry)
 
-    # Excluded in SQL, not after the `LIMIT`: dropping rows from a claimed batch shrinks
-    # it, and the version stays due and leads the next one by age. A version never
-    # visited is not covered and needs no covering — the first sweep to reach it records
-    # the refusal, and from then on it is.
+    # Excluded in SQL, not after the `LIMIT`: dropping rows from a claimed batch shrinks it, and
+    # the version stays due and leads by age. A version never visited has no row here and needs
+    # none — the first sweep records the refusal.
     settled = (
         select(PageCapture.item_version_id)
         .outerjoin(RobotsPolicy, RobotsPolicy.host_id == PageCapture.host_id)

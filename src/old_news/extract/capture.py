@@ -1,7 +1,6 @@
 """Fetching the page behind a version and keeping the bytes. What it means is elsewhere."""
 
 import hashlib
-import logging
 import uuid
 from typing import Any
 
@@ -16,11 +15,6 @@ from old_news.extract import breaker
 from old_news.fetch import Fetcher, FetchError, Response, Unresolvable
 from old_news.observability import count, span
 from old_news.politeness import ensure, host_of, with_www
-
-logger = logging.getLogger(__name__)
-
-# A transport failure is not an HTTP status, and neither is a visit we never sent.
-NO_STATUS = 0
 
 # About a URL, not a publisher: a few dead links must not close a healthy host.
 PER_URL_STATUS = frozenset({404, 410})
@@ -92,6 +86,7 @@ async def _store(
     url: str,
     settings: Settings,
     *,
+    host_id: uuid.UUID,
     outcome: CaptureOutcome | None = None,
     response: Response | None = None,
     error: str = "",
@@ -99,14 +94,13 @@ async def _store(
     """One row per visit, including the visits we decided not to make."""
     body = response.body if response is not None else b""
     body_hash = hashlib.sha256(body).digest()
-    host_id = await ensure(session, host_of(url))
 
     stored = PageCapture(
         item_version_id=version_id,
         host_id=host_id,
         url=url,
         final_url=response.url if response is not None else "",
-        status=response.status if response is not None else NO_STATUS,
+        status=response.status if response is not None else 0,
         outcome=outcome if outcome is not None else _outcome_for(response),
         body_hash=body_hash,
         headers=_headers(response),
@@ -179,6 +173,7 @@ async def capture_page(
                 version_id,
                 target,
                 settings,
+                host_id=host_id,
                 outcome=CaptureOutcome.UNKNOWN_RULES,
                 error="robots.txt never read",
             )
@@ -190,6 +185,7 @@ async def capture_page(
                 version_id,
                 target,
                 settings,
+                host_id=host_id,
                 outcome=CaptureOutcome.DISALLOWED,
                 error="disallowed by robots.txt",
             )
@@ -201,6 +197,7 @@ async def capture_page(
                 version_id,
                 target,
                 settings,
+                host_id=host_id,
                 outcome=CaptureOutcome.REFUSED,
                 error="host refusing",
             )
@@ -210,7 +207,7 @@ async def capture_page(
         except FetchError as exc:
             current.record_exception(exc)
             count("extract.captures.failed", host=host_of(target))
-            return await _store(version_id, target, settings, error=str(exc))
+            return await _store(version_id, target, settings, host_id=host_id, error=str(exc))
 
         current.set_attribute("http.response.status_code", response.status)
 
@@ -222,9 +219,10 @@ async def capture_page(
                 version_id,
                 target,
                 settings,
+                host_id=host_id,
                 outcome=CaptureOutcome.DISALLOWED,
                 error=f"redirected to {host_of(response.url)}",
             )
 
         count("extract.captures.stored" if response.ok else "extract.captures.failed")
-        return await _store(version_id, target, settings, response=response)
+        return await _store(version_id, target, settings, host_id=host_id, response=response)

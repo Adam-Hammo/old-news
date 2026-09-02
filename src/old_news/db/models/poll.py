@@ -13,7 +13,6 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
-from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey, one_of, run_of
@@ -53,15 +52,6 @@ class FeedPoll(UUIDPrimaryKey, Base):
     status: Mapped[int] = mapped_column(Integer, server_default="0")
     error: Mapped[str] = mapped_column(Text, server_default="")
     new_items: Mapped[int] = mapped_column(Integer, server_default="0")
-
-    @hybrid_property
-    def failed(self) -> bool:
-        return self.outcome == PollOutcome.FAILED
-
-    @failed.inplace.expression
-    @classmethod
-    def _failed_expression(cls):
-        return cls.outcome == PollOutcome.FAILED
 
     def __str__(self) -> str:
         return f"{self.outcome} {self.status}"

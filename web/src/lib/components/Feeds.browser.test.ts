@@ -132,8 +132,16 @@ test('the address is kept when following it failed, so it can be corrected', asy
 		.toHaveValue('https://example.com/nope');
 });
 
+// Unfiled is the common case and the one this screen is for, and a blank row is not a
+// section anybody can pick.
 test('sections already in use are offered rather than typed from memory', async () => {
-	const screen = await setup([feed({ category: 'Edition' })], ['Science', 'Edition']);
+	const screen = await setup(
+		[
+			feed({ category: 'Edition' }),
+			feed({ id: 'bbbbbbbb-0000-4000-8000-000000000002', category: '' }),
+		],
+		['Science', 'Edition'],
+	);
 
 	const offered = [...screen.container.querySelectorAll('datalist option')].map((o) =>
 		o.getAttribute('value'),

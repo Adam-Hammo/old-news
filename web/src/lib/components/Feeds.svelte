@@ -14,7 +14,9 @@
 	let arming = $state('');
 
 	// Every section already in use, plus any a feed carries that the river has not got to.
-	const known = $derived([...new Set([...sections, ...feeds.map((f) => f.category)])].sort());
+	const known = $derived(
+		[...new Set([...sections, ...feeds.map((f) => f.category)])].filter(Boolean).sort(),
+	);
 
 	// Filed the way the river slices it, so a long list shows where a section begins and
 	// ends. Unfiled last: it is the absence of a section rather than one more of them.
@@ -86,7 +88,7 @@
 	</datalist>
 
 	{#if feeds.length === 0}
-		<p class="none">Nothing followed yet.</p>
+		<p class="none label">Nothing followed yet.</p>
 	{:else}
 		{#each filed as [name, group] (name)}
 			<h3>{name || 'Unfiled'}</h3>
@@ -214,11 +216,6 @@
 
 	.none {
 		padding: 1.4rem 0;
-		color: var(--ink-faint);
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
 	}
 
 	h3 {

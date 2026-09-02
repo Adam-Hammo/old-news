@@ -10,6 +10,7 @@ from old_news.ingest.normalise import canonical_url, content_fingerprint, normal
         ("HTTPS://Example.COM/a", "https://example.com/a"),
         ("https://example.com:443/a", "https://example.com/a"),
         ("http://example.com:80/a", "http://example.com/a"),
+        ("https://example.com:8443/a", "https://example.com:8443/a"),
         ("https://example.com/a/", "https://example.com/a"),
         ("https://example.com/", "https://example.com/"),
         ("https://example.com/a#section", "https://example.com/a"),
@@ -19,6 +20,10 @@ from old_news.ingest.normalise import canonical_url, content_fingerprint, normal
         ("https://example.com/a?b=2&a=1", "https://example.com/a?a=1&b=2"),
         ("  https://example.com/a  ", "https://example.com/a"),
         ("", ""),
+        # Malformed, and handed back rather than raised: one typo'd <link> used to fail the poll.
+        ("http://example.com:99999/x", "http://example.com:99999/x"),
+        ("https://example.com:8O80/x", "https://example.com:8O80/x"),
+        ("http://[bad/x", "http://[bad/x"),
     ],
 )
 def test_canonical_url(raw: str, expected: str):

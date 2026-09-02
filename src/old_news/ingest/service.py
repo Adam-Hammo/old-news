@@ -40,11 +40,7 @@ class _FetchState:
 
 @db.transactional
 async def due_polls(session: AsyncSession, settings: IngestSettings, limit: int) -> list[DuePoll]:
-    """Feeds worth visiting now.
-
-    Giving up after N failures is applied here rather than stored, so changing the
-    number takes effect at once. `gone` is the publisher's half and needs no threshold.
-    """
+    """Feeds worth visiting now. Giving up is applied here, not stored: the number moves at once."""
     rows = await session.execute(
         select(Feed.id, Host.name)
         .join(Host, Host.id == Feed.host_id)
@@ -203,9 +199,11 @@ def _retry_after(response: Response, settings: IngestSettings) -> int | None:
     if response.status not in RATE_LIMITED:
         return None
     raw = response.header("retry-after")
+    if raw is None:
+        return None
     try:
         # Bounded above too, or a server sending 999999999 parks the feed for decades.
-        return schedule.clamp_interval(int(raw or ""), settings)
+        return schedule.clamp_interval(int(raw), settings)
     except ValueError:
         # The header may be an HTTP date. Backing off by the maximum is fine.
         return settings.max_interval_seconds
@@ -294,7 +292,7 @@ def _refresh_feed(feed: Feed, parsed: parser.ParsedFeed, response: Response) -> 
     feed.icon_url = parsed.icon_url or feed.icon_url
     feed.platform = parsed.platform or feed.platform
     feed.hub_url = parsed.hub_url or feed.hub_url
-    feed.ttl_seconds = parsed.ttl_seconds if parsed.ttl_seconds else feed.ttl_seconds
+    feed.ttl_seconds = parsed.ttl_seconds or feed.ttl_seconds
     if parsed.categories:
         feed.categories = list(parsed.categories)
 

@@ -1,8 +1,4 @@
-"""How long to wait before asking again. Pure functions over a policy.
-
-Spelled twice, in Python and in SQL, because one caller decides in advance and another
-needs it inside a `WHERE`. `test_backoff.py` asserts the two agree.
-"""
+"""How long to wait before asking again, in Python and in SQL. Pure functions over a policy."""
 
 import dataclasses
 
@@ -41,10 +37,7 @@ def interval(policy: Policy, *, failures: int, base_seconds: float | None = None
 def due_at(
     last_attempt: ColumnClause | ColumnElement, failures: ColumnElement, policy: Policy
 ) -> ColumnElement:
-    """The interval as SQL, so a batch can be ordered and limited by it.
-
-    Filtering in Python after a `LIMIT` would silently shrink every batch.
-    """
+    """The interval as SQL, so a batch can be ordered and limited by it."""
     seconds = func.least(
         func.greatest(
             policy.minimum_seconds * func.power(policy.factor, failures),

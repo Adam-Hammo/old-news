@@ -3,7 +3,7 @@
 import datetime
 import hashlib
 import uuid
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
 
 import pytest
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
 from old_news.db import (
+    CAPTURE_POLICY,
     CaptureOutcome,
     Document,
     Extraction,
@@ -40,6 +41,10 @@ from factories import (
     faker,
 )
 
+IMAGE_HOST = "loopback.example.com"
+PAGE_HOST = "theguardian.com"
+PAGE_URL = f"https://www.{PAGE_HOST}/society/2026/aug/19/benefits-disabled-young-people"
+
 
 @db.transactional
 async def _document(session: AsyncSession, feed_id: uuid.UUID) -> uuid.UUID:
@@ -60,9 +65,7 @@ async def _version(
     observed_at: datetime.datetime,
     supersedes_id: uuid.UUID | None,
 ) -> uuid.UUID:
-    # Title and url are what tests assert on, so they are passed. Everything else comes
-    # from the factory: author, tags, enclosures and published_at were left at their
-    # server defaults by every test, so nothing ever read a row where they were set.
+    # Title and url are what tests assert on; everything else comes from the factory.
     version = ItemVersion(
         item_id=item_id,
         document_id=document_id,
@@ -113,6 +116,12 @@ def article() -> Callable[..., Coroutine[Any, Any, list[uuid.UUID]]]:
 
 
 @pytest.fixture
+async def version_id(feed_id, article) -> uuid.UUID:
+    """The one-version article most of these tests arrange and then read back."""
+    return (await article(feed_id, ("A story", "https://loopback.example.com/a")))[0]
+
+
+@pytest.fixture
 async def feed_id() -> uuid.UUID:
     feed = await add("https://loopback.example.com/feed.xml")
     assert feed is not None
@@ -121,12 +130,12 @@ async def feed_id() -> uuid.UUID:
 
 @db.transactional
 async def _extraction(
-    session: AsyncSession, version_id: uuid.UUID, host: str, slots: tuple[tuple[str, str], ...]
+    session: AsyncSession, version_id: uuid.UUID, slots: tuple[tuple[str, str], ...]
 ) -> list[uuid.UUID]:
     capture = PageCapture(
         item_version_id=version_id,
-        host_id=await ensure(session, host),
-        url=f"https://{host}/article",
+        host_id=await ensure(session, IMAGE_HOST),
+        url=f"https://{IMAGE_HOST}/article",
         body=b"stored",
         **PageCaptureFields.kwargs(),
     )
@@ -156,22 +165,20 @@ async def _extraction(
 def image_slots(feed_id, article) -> Callable[..., Coroutine[Any, Any, list[uuid.UUID]]]:
     """An extraction with the given image slots, built without running the extractor."""
 
-    async def build(*slots: tuple[str, str], host: str = "loopback.example.com") -> list[uuid.UUID]:
-        version_id = (await article(feed_id, ("An article", f"https://{host}/article")))[0]
-        return await _extraction(version_id, host, slots)
+    async def build(*slots: tuple[str, str]) -> list[uuid.UUID]:
+        version_id = (await article(feed_id, ("An article", f"https://{IMAGE_HOST}/article")))[0]
+        return await _extraction(version_id, slots)
 
     return build
 
 
 @db.transactional
-async def _store_capture(
-    session: AsyncSession, version_id: uuid.UUID, body: bytes, url: str, host: str
-) -> uuid.UUID:
+async def _store_capture(session: AsyncSession, version_id: uuid.UUID, body: bytes) -> uuid.UUID:
     capture = PageCapture(
         item_version_id=version_id,
-        host_id=await ensure(session, host),
-        url=url,
-        final_url=url,
+        host_id=await ensure(session, PAGE_HOST),
+        url=PAGE_URL,
+        final_url=PAGE_URL,
         body=codec.compress(body, level=12),
         **PageCaptureFields.kwargs(body_hash=hashlib.sha256(body).digest()),
     )
@@ -184,16 +191,48 @@ async def _store_capture(
 def stored_page() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
     """A successful capture against a version, without going near the network."""
 
-    async def store(
-        version_id: uuid.UUID,
-        body: bytes,
-        *,
-        url: str = "https://www.theguardian.com/society/2026/aug/19/benefits-disabled-young-people",
-        host: str = "theguardian.com",
-    ) -> uuid.UUID:
-        return await _store_capture(version_id, body, url, host)
+    async def store(version_id: uuid.UUID, body: bytes) -> uuid.UUID:
+        return await _store_capture(version_id, body)
 
     return store
+
+
+@db.transactional
+async def _capture(
+    session: AsyncSession,
+    version_id: uuid.UUID,
+    *,
+    status: int,
+    ago: datetime.timedelta = datetime.timedelta(0),
+    times: int = 1,
+    policy: str = CAPTURE_POLICY,
+    outcome: str | None = None,
+    host: str = "loopback.example.com",
+    url: str = "https://loopback.example.com/a",
+) -> None:
+    host_id = await ensure(session, host)
+    if outcome is None:
+        outcome = CaptureOutcome.OK if 200 <= status < 300 else CaptureOutcome.FAILED
+    for _ in range(times):
+        session.add(
+            PageCapture(
+                item_version_id=version_id,
+                host_id=host_id,
+                url=url,
+                status=status,
+                outcome=outcome,
+                body_hash=b"0" * 32,
+                fetched_at=datetime.datetime.now(datetime.UTC) - ago,
+                capture_policy=policy,
+            )
+        )
+    await session.flush()
+
+
+@pytest.fixture
+def captures() -> Callable[..., Awaitable[None]]:
+    """Rows in the capture log, without going near the network."""
+    return _capture
 
 
 @db.transactional
@@ -238,15 +277,9 @@ def bystander_host() -> str:
 async def _bystander(session: AsyncSession) -> None:
     """A second article, settled, that no test is about.
 
-    Every test used to build exactly one of each row, which made "this version" and "any
-    version" the same query and let a correlated subquery that had lost its correlation
-    pass the whole suite. This is the row that tells them apart.
-
-    Its shape varies as well as its values, because one fixed shape only catches scope
-    leaks: a chain of versions, more than one capture on the head, and a reading on an
-    older version too, so "the newest of" and "across the chain" have something to be
-    wrong about. What cannot vary is that it is settled at the current policy, parser and
-    extractor — anything due here would turn up in every sweep assertion in the suite.
+    Its shape varies, so "the newest of" and "across the chain" have something to be wrong
+    about. What cannot vary is the current capture policy, parser and extractor — anything
+    due here would turn up in every sweep assertion in the suite.
     """
     fake = faker()
     host_id = await ensure(session, BYSTANDER_HOST)

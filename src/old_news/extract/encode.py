@@ -39,7 +39,6 @@ class Encoded:
 
     body: bytes
     content_type: str
-    byte_size: int
 
 
 @db.transactional
@@ -50,9 +49,7 @@ async def due_encodes(
     rows = await session.execute(
         select(ImageCapture.id)
         .where(
-            ImageCapture.status.between(200, 299),
-            ImageCapture.body != b"",
-            ImageCapture.content_type.startswith("image/"),
+            ImageCapture.usable,
             (ImageCapture.spec != spec(settings))
             | (ImageCapture.encoder_version != encoder_version()),
         )
@@ -104,7 +101,7 @@ def encode(body: bytes, settings: ExtractSettings) -> Encoded | None:
     encoded = buffer.getvalue()
     if len(encoded) >= len(body):
         return None
-    return Encoded(encoded, CONTENT_TYPE, len(encoded))
+    return Encoded(encoded, CONTENT_TYPE)
 
 
 @db.transactional
@@ -121,7 +118,7 @@ async def _replace(
     if encoded is not None:
         stamp |= {
             "body": encoded.body,
-            "byte_size": encoded.byte_size,
+            "byte_size": len(encoded.body),
             "content_type": encoded.content_type,
         }
     await session.execute(update(ImageCapture).where(ImageCapture.id == capture_id).values(**stamp))
@@ -145,7 +142,7 @@ async def encode_image(capture_id: uuid.UUID, settings: ExtractSettings) -> int:
             encoded = None
 
         await _replace(capture_id, encoded, settings)
-        saved = len(body) - encoded.byte_size if encoded else 0
+        saved = len(body) - len(encoded.body) if encoded else 0
         current.set_attribute("image.saved_bytes", saved)
         count("extract.images.reencoded" if encoded else "extract.images.kept_as_served")
         count("extract.images.saved_bytes", saved)

@@ -105,7 +105,7 @@ the page that kept them, by a margin of about fifty characters in eight thousand
 asks four questions instead: does this carry the whole article — prose, and within a share of the
 longest reading held; failing that, is it prose at all; failing that, which kept the most headings,
 quotes and pictures, since that is all a comic has; and only then, which is longer. The preference
-still breaks a tie. The share and the paragraph floor sit next to it in `db/models/item.py`, because
+still breaks a tie. The share and the character floor sit next to it in `db/models/item.py`, because
 they are what "the same article told twice" means rather than a measure of extraction quality — that
 one is `judge()`, and its thresholds are config.
 
@@ -149,14 +149,19 @@ tasks/ingest.py  ──►  ingest/service.py  ──►  fetch/    (HTTP)
                              └────────────────► db/      (documents, compressed)
 ```
 
-Extraction is not on that chain, deliberately. It is three sweeps of its own on their own queue,
-each finding work by what the archive is missing rather than by what a poll just wrote:
+Extraction is not on that chain, deliberately. It is six sweeps of its own on their own queue, each
+finding work by what the archive is missing rather than by what a poll just wrote:
 
 ```text
-tasks/extract.py ──► extract/due.py      what has no page      ──► extract/capture.py
-                 ──► extract/service.py  what has no text      ──► extract/article.py
+tasks/extract.py ──► extract/due.py      what has no page       ──► extract/capture.py
+                 ──► extract/feed.py     what has no feed text  ──► extract/feed.py
+                 ──► extract/service.py  what has no reading    ──► extract/article.py
                  ──► extract/images.py   what has no picture
+                 ──► extract/encode.py   what has no rendition
 ```
+
+All six defer through `tasks/sweep.py`, which is the one place the queueing lock, the host lock and
+the crawl-delay stagger are spelled.
 
 A failing extractor cannot fail a poll, retries are independent, and re-capturing a five-year-old
 article runs down exactly the same path as capturing one that arrived a minute ago.
@@ -164,13 +169,14 @@ article runs down exactly the same path as capturing one that arrived a minute a
 And for a request:
 
 ```text
-api/routes/greader.py  ──►  ingest/service.py  ──►  db/
+api/routes/reading.py        ──►  ui/service.py             ──►  db/
+api/routes/subscriptions.py  ──►  subscriptions/service.py  ──►  fetch/, db/
 ```
 
 A service never imports from `api/` or `tasks/`. That's the only direction rule, and it's what keeps
 the same logic reachable from both a worker and an HTTP handler.
 
-Feature packages still to be built: `enrich/`, `backfill/`, `blob/`.
+Feature packages still to be built: `enrich/`, `backfill/`, `library/`.
 
 ## Configuration
 
@@ -267,21 +273,22 @@ number takes effect at once. `Feed.gone` — the publisher answering 410 — is 
 no threshold, and reads off the log. Those were one column called `suspended`, which is why changing
 the limit used to leave rows stamped with the old one.
 
-**Everything else** — monthly partitions, the BM25 index, DiskANN — is raw DDL in a revision.
+**Everything else** is raw DDL in a revision: `op.execute` is how a column gets backfilled and how
+the seed `training_rules` get in.
 
 ### Stored bodies are compressed, sometimes against a dictionary
 
-`db/bytes.py` is the only module that imports zstd. Everything stored as bytes — feed documents, the
-item text carved out of them, article pages — goes through it at one level, which is config rather
-than a constant.
+`db/bytes.py` and `db/dictionaries.py` are the only modules that reach for `compression.zstd`.
+Everything stored as bytes — feed documents, the item text carved out of them, article pages — goes
+through it at one level, which is config rather than a constant.
 
 Bodies that share a template compress about twice as well against a dictionary trained on their own
-kind: feed documents 88 KB to 44 KB, article pages 49 KB to 24 KB. What counts as a kind is a
-`scope` — `feed_document`, `feed_item`, `host_page` — beside exactly one of `feed_id` or `host_id`.
-Two of those share a feed and are still different scopes: whole feed XML and the HTML fragments
-inside it have almost nothing in common, so a dictionary trained on one leaves most of the win on
-the other unclaimed. Reusing it would be correct, because `train()` measures against a held-out
-sample; it would just be worse.
+kind: feed documents 88 KB to 44 KB. Article pages gain less, 47 KB to 39 KB. What counts as a kind
+is a `scope` — `feed_document`, `feed_item`, `host_page` — beside exactly one of `feed_id` or
+`host_id`. Two of those share a feed and are still different scopes: whole feed XML and the HTML
+fragments inside it have almost nothing in common, so a dictionary trained on one leaves most of the
+win on the other unclaimed. Reusing it would be correct, because `train()` measures against a
+held-out sample; it would just be worse.
 
 What decides whether a dictionary is any good is how many samples it saw, not how big it is. Eight
 buys 16%, twenty-eight buys 50%, and against held-out pages a 110 KB dictionary beats 512 KB, 1 MB
@@ -298,8 +305,9 @@ Three things make this safe to have done:
   body compressed against it stays that way. `documents.dictionary_id`,
   `feed_captures.dictionary_id` and `page_captures.dictionary_id` are foreign keys, so Postgres
   refuses to drop one still in use and it cannot go missing from a dump that holds the bodies.
-- **No dictionary is always correct.** A scope with too little to learn from — zstd's trainer
-  refuses below a handful of samples — stays on plain zstd. That is the cold start and the fallback.
+- **No dictionary is always correct.** A scope with too little to learn from — fewer than
+  `storage.dictionary_min_samples` bodies — stays on plain zstd. That is the cold start and the
+  fallback.
 
 A retrain inserts rather than replaces. `dict_id` hashes the content, so an unchanged feed retrains
 to the same dictionary; that is a no-op that moves `trained_at`, not a failed nightly job, which is
@@ -463,6 +471,21 @@ delays whatever else that process was going to do. Separate worker processes are
 polls start lagging behind their schedule; the queue split is what makes that a deployment change
 rather than a code one.
 
+#### Winding down is graceful, and therefore unbounded
+
+Setting the stop event cancels each worker task, which is procrastinate's documented way of asking
+one to stop. It shields its own run loop from that cancellation and instead sets a stop flag, so the
+worker drains its in-flight jobs and its 5s and 10s pollers notice only between sleeps. Nothing
+bounds the total: `shutdown_graceful_timeout` is left unset, and a wind-down measured over a minute
+on the free-threaded build.
+
+Neither `compose.yaml` nor the systemd unit sets a stop timeout, so Docker's default 10 seconds
+applies and a worker that has not finished by then is killed rather than stopped. A job killed that
+way is left at `doing` until `stalled_worker_timeout` reclaims it, where one abandoned by a bounded
+shutdown would not be. Passing `shutdown_graceful_timeout` to `run_worker_async` is the fix, and the
+number is a real tradeoff — how long to let a capture finish against how long to hold a deploy — so
+it wants choosing rather than defaulting.
+
 ## Telemetry
 
 `observability/telemetry.py` is the only module that imports `logfire`. It installs the global
@@ -590,4 +613,3 @@ to the box; `infra/README.md` covers it.
   refuses to start without one configured.
 - Postgres is never published in `compose.yaml`. The dev port binding lives in the override file.
 - No registration endpoint, ever. Single user, seeded credentials.
-- Never log request bodies for `/accounts/ClientLogin` — it carries the API password.

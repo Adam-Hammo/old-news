@@ -3,13 +3,14 @@
 import logging
 import uuid
 
-from old_news import extract, fetch, politeness, robots
+from old_news import extract, fetch
 from old_news.config import get_settings
 from old_news.extract import capture, encode, feed, images, service
 from old_news.observability import count
+from old_news.tasks import sweep
 from old_news.tasks.app import app
 from old_news.tasks.ingest import SCHEDULER_PRIORITY
-from old_news.tasks.tracing import defer_unless_queued, task
+from old_news.tasks.tracing import task
 
 logger = logging.getLogger(__name__)
 
@@ -27,25 +28,15 @@ async def capture_page(version_id: str) -> None:
 async def schedule_captures(timestamp: int) -> None:
     settings = get_settings()
     due = await extract.due_captures(settings.extract, settings.extract.capture_batch_size)
-    crawl_delays = await robots.crawl_delays(item.host for item in due)
-    delays = politeness.stagger(
-        (item.host for item in due),
-        minimum=settings.http.min_host_interval_seconds,
-        crawl_delays=crawl_delays,
+    deferred = await sweep.defer_each(
+        capture_page,
+        [item.version_id for item in due],
+        kwarg="version_id",
+        lock_prefix="page",
+        # The article host, which is frequently not the host serving the feed.
+        hosts=[item.host for item in due],
+        min_host_interval_seconds=settings.http.min_host_interval_seconds,
     )
-
-    deferred = 0
-    for item, delay in zip(due, delays, strict=True):
-        deferred += await defer_unless_queued(
-            capture_page.configure(
-                # One capture per version in flight, or a slow host lets them stack up.
-                queueing_lock=f"page:{item.version_id}",
-                # The article host, which is frequently not the host serving the feed.
-                lock=politeness.host_lock(item.host),
-                schedule_in={"seconds": delay} if delay else None,
-            ),
-            version_id=str(item.version_id),
-        )
 
     if due:
         logger.info("deferred %d of %d due captures", deferred, len(due))
@@ -64,13 +55,7 @@ async def schedule_extractions(timestamp: int) -> None:
     """No network, so no politeness — only its own queue."""
     settings = get_settings()
     due = await extract.due_extractions(settings.extract, settings.extract.extract_batch_size)
-
-    deferred = 0
-    for version_id in due:
-        deferred += await defer_unless_queued(
-            extract_page.configure(queueing_lock=f"extract:{version_id}"),
-            version_id=str(version_id),
-        )
+    deferred = await sweep.defer_each(extract_page, due, kwarg="version_id", lock_prefix="extract")
 
     if due:
         logger.info("deferred %d of %d due extractions", deferred, len(due))
@@ -88,13 +73,9 @@ async def schedule_feed_captures(timestamp: int) -> None:
     """One job per document, not per version: the parse is what costs, and it is shared."""
     settings = get_settings()
     due = await extract.due_feed_captures(settings.extract.extract_batch_size)
-
-    deferred = 0
-    for document_id in due:
-        deferred += await defer_unless_queued(
-            capture_feed.configure(queueing_lock=f"capture-feed:{document_id}"),
-            document_id=str(document_id),
-        )
+    deferred = await sweep.defer_each(
+        capture_feed, due, kwarg="document_id", lock_prefix="capture-feed"
+    )
 
     if due:
         logger.info("deferred %d of %d due feed captures", deferred, len(due))
@@ -112,13 +93,9 @@ async def schedule_feed_extractions(timestamp: int) -> None:
     """Newest first, unlike the page sweep: this costs no request, so fairness is moot."""
     settings = get_settings()
     due = await extract.due_feed_extractions(settings.extract.extract_batch_size)
-
-    deferred = 0
-    for version_id in due:
-        deferred += await defer_unless_queued(
-            extract_feed.configure(queueing_lock=f"extract-feed:{version_id}"),
-            version_id=str(version_id),
-        )
+    deferred = await sweep.defer_each(
+        extract_feed, due, kwarg="version_id", lock_prefix="extract-feed"
+    )
 
     if due:
         logger.info("deferred %d of %d due feed extractions", deferred, len(due))
@@ -136,22 +113,14 @@ async def schedule_lead_images(timestamp: int) -> None:
     """Lead images only. The same task serves body images, when a reader asks."""
     settings = get_settings()
     due = await images.due_images(settings.extract.image_batch_size)
-    hosts = [politeness.host_of(url) for url in await images.hosts_for(due)]
-    crawl_delays = await robots.crawl_delays(hosts)
-    delays = politeness.stagger(
-        hosts, minimum=settings.http.min_host_interval_seconds, crawl_delays=crawl_delays
+    deferred = await sweep.defer_each(
+        capture_image,
+        due,
+        kwarg="slot_id",
+        lock_prefix="image",
+        hosts=await images.hosts_for(due),
+        min_host_interval_seconds=settings.http.min_host_interval_seconds,
     )
-
-    deferred = 0
-    for slot_id, host, delay in zip(due, hosts, delays, strict=True):
-        deferred += await defer_unless_queued(
-            capture_image.configure(
-                queueing_lock=f"image:{slot_id}",
-                lock=politeness.host_lock(host),
-                schedule_in={"seconds": delay} if delay else None,
-            ),
-            slot_id=str(slot_id),
-        )
 
     if due:
         logger.info("deferred %d of %d due images", deferred, len(due))
@@ -169,13 +138,7 @@ async def schedule_encodes(timestamp: int) -> None:
     """No network, so no politeness. Biggest images first, which is where the bytes are."""
     settings = get_settings()
     due = await extract.due_encodes(settings.extract, settings.extract.encode_batch_size)
-
-    deferred = 0
-    for capture_id in due:
-        deferred += await defer_unless_queued(
-            encode_image.configure(queueing_lock=f"encode:{capture_id}"),
-            capture_id=str(capture_id),
-        )
+    deferred = await sweep.defer_each(encode_image, due, kwarg="capture_id", lock_prefix="encode")
 
     if due:
         logger.info("deferred %d of %d due image encodes", deferred, len(due))

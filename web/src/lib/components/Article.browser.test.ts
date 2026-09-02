@@ -24,8 +24,11 @@ function article(over: Partial<Article> = {}): Article {
 	};
 }
 
+const show = (over: Partial<Article> = {}, back = '/') =>
+	render(ArticleView, { article: article(over), back });
+
 test('the headline, the byline and the text', async () => {
-	const screen = await render(ArticleView, { article: article(), back: '/' });
+	const screen = await show();
 
 	await expect
 		.element(screen.getByRole('heading', { level: 1 }))
@@ -36,7 +39,7 @@ test('the headline, the byline and the text', async () => {
 });
 
 test('an author nobody recorded leaves no stray separator', async () => {
-	const screen = await render(ArticleView, { article: article({ author: '' }), back: '/' });
+	const screen = await show({ author: '' });
 
 	const byline = screen.container.querySelector('.by')!;
 	expect(byline.querySelectorAll('span')).toHaveLength(2);
@@ -44,7 +47,7 @@ test('an author nobody recorded leaves no stray separator', async () => {
 
 // Extraction lags ingest, so an article can arrive before its text does.
 test('an article with nothing extracted yet says so', async () => {
-	const screen = await render(ArticleView, { article: article({ page_body: '' }), back: '/' });
+	const screen = await show({ page_body: '' });
 
 	await expect
 		.element(screen.getByText(/No text has been read out of this one yet/))
@@ -52,7 +55,7 @@ test('an article with nothing extracted yet says so', async () => {
 });
 
 test('back to the river is the whole of the navigation', async () => {
-	const screen = await render(ArticleView, { article: article(), back: '/?section=Science' });
+	const screen = await show({}, '/?section=Science');
 
 	for (const link of screen.container.querySelectorAll('a[href^="/"]')) {
 		expect(link.getAttribute('href')).toBe('/?section=Science');
@@ -62,7 +65,7 @@ test('back to the river is the whole of the navigation', async () => {
 });
 
 test('the actions are behind the overflow control, not on the bar', async () => {
-	const screen = await render(ArticleView, { article: article(), back: '/' });
+	const screen = await show();
 
 	const sheet = screen.container.querySelector('dialog');
 	expect(sheet?.open).toBeFalsy();
@@ -76,39 +79,36 @@ test('the actions are behind the overflow control, not on the bar', async () => 
 });
 
 test('comments are offered only where the feed gave one', async () => {
-	const without = await render(ArticleView, { article: article(), back: '/' });
+	const without = await show();
 	expect(without.container.querySelector('dialog')?.querySelectorAll('a')).toHaveLength(1);
 	await without.unmount();
 
-	const withUrl = await render(ArticleView, {
-		article: article({ comments_url: 'https://example.com/a#comments' }),
-		back: '/',
-	});
+	const withUrl = await show({ comments_url: 'https://example.com/a#comments' });
 	expect(withUrl.container.querySelector('dialog')?.querySelectorAll('a')).toHaveLength(2);
 });
 
 // A row cannot carry a kicker — a section is a set of feeds — but one article has one feed.
 test('the kicker is the section, and absent when the feed is unfiled', async () => {
-	const filed = await render(ArticleView, { article: article(), back: '/' });
+	const filed = await show();
 	await expect.element(filed.getByText('Surveillance')).toBeVisible();
 	await filed.unmount();
 
-	const loose = await render(ArticleView, { article: article({ section: '' }), back: '/' });
+	const loose = await show({ section: '' });
 	expect(loose.container.querySelector('.kicker')).toBeNull();
 });
 
 test('the headline is followed by the byline, with nothing derived in between', async () => {
-	const screen = await render(ArticleView, { article: article(), back: '/' });
+	const screen = await show();
 
 	expect(screen.container.querySelector('h1 + .hair')).not.toBeNull();
 });
 
 test('the version count shows only when there is more than one to choose between', async () => {
-	const one = await render(ArticleView, { article: article(), back: '/' });
+	const one = await show();
 	expect(one.container.querySelector('.by em')).toBeNull();
 	await one.unmount();
 
-	const three = await render(ArticleView, { article: article({ versions: 3 }), back: '/' });
+	const three = await show({ versions: 3 });
 	await expect.element(three.getByText('v3 of 3')).toBeVisible();
 });
 
@@ -116,7 +116,7 @@ test('the version count shows only when there is more than one to choose between
 // column rather than all of it on the right.
 test('the column is centred in the pane, with the back-link on the same edges', async () => {
 	await page.viewport(1010, 900);
-	const screen = await render(ArticleView, { article: article(), back: '/' });
+	const screen = await show();
 
 	const pane = screen.container.querySelector('.pane')!.getBoundingClientRect();
 	const column = screen.container.querySelector('article')!.getBoundingClientRect();
@@ -129,7 +129,7 @@ test('the column is centred in the pane, with the back-link on the same edges', 
 });
 
 test('the body is justified, which is why the column is measured', async () => {
-	const screen = await render(ArticleView, { article: article(), back: '/' });
+	const screen = await show();
 
 	const paragraph = screen.container.querySelector('.body p')!;
 	expect(getComputedStyle(paragraph).textAlign).toBe('justify');
@@ -138,10 +138,7 @@ test('the body is justified, which is why the column is measured', async () => {
 const TEASER = 'The teaser, which is all the feed carried.';
 
 test('the toggle sits in the byline and swaps the text under it', async () => {
-	const screen = await render(ArticleView, {
-		article: article({ feed_body: TEASER }),
-		back: '/',
-	});
+	const screen = await show({ feed_body: TEASER });
 
 	await expect
 		.element(screen.getByRole('button', { name: 'Web' }))
@@ -156,16 +153,13 @@ test('the toggle sits in the byline and swaps the text under it', async () => {
 });
 
 test('one reading leaves nothing to toggle between', async () => {
-	const screen = await render(ArticleView, { article: article(), back: '/' });
+	const screen = await show();
 
 	expect(screen.container.querySelector('.meta')).toBeNull();
 });
 
 test('the version count keeps its corner when the toggle joins it', async () => {
-	const screen = await render(ArticleView, {
-		article: article({ feed_body: TEASER, versions: 3 }),
-		back: '/',
-	});
+	const screen = await show({ feed_body: TEASER, versions: 3 });
 
 	await expect.element(screen.getByText('v3 of 3')).toBeVisible();
 	expect(screen.container.querySelectorAll('.meta button')).toHaveLength(2);

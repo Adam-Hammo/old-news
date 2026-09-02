@@ -41,10 +41,8 @@ READING_PREFERENCE = (ExtractionSource.FEED, ExtractionSource.PAGE)
 # and the article. Two readings of one piece differ by an editor's note, not by half.
 FULL_TEXT_SHARE = 0.8
 
-# Below this a reading is a caption or a scrap of template, and length stops being
-# evidence: 300 characters of footer is not more article than a comic, so
-# `structure_count` decides instead. Characters rather than paragraphs, because plenty
-# of publishers extract as one unbroken block.
+# Below this, length stops being evidence and `structure_count` decides instead.
+# Characters rather than paragraphs: plenty of publishers extract as one block.
 ARTICLE_CHARS = 500
 
 
@@ -88,29 +86,31 @@ def _whole_article():
     )
 
 
-def _fullest_reading(scope, correlate):
-    """The best of the newest reading per source among `scope`, as a scalar subquery.
-
-    Whichever carries the whole article, else whichever has enough to be one, else
-    whichever kept the most headings, quotes and pictures — all a comic has.
-    `READING_PREFERENCE` breaks a tie. Per source, or a superseded one would win.
-    """
-    newer = aliased(Extraction, name="newer_reading")
-    # `correlate_except`, or the inner half puts `item_versions` in its own FROM and asks
-    # whether a newer reading of that source exists for *any* version.
-    superseded = (
+def _newest(rows, *, at, among, name: str):
+    """This row is the newest `among` its group, with the id breaking a tie in `at`."""
+    newer = aliased(rows, name=name)
+    return ~(
         select(newer.id)
-        .where(
-            scope(newer),
-            newer.source == Extraction.source,
-            tuple_(newer.created_at, newer.id) > tuple_(Extraction.created_at, Extraction.id),
-        )
+        .where(among(newer), tuple_(at(newer), newer.id) > tuple_(at(rows), rows.id))
+        # `correlate_except`, or the inner half puts the outer row's table in its own FROM
+        # and asks whether a newer row exists for *anything*.
         .correlate_except(newer)
         .exists()
     )
+
+
+def _fullest_reading(scope, correlate):
+    """The best of the newest reading per source among `scope`, as a scalar subquery."""
+    newest = _newest(
+        Extraction,
+        at=lambda reading: reading.created_at,
+        # Per source, or only the newest reading survives and the fullest never competes.
+        among=lambda newer: and_(scope(newer), newer.source == Extraction.source),
+        name="newer_reading",
+    )
     return func.coalesce(
         select(Extraction.body)
-        .where(scope(Extraction), ~superseded)
+        .where(scope(Extraction), newest)
         .order_by(
             _whole_article().desc(),
             _substantial().desc(),
@@ -126,10 +126,16 @@ def _fullest_reading(scope, correlate):
 
 
 def item_reading(source: ExtractionSource):
-    """The fullest current reading of one source, across every version of an item."""
+    """The newest reading of one source, across every version of an item."""
     versions = select(ItemVersion.id).where(ItemVersion.item_id == Item.id).correlate(Item)
-    return _fullest_reading(
-        lambda reading: and_(reading.item_version_id.in_(versions), reading.source == source), Item
+    return func.coalesce(
+        select(Extraction.body)
+        .where(Extraction.item_version_id.in_(versions), Extraction.source == source)
+        .order_by(Extraction.created_at.desc(), Extraction.id.desc())
+        .correlate(Item)
+        .limit(1)
+        .scalar_subquery(),
+        "",
     )
 
 
@@ -139,68 +145,62 @@ def _current_version_join():
 
 def _latest_capture_join():
     """The newest successful capture for a version, if it has one."""
-    newer = aliased(PageCapture, name="newer_capture")
     return and_(
         ItemVersion.id == PageCapture.item_version_id,
         PageCapture.succeeded,
-        ~select(newer.id)
-        .where(
-            newer.item_version_id == PageCapture.item_version_id,
-            newer.succeeded,
-            # The id breaks a tie, so "latest" is one row rather than sometimes two.
-            tuple_(newer.fetched_at, newer.id) > tuple_(PageCapture.fetched_at, PageCapture.id),
-        )
-        .exists(),
+        _newest(
+            PageCapture,
+            at=lambda capture: capture.fetched_at,
+            among=lambda newer: and_(
+                newer.item_version_id == PageCapture.item_version_id, newer.succeeded
+            ),
+            name="newer_capture",
+        ),
     )
 
 
 def _feed_capture_join():
     """The newest text carved out of the feed for a version."""
-    newer = aliased(FeedCapture, name="newer_feed_capture")
     return and_(
         ItemVersion.id == FeedCapture.item_version_id,
-        ~select(newer.id)
-        .where(
-            newer.item_version_id == FeedCapture.item_version_id,
-            tuple_(newer.captured_at, newer.id) > tuple_(FeedCapture.captured_at, FeedCapture.id),
-        )
-        .exists(),
+        _newest(
+            FeedCapture,
+            at=lambda capture: capture.captured_at,
+            among=lambda newer: newer.item_version_id == FeedCapture.item_version_id,
+            name="newer_feed_capture",
+        ),
     )
 
 
 def _source_reading_join(source: ExtractionSource):
     """The newest reading of one source for one version."""
-    newer = aliased(Extraction, name=f"newer_{source}_reading")
     return and_(
         ItemVersion.id == Extraction.item_version_id,
         Extraction.source == source,
-        ~select(newer.id)
-        .where(
-            newer.item_version_id == Extraction.item_version_id,
-            newer.source == source,
-            tuple_(newer.created_at, newer.id) > tuple_(Extraction.created_at, Extraction.id),
-        )
-        .exists(),
+        _newest(
+            Extraction,
+            at=lambda reading: reading.created_at,
+            among=lambda newer: and_(
+                newer.item_version_id == Extraction.item_version_id, newer.source == source
+            ),
+            name=f"newer_{source}_reading",
+        ),
     )
 
 
 def _latest_item_extraction_join():
-    """The newest extraction of any version of one item.
-
-    Not the head's: an edit makes a new head whose page waits out the settle window, so
-    scoping this to the head would blank the article until that finished.
-    """
-    newer = aliased(Extraction, name="newer_item_extraction")
+    """The newest extraction of any version of one item — the head may not have one yet."""
     sibling = aliased(ItemVersion, name="sibling_version")
     return and_(
         ItemVersion.id == Extraction.item_version_id,
-        ~select(newer.id)
-        .join(sibling, sibling.id == newer.item_version_id)
-        .where(
-            sibling.item_id == ItemVersion.item_id,
-            tuple_(newer.created_at, newer.id) > tuple_(Extraction.created_at, Extraction.id),
-        )
-        .exists(),
+        _newest(
+            Extraction,
+            at=lambda reading: reading.created_at,
+            among=lambda newer: and_(
+                sibling.id == newer.item_version_id, sibling.item_id == ItemVersion.item_id
+            ),
+            name="newer_item_extraction",
+        ),
     )
 
 
@@ -241,8 +241,6 @@ class Item(UUIDPrimaryKey, Base):
         lazy="raise",
     )
 
-    # The tail of the chain: the version nothing supersedes. lazy="raise" guards
-    # against a per-row lazy load, not against the join, which is cheap.
     current_version: Mapped[ItemVersion] = relationship(
         primaryjoin=_current_version_join,
         viewonly=True,
@@ -250,7 +248,6 @@ class Item(UUIDPrimaryKey, Base):
         lazy="raise",
     )
 
-    # The best text we hold for this article, from whichever version was last read.
     current_extraction: Mapped[Extraction | None] = relationship(
         secondary="item_versions",
         primaryjoin=lambda: Item.id == ItemVersion.item_id,
@@ -345,10 +342,7 @@ class ItemVersion(UUIDPrimaryKey, Base):
 
     @hybrid_property
     def is_head(self) -> bool:
-        """The tail of the chain: the version nothing supersedes.
-
-        Not `supersedes_id IS NULL`, which is the chain's other end.
-        """
+        """The version nothing supersedes — not `supersedes_id IS NULL`, the chain's other end."""
         return self.superseded_by is None
 
     @is_head.inplace.expression

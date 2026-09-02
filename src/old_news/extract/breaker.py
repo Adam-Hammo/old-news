@@ -13,14 +13,10 @@ from old_news.politeness import backoff
 
 
 def refusing(host, settings: ExtractSettings, now: datetime.datetime) -> ColumnElement[bool]:
-    """Whether this host is shut and its probe is not yet due.
-
-    Goes false while a probe is due, so one capture gets through and the count it reads
-    can move again — a breaker with no probe freezes its own input. Subtracting the
-    threshold first starts the wait at the minimum instead of several doublings deep.
-    """
+    """Whether this host is shut and its probe is not yet due."""
     policy = backoff.policy_for(settings.host_probe)
     threshold = settings.host_failure_threshold
+    # Subtracting the threshold starts the wait at the minimum, not several doublings deep.
     return (host.capture_failures >= threshold) & (
         backoff.due_at(host.last_capture_failure, host.capture_failures - threshold, policy) > now
     )

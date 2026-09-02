@@ -26,6 +26,7 @@ default:
 install:
     uv sync --all-extras
     npm --prefix web ci
+    npm --prefix web exec -- playwright install --with-deps chromium
     uv run pre-commit install --install-hooks
 
 # --- local running ---
@@ -74,6 +75,10 @@ migrate:
 migration name:
     uv run alembic revision --autogenerate -m "{{ name }}"
 
+# Fails if the models and the migrations have drifted apart. Needs the database up.
+migration-check:
+    uv run alembic check
+
 # Show the current revision and what is pending.
 migration-status:
     uv run alembic current
@@ -110,6 +115,14 @@ backup-verify:
     {{ compose }} run --rm backup verify-restore
 
 # --- quality ---
+
+# The Docker-free gate: what a change can be checked against in seconds.
+quick:
+    uv run ruff format --check .
+    uv run ruff check .
+    uv run ty check
+    uv run vulture
+    uv run pytest tests/unit -q
 
 # Everything. `just test unit` for the fast, Docker-free subset.
 test suite="" *args:

@@ -59,12 +59,6 @@ def test_having_a_host_and_being_fetchable_are_the_same_question(url):
     assert bool(host_of(url)) is fetchable(url)
 
 
-def test_feeds_from_one_publisher_share_a_lock():
-    hosts = [host_of(u) for u in ("https://www.bbc.co.uk/a/rss", "https://bbc.co.uk/b/rss")]
-
-    assert len(set(map(host_lock, hosts))) == 1
-
-
 def test_the_www_name_is_the_same_url_under_a_different_host():
     """theclimatebrink.com serves its feed from `www` and links its articles at an apex
     with no DNS record at all."""

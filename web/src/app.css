@@ -74,8 +74,6 @@
 	--hair: #d2d1cb;
 	--underline: #9a9992;
 	--well: #e8e6df;
-	--well-mark: #a9a79d;
-	--thumb: #e2e0d8;
 	--scrim: rgb(28 28 26 / 0.34);
 
 	--display: 'Frank Ruhl Libre', Georgia, 'Times New Roman', serif;
@@ -101,8 +99,6 @@
 		--hair: #33322d;
 		--underline: #6e6c65;
 		--well: #24231f;
-		--well-mark: #56544d;
-		--thumb: #26251f;
 		--scrim: rgb(0 0 0 / 0.6);
 	}
 }
@@ -154,4 +150,70 @@ button {
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	-webkit-overflow-scrolling: touch;
+}
+
+/* `--measure` is the width of the text, not of the box around it, so the gutter is added
+   rather than eaten. Everything sharing the column carries this, so a rule lands on the
+   column's edges rather than its pane's. */
+.measured {
+	width: 100%;
+	max-width: calc(var(--measure) + 2 * var(--gutter));
+	margin-inline: auto;
+}
+
+.hair {
+	height: 1px;
+	background: var(--rule);
+}
+
+.label {
+	color: var(--ink-faint);
+	font-size: 10.5px;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+/* Both bottom sheets: only where each is anchored differs, so that is all either declares. */
+dialog {
+	width: 100%;
+	max-width: var(--column);
+	padding: 0 0 env(safe-area-inset-bottom);
+	color: var(--ink);
+	background: var(--paper);
+	border: 0;
+	border-top: 4px solid var(--rule);
+}
+
+dialog::backdrop {
+	background: var(--scrim);
+}
+
+.sheethead {
+	margin: 0;
+	padding: 13px var(--gutter) 9px;
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.22em;
+	text-transform: uppercase;
+	color: var(--ink-faint);
+}
+
+dialog ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+dialog a,
+dialog button {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	height: 56px;
+	padding: 0 var(--gutter);
+	border-bottom: 1px solid var(--hair);
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
 }

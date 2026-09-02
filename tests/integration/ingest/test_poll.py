@@ -17,6 +17,7 @@ from old_news.db import (
     Subscription,
 )
 from old_news.fetch import Fetcher
+from old_news.ingest import parser, schedule
 from old_news.ingest.service import poll_feed
 from old_news.politeness import ensure, resolve
 
@@ -51,7 +52,9 @@ def _serve(headers: dict[str, str]):
     """One route whose answer depends on STATE, so a test can change what the
     publisher is doing without restarting anything."""
     if STATE["status"] != 200:
-        return STATE["status"], b"", {"Retry-After": STATE["retry_after"]}
+        # An empty `retry_after` means the publisher sent no header at all.
+        asked = {"Retry-After": STATE["retry_after"]} if STATE["retry_after"] else {}
+        return STATE["status"], b"", asked
     if headers.get("if-none-match") == STATE["etag"]:
         return 304, b"", {"ETag": STATE["etag"]}
     return (
@@ -228,18 +231,25 @@ async def test_a_dated_retry_after_falls_back_to_the_maximum(feed, fetcher, sett
     assert wait == settings.ingest.max_interval_seconds
 
 
+async def test_a_rate_limit_with_no_retry_after_uses_the_backoff_policy(feed, fetcher, settings):
+    """Absent is not unparsable: a bare 503 is an ordinary failure, not a day off."""
+    STATE.update(status=503, retry_after="")
+
+    wait = await _wait_after_poll(feed, fetcher, settings)
+
+    assert wait < settings.ingest.max_interval_seconds
+    assert wait == schedule.next_interval(settings.ingest, failures=1)
+
+
 async def test_a_crash_still_moves_the_schedule(feed, fetcher, settings, monkeypatch):
     """Otherwise the feed stays due and the scheduler re-defers it every minute."""
-    import pytest as _pytest
-
-    from old_news.ingest import parser
 
     def explode(*_args, **_kwargs):
         raise ValueError("unparsable")
 
     monkeypatch.setattr(parser, "parse", explode)
 
-    with _pytest.raises(ValueError):
+    with pytest.raises(ValueError):
         await poll_feed(feed.id, fetcher, settings)
 
     async with db.session() as session:
@@ -319,9 +329,7 @@ async def test_a_blanket_ban_still_polls(feed, fetcher, settings, no_policies):
     assert applied.new_items == 2
 
 
-async def test_one_document_repeating_an_identity_does_not_fail_the_poll(
-    clean: None, fetcher, settings, server: str, feed_state
-):
+async def test_one_document_repeating_an_identity_does_not_fail_the_poll(feed, fetcher, settings):
     """The repeat used to raise and fail every poll of that feed. The first entry wins."""
     duplicated = b"""<?xml version="1.0"?>
     <rss version="2.0"><channel><title>Broken</title>
@@ -330,17 +338,10 @@ async def test_one_document_repeating_an_identity_does_not_fail_the_poll(
     </channel></rss>"""
     STATE.update(body=duplicated, etag='"dupe"')
 
-    async with db.session() as session:
-        feed = Feed(url=server, host_id=await resolve(session, server))
-        session.add(feed)
-        await session.flush()
-        session.add(Subscription(feed_id=feed.id))
-        feed_id = feed.id
-
-    applied = await poll_feed(feed_id, fetcher, settings)
+    applied = await poll_feed(feed.id, fetcher, settings)
 
     assert applied.new_items == 1
     assert applied.duplicate_identity == 1
     assert (await counts())["items"] == 1
 
-    assert await _failure_state(feed_id) == (0, False)
+    assert await _failure_state(feed.id) == (0, False)

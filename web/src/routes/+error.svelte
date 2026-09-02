@@ -6,7 +6,7 @@
 	const stalled = $derived(page.status === 504);
 </script>
 
-<div class="pane">
+<div class="pane measured">
 	<p class="kicker">{stalled ? 'No answer' : `Error ${page.status}`}</p>
 	<h1>{stalled ? 'That did not load.' : 'Something went wrong.'}</h1>
 	<p class="say">
@@ -19,8 +19,6 @@
 
 <style>
 	.pane {
-		max-width: calc(var(--measure) + 2 * var(--gutter));
-		margin-inline: auto;
 		padding: 2.5rem var(--gutter);
 	}
 

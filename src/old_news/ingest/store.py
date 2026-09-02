@@ -25,7 +25,6 @@ CAPTURED_HEADERS = ("etag", "last-modified", "content-type", "cache-control", "r
 class Applied:
     new_items: int = 0
     new_versions: int = 0
-    unchanged: int = 0
     guid_churn: int = 0
     duplicate_identity: int = 0
 
@@ -102,11 +101,7 @@ class Current:
 
 
 async def current_versions(session: AsyncSession, feed_id: uuid.UUID) -> dict[str, Current]:
-    """Every item in this feed with the tail of its chain, keyed by identity.
-
-    Columns, not entities: selecting `ItemVersion` would load every body to compare
-    hashes. The anti-join is what "tail of the chain" means — nothing supersedes it.
-    """
+    """Every item's head version in this feed by identity. Columns, not entities: no bodies load."""
     rows = await session.execute(
         select(
             Item.identity_key,
@@ -136,7 +131,7 @@ async def apply_items(
     existing = await current_versions(session, feed.id)
     known_urls = {current.canonical_url for current in existing.values() if current.canonical_url}
 
-    new_items = new_versions = unchanged = churn = duplicates = 0
+    new_items = new_versions = churn = duplicates = 0
     seen: set[str] = set()
 
     for parsed in parsed_items:
@@ -177,7 +172,6 @@ async def apply_items(
             continue
 
         if found.content_hash == fingerprint:
-            unchanged += 1
             continue
 
         session.add(
@@ -189,7 +183,7 @@ async def apply_items(
         logger.warning("feed %s repeated %d identities in one document", feed.id, duplicates)
 
     await session.flush()
-    return Applied(new_items, new_versions, unchanged, churn, duplicates)
+    return Applied(new_items, new_versions, churn, duplicates)
 
 
 def _version(

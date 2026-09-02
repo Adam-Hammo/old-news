@@ -88,8 +88,8 @@ def test_a_service_never_imports_an_adapter(adapter: str):
 
 # Ratchets. Both may only go down: a docstring past one line, or a comment past one, is
 # a claim that the code cannot be read as it stands. Raising either is the argument.
-MULTI_LINE_DOCSTRING_BUDGET = 32
-MAX_DOCSTRING_LINES = 5
+MULTI_LINE_DOCSTRING_BUDGET = 10
+MAX_DOCSTRING_LINES = 4
 MAX_COMMENT_RUN = 4
 
 

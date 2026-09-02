@@ -60,11 +60,16 @@ def _alert_message_prefixes() -> list[str]:
     ]
 
 
-def test_every_alert_matches_a_message_the_code_still_logs():
-    """Renaming a log line breaks its alert in silence, which is what an alert must not do."""
-    logged = "\n".join(
+def _src_text() -> str:
+    """Every line of source an alert could be matching against."""
+    return "\n".join(
         path.read_text() for path in (REPO / "src").rglob("*.py") if "migrations" not in path.parts
     )
+
+
+def test_every_alert_matches_a_message_the_code_still_logs():
+    """Renaming a log line breaks its alert in silence, which is what an alert must not do."""
+    logged = _src_text()
     prefixes = _alert_message_prefixes()
 
     assert prefixes, "no message-matching alerts found — has the query syntax changed?"
@@ -76,9 +81,7 @@ def test_every_alert_matches_a_message_the_code_still_logs():
 def test_alerts_only_watch_spans_the_code_emits():
     """Same failure, one layer up: a span rename would silence `ingest-silent` and
     `captures-failing` the same way."""
-    source = "\n".join(
-        path.read_text() for path in (REPO / "src").rglob("*.py") if "migrations" not in path.parts
-    )
+    source = _src_text()
     watched = set(re.findall(r"span_name = '([^']+)'", ALERTS_FILE.read_text()))
 
     assert watched, "no span-matching alerts found"

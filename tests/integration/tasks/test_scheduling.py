@@ -49,10 +49,7 @@ async def test_a_due_feed_is_deferred_once(no_jobs: None, queue_app, settings, m
     queued = await _queued()
 
     assert len(queued) == 1
-    # One poll per feed in flight: a feed slower than its interval would
-    # otherwise stack up behind itself forever.
     assert queued[0][0] == f"feed:{feed.id}"
-    # An identifier, never a URL — procrastinate logs kwargs at INFO.
     assert queued[0][1]["feed_id"] == str(feed.id)
     assert queued[0][2] == "host:due.example.com"
     # First visit to a host waits for nothing.

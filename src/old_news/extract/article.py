@@ -1,8 +1,4 @@
-"""The trafilatura boundary. Nothing else imports it. Markdown is the stored form.
-
-lxml is pinned above trafilatura's floor: earlier releases do not declare free-thread
-safety, and importing one re-enables the GIL for the whole worker.
-"""
+"""The trafilatura boundary. Nothing else imports it. Markdown is the stored form."""
 
 import dataclasses
 import re
@@ -146,8 +142,8 @@ def _salvage(html: str, url: str) -> str:
     return PARAGRAPH_BREAK.join(blocks + ([caption] if caption else []))
 
 
-def _found(body: str, url: str) -> tuple[tuple[Link, ...], tuple[Image, ...]]:
-    """The links and body images a reading points at, resolved against `url`."""
+def _found(body: str) -> tuple[tuple[Link, ...], tuple[Image, ...]]:
+    """The links and body images a reading points at."""
     return (
         tuple(Link(url=target, anchor=anchor) for anchor, target in LINK.findall(body)),
         tuple(
@@ -169,7 +165,7 @@ def parse(html: str, url: str) -> Article:
     metadata = trafilatura.extract_metadata(html, default_url=url)
     claimed = metadata.as_dict() if metadata else {}
 
-    links, found = _found(body, url)
+    links, found = _found(body)
     lead = [
         Image(url=claimed_lead, role=ImageRole.LEAD, alt="")
         for claimed_lead in [_text(claimed.get("image"))]
@@ -191,10 +187,7 @@ def parse(html: str, url: str) -> Article:
 
 
 def parse_fragment(html: str, url: str) -> Article:
-    """Pull a readable article out of what a feed already gave us.
-
-    No metadata: with no `<head>` to read, `extract_metadata` returns the first heading.
-    """
+    """Pull a readable article out of what a feed already gave us."""
     tree = _tree(html)
     if tree is None:
         return Article()
@@ -203,5 +196,5 @@ def parse_fragment(html: str, url: str) -> Article:
     if not body:
         return Article()
 
-    links, images = _found(body, url)
+    links, images = _found(body)
     return Article(body=body, links=links, images=images)

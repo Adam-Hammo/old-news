@@ -88,8 +88,9 @@ export function unfollow(id: string): Promise<string> {
 	return send(`/subscriptions/${id}/`, 'DELETE');
 }
 
-export function markOpened(id: string): Promise<Response> {
-	return fetch(`${BASE}/items/${id}/opened/`, { method: 'POST' });
+/** Fire and forget: nothing reads the answer, and a dead tailnet must not reject unhandled. */
+export function markOpened(id: string): void {
+	void fetch(`${BASE}/items/${id}/opened/`, { method: 'POST' }).catch(() => {});
 }
 
 /** Fire and forget, and `keepalive` so a report outlives the page that made it. A failed

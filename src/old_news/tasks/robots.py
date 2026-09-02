@@ -2,12 +2,14 @@
 
 import logging
 
-from old_news import extract, fetch, politeness, robots
+from old_news import extract, fetch, robots
 from old_news.config import get_settings
 from old_news.ingest import service
+from old_news.observability import count
+from old_news.tasks import sweep
 from old_news.tasks.app import app
 from old_news.tasks.ingest import QUEUE, SCHEDULER_PRIORITY
-from old_news.tasks.tracing import defer_unless_queued, task
+from old_news.tasks.tracing import task
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +28,10 @@ async def schedule_robots(timestamp: int) -> None:
     # and a host whose rules were never fetched reads as allowing everything.
     hosts = set(await service.subscribed_hosts()) | set(await extract.article_hosts())
     stale = await robots.stale_hosts(hosts, settings.robots.refresh_batch_size)
-
-    for host in stale:
-        await defer_unless_queued(
-            refresh_robots.configure(
-                # One refresh per host in flight, and behind that host's other work.
-                queueing_lock=f"robots:{host}",
-                lock=politeness.host_lock(host),
-            ),
-            host=host,
-        )
+    deferred = await sweep.defer_each(
+        refresh_robots, stale, kwarg="host", lock_prefix="robots", hosts=stale
+    )
 
     if stale:
-        logger.info("refreshing robots.txt for %d hosts", len(stale))
+        logger.info("deferred %d of %d stale robots.txt", deferred, len(stale))
+        count("robots.refreshes.deferred", deferred)

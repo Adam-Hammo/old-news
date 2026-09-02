@@ -83,9 +83,7 @@ async def test_re_extracting_with_the_same_extractor_rewrites_one_row(
     assert await _count(version_id) == 1
 
 
-async def test_a_version_with_no_capture_extracts_nothing(
-    clean: None, feed_id, article, page, stored_page
-):
+async def test_a_version_with_no_capture_extracts_nothing(clean: None, feed_id, article):
     version_id = (await article(feed_id, ("An article", GUARDIAN_URL)))[0]
 
     assert await extract_page(version_id, SETTINGS) is None

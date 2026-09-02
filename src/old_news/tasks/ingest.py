@@ -1,12 +1,13 @@
 import logging
 import uuid
 
-from old_news import fetch, politeness, robots
+from old_news import fetch
 from old_news.config import get_settings
 from old_news.ingest import service
 from old_news.observability import count
+from old_news.tasks import sweep
 from old_news.tasks.app import app
-from old_news.tasks.tracing import defer_unless_queued, task
+from old_news.tasks.tracing import task
 
 logger = logging.getLogger(__name__)
 
@@ -27,27 +28,14 @@ async def poll_feed(feed_id: str) -> None:
 async def schedule_polls(timestamp: int) -> None:
     settings = get_settings()
     polls = await service.due_polls(settings.ingest, settings.ingest.poll_batch_size)
-    # Whatever these hosts asked for in robots.txt, honoured as a longer gap.
-    crawl_delays = await robots.crawl_delays(poll.host for poll in polls)
-    delays = politeness.stagger(
-        (poll.host for poll in polls),
-        minimum=settings.http.min_host_interval_seconds,
-        crawl_delays=crawl_delays,
+    deferred = await sweep.defer_each(
+        poll_feed,
+        [poll.feed_id for poll in polls],
+        kwarg="feed_id",
+        lock_prefix="feed",
+        hosts=[poll.host for poll in polls],
+        min_host_interval_seconds=settings.http.min_host_interval_seconds,
     )
-
-    deferred = 0
-    for poll, delay in zip(polls, delays, strict=True):
-        deferred += await defer_unless_queued(
-            poll_feed.configure(
-                # One poll per feed in flight. A feed slower than its interval
-                # would otherwise stack up behind itself forever.
-                queueing_lock=f"feed:{poll.feed_id}",
-                # Postgres hands out one job per host at a time, so nothing here keeps state.
-                lock=politeness.host_lock(poll.host),
-                schedule_in={"seconds": delay} if delay else None,
-            ),
-            feed_id=str(poll.feed_id),
-        )
 
     if polls:
         logger.info("deferred %d of %d due feeds", deferred, len(polls))

@@ -54,5 +54,6 @@ __all__ = [
     "Settings",
     "StorageSettings",
     "TelemetrySettings",
+    "WorkerSettings",
     "get_settings",
 ]

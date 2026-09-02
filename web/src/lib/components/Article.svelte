@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Article } from '#lib/api/client.ts';
+	import Pane from '#lib/components/Pane.svelte';
 	import { dateline } from '#lib/format.ts';
 	import { render } from '#lib/markdown.ts';
 
@@ -23,13 +24,8 @@
 	const origin = $derived(new URL(article.url).hostname.replace(/^www\./, ''));
 </script>
 
-<div class="pane">
-	<div class="top">
-		<a href={back} class="up">&larr;&nbsp;&nbsp;River</a>
-		<div class="hair"></div>
-	</div>
-
-	<article>
+<Pane {back}>
+	<article class="measured">
 		{#if article.section}<p class="kicker">{article.section}</p>{/if}
 		<h1>{article.title}</h1>
 
@@ -60,7 +56,7 @@
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 			<div class="body">{@html body}</div>
 		{:else}
-			<p class="pending">No text has been read out of this one yet.</p>
+			<p class="pending label">No text has been read out of this one yet.</p>
 		{/if}
 	</article>
 
@@ -72,7 +68,7 @@
 			>&#183;&#183;&#183;</button
 		>
 	</nav>
-</div>
+</Pane>
 
 <dialog bind:this={sheet} onclick={(event) => event.target === sheet && sheet?.close()}>
 	<p class="sheethead">This article</p>
@@ -102,46 +98,9 @@
 </dialog>
 
 <style>
-	.pane {
-		display: flex;
-		flex-direction: column;
-		min-height: 100%;
-		background: var(--paper-read);
-	}
-
-	.top {
-		flex: none;
-		padding: max(env(safe-area-inset-top), 0.75rem) var(--gutter) 0;
-	}
-
-	.up {
-		display: inline-block;
-		padding-bottom: 9px;
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.14em;
-		text-transform: uppercase;
-		color: var(--ink-faint);
-	}
-
-	/* `--measure` is the width of the text, not of the box around it, so the gutter is
-	   added rather than eaten. The back-link shares it so its rule lands on the column's
-	   edges rather than the pane's. */
-	.top,
-	article {
-		width: 100%;
-		max-width: calc(var(--measure) + 2 * var(--gutter));
-		margin-inline: auto;
-	}
-
 	article {
 		flex: 1;
 		padding: 0 var(--gutter) calc(61px + 1.5rem);
-	}
-
-	.hair {
-		height: 1px;
-		background: var(--rule);
 	}
 
 	.thin {
@@ -231,11 +190,6 @@
 
 	.pending {
 		padding-top: 2rem;
-		color: var(--ink-faint);
-		font-size: 10.5px;
-		font-weight: 600;
-		letter-spacing: 0.12em;
-		text-transform: uppercase;
 	}
 
 	/* Justified with hyphens, which is the whole reason the column is measured. */
@@ -337,47 +291,11 @@
 	   it, so the corner the control sits in has to be worked out rather than asked for. */
 	dialog {
 		margin: auto max(0px, (100vw - var(--sheet)) / 2) 0 auto;
-		width: 100%;
-		max-width: var(--column);
-		padding: 0 0 env(safe-area-inset-bottom);
-		color: var(--ink);
-		background: var(--paper);
-		border: 0;
-		border-top: 4px solid var(--rule);
-	}
-
-	dialog::backdrop {
-		background: var(--scrim);
-	}
-
-	.sheethead {
-		margin: 0;
-		padding: 13px var(--gutter) 9px;
-		font-size: 10px;
-		font-weight: 700;
-		letter-spacing: 0.22em;
-		text-transform: uppercase;
-		color: var(--ink-faint);
-	}
-
-	dialog ul {
-		margin: 0;
-		padding: 0;
-		list-style: none;
 	}
 
 	dialog a,
 	dialog li button {
-		display: flex;
-		align-items: center;
 		justify-content: space-between;
-		width: 100%;
-		height: 56px;
-		padding: 0 var(--gutter);
-		border-bottom: 1px solid var(--hair);
-		font-size: 12px;
-		font-weight: 600;
-		letter-spacing: 0.1em;
 		text-transform: uppercase;
 	}
 

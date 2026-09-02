@@ -13,11 +13,7 @@ _HTTP_URL = TypeAdapter(AnyHttpUrl)
 
 
 def http_url(url: str) -> AnyHttpUrl | None:
-    """Parse a URL, or None if it isn't one we could fetch.
-
-    Pydantic, not `urlsplit`: it punycodes an IDN host, so the two spellings of one
-    host come back the same.
-    """
+    """Parse a URL, or None if it isn't one we could fetch. Pydantic, so an IDN host punycodes."""
     try:
         return _HTTP_URL.validate_python(url.strip())
     except ValidationError:
@@ -50,11 +46,7 @@ class Unresolvable(FetchError):
 
 
 def _unresolvable(exc: BaseException) -> bool:
-    """Whether a transport failure was DNS.
-
-    The `gaierror` arrives wrapped as an argument rather than as `__cause__`, so both
-    are followed, and bounded because a cycle would hang the worker.
-    """
+    """Whether a transport failure was DNS."""
     seen: BaseException | None = exc
     for _ in range(8):
         if seen is None:

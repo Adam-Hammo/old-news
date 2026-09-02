@@ -15,8 +15,8 @@ from litestar.plugins.opentelemetry import OpenTelemetryPlugin
 from litestar.testing import TestClient
 from logfire.testing import CaptureLogfire, TestExporter
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-from opentelemetry.sdk.trace import ReadableSpan
 
+from conftest import finished
 from old_news.observability import telemetry
 from old_news.observability.telemetry import litestar_config, name_span_after_route
 
@@ -59,15 +59,6 @@ def _app(*handlers: HTTPRouteHandler) -> Litestar:
 @get("/feeds/{feed_id:int}/articles/{slug:str}")
 async def article(feed_id: FromPath[int], slug: FromPath[str]) -> dict[str, bool]:
     return {"ok": True}
-
-
-def _finished(exporter: TestExporter) -> list[ReadableSpan]:
-    """Logfire emits a pending span at the start; the finished one is the span that matters."""
-    return [
-        span
-        for span in exporter.exported_spans
-        if (span.attributes or {}).get("logfire.span_type") != "pending_span"
-    ]
 
 
 def _duration_series(reader: InMemoryMetricReader) -> list[dict[str, object]]:
@@ -125,14 +116,14 @@ def test_span_names_use_the_route_not_the_path(exporter: TestExporter):
         for feed_id in (1, 2, 3):
             client.get(f"/feeds/{feed_id}/articles/post-{feed_id}")
 
-    assert {span.name for span in _finished(exporter)} == {"GET /feeds/{feed_id}/articles/{slug}"}
+    assert {span.name for span in finished(exporter)} == {"GET /feeds/{feed_id}/articles/{slug}"}
 
 
 def test_the_route_attribute_is_the_template_without_the_method(exporter: TestExporter):
     with TestClient(app=_app(article)) as client:
         client.get("/feeds/7/articles/anything")
 
-    routes = {(span.attributes or {}).get("http.route") for span in _finished(exporter)}
+    routes = {(span.attributes or {}).get("http.route") for span in finished(exporter)}
     assert routes == {"/feeds/{feed_id}/articles/{slug}"}
 
 
@@ -153,7 +144,7 @@ def test_an_unmatched_path_is_not_given_a_name_of_its_own(exporter: TestExporter
         client.get("/wp-admin/setup-config.php")
         client.get("/.env")
 
-    assert {span.name for span in _finished(exporter)} == {"GET"}
+    assert {span.name for span in finished(exporter)} == {"GET"}
 
 
 def test_asgi_plumbing_spans_are_excluded(exporter: TestExporter):
@@ -161,7 +152,7 @@ def test_asgi_plumbing_spans_are_excluded(exporter: TestExporter):
     with TestClient(app=_app(article)) as client:
         client.get("/feeds/1/articles/x")
 
-    assert not [span for span in _finished(exporter) if "http send" in span.name]
+    assert not [span for span in finished(exporter) if "http send" in span.name]
 
 
 def test_create_app_installs_the_hook():

@@ -73,8 +73,14 @@ class SingleUserBackend(AuthenticationBackend):
         return RedirectResponse(request.url_for("admin:login"), status_code=302)
 
 
+class MachineWritten:
+    """Written by a sweep, not by hand."""
+
+    can_create = False
+    can_edit = False
+
+
 class FeedAdmin(ModelView, model=Feed):
-    name_plural = "Feeds"
     icon = "fa-solid fa-rss"
     # Failure state is derived from `feed_polls`, so there is no column to list or sort on.
     column_list = [Feed.title, Feed.url, Feed.next_poll_at, Feed.last_polled_at]
@@ -83,8 +89,8 @@ class FeedAdmin(ModelView, model=Feed):
     column_default_sort = [(Feed.next_poll_at, False)]
 
 
-class FeedPollAdmin(ModelView, model=FeedPoll):
-    name_plural = "Feed polls"
+class FeedPollAdmin(MachineWritten, ModelView, model=FeedPoll):
+    name = "Feed poll"
     icon = "fa-solid fa-clock-rotate-left"
     column_list = [
         FeedPoll.polled_at,
@@ -95,18 +101,16 @@ class FeedPollAdmin(ModelView, model=FeedPoll):
     ]
     column_sortable_list = [FeedPoll.polled_at, FeedPoll.outcome, FeedPoll.status]
     column_default_sort = [(FeedPoll.polled_at, True)]
-    can_create = can_edit = can_delete = False
+    can_delete = False
 
 
 class SubscriptionAdmin(ModelView, model=Subscription):
-    name_plural = "Subscriptions"
     icon = "fa-solid fa-star"
     column_list = [Subscription.category, Subscription.active, Subscription.added_at]
     column_sortable_list = [Subscription.category, Subscription.added_at]
 
 
 class ItemAdmin(ModelView, model=Item):
-    name_plural = "Items"
     icon = "fa-solid fa-fingerprint"
     # Identity only; the content lives on the versions.
     column_list = [Item.id, Item.identity_key, Item.identity_source, Item.first_seen_at, Item.read]
@@ -114,9 +118,8 @@ class ItemAdmin(ModelView, model=Item):
     column_default_sort = [(Item.first_seen_at, True)]
 
 
-class ItemVersionAdmin(ModelView, model=ItemVersion):
+class ItemVersionAdmin(MachineWritten, ModelView, model=ItemVersion):
     name = "Item version"
-    name_plural = "Item versions"
     icon = "fa-solid fa-clock-rotate-left"
     column_list = [
         ItemVersion.title,
@@ -128,27 +131,20 @@ class ItemVersionAdmin(ModelView, model=ItemVersion):
     column_searchable_list = [ItemVersion.title, ItemVersion.canonical_url]
     column_sortable_list = [ItemVersion.observed_at, ItemVersion.published_at]
     column_default_sort = [(ItemVersion.observed_at, True)]
-    can_create = False
-    can_edit = False
     can_delete = False
 
 
-class DocumentAdmin(ModelView, model=Document):
-    name_plural = "Documents"
+class DocumentAdmin(MachineWritten, ModelView, model=Document):
     icon = "fa-solid fa-file-code"
     # `body` is a compressed document, and listing fifty of them makes the page unusable.
     column_list = [Document.fetched_at, Document.status, Document.parse_ok, Document.parse_note]
     column_sortable_list = [Document.fetched_at, Document.status]
     column_default_sort = [(Document.fetched_at, True)]
-    can_create = False
-    can_edit = False
 
 
-class PageCaptureAdmin(ModelView, model=PageCapture):
+class PageCaptureAdmin(MachineWritten, ModelView, model=PageCapture):
     name = "Page capture"
-    name_plural = "Page captures"
     icon = "fa-solid fa-file-arrow-down"
-    # `body` is a compressed page, and listing it makes the page unusable.
     column_list = [
         PageCapture.fetched_at,
         PageCapture.status,
@@ -159,15 +155,11 @@ class PageCaptureAdmin(ModelView, model=PageCapture):
     column_searchable_list = [PageCapture.url]
     column_sortable_list = [PageCapture.fetched_at, PageCapture.status]
     column_default_sort = [(PageCapture.fetched_at, True)]
-    can_create = False
-    can_edit = False
 
 
-class FeedCaptureAdmin(ModelView, model=FeedCapture):
+class FeedCaptureAdmin(MachineWritten, ModelView, model=FeedCapture):
     name = "Feed capture"
-    name_plural = "Feed captures"
     icon = "fa-solid fa-scissors"
-    # `body` is the compressed item text, and listing it makes the page unusable.
     column_list = [
         FeedCapture.captured_at,
         FeedCapture.parser_version,
@@ -176,12 +168,9 @@ class FeedCaptureAdmin(ModelView, model=FeedCapture):
     ]
     column_sortable_list = [FeedCapture.captured_at, FeedCapture.parser_version]
     column_default_sort = [(FeedCapture.captured_at, True)]
-    can_create = False
-    can_edit = False
 
 
-class ExtractionAdmin(ModelView, model=Extraction):
-    name_plural = "Extractions"
+class ExtractionAdmin(MachineWritten, ModelView, model=Extraction):
     icon = "fa-solid fa-align-left"
     # The measurements. Whether a row passes is a threshold in config, so not a column.
     column_list = [
@@ -199,12 +188,10 @@ class ExtractionAdmin(ModelView, model=Extraction):
         Extraction.created_at,
     ]
     column_default_sort = [(Extraction.char_count, False)]
-    can_create = False
-    can_edit = False
 
 
-class PageExtractionAdmin(ModelView, model=PageExtraction):
-    name_plural = "Page extractions"
+class PageExtractionAdmin(MachineWritten, ModelView, model=PageExtraction):
+    name = "Page extraction"
     icon = "fa-solid fa-newspaper"
     # What a page claimed about itself, kept beside what the feed said rather than merged.
     column_list = [
@@ -217,13 +204,10 @@ class PageExtractionAdmin(ModelView, model=PageExtraction):
     ]
     column_searchable_list = [PageExtraction.title, PageExtraction.site_name]
     column_sortable_list = [PageExtraction.title, PageExtraction.char_count]
-    can_create = False
-    can_edit = False
 
 
-class ImageCaptureAdmin(ModelView, model=ImageCapture):
+class ImageCaptureAdmin(MachineWritten, ModelView, model=ImageCapture):
     name = "Image capture"
-    name_plural = "Image captures"
     icon = "fa-solid fa-image"
     # `byte_size` is why images are held to one per article.
     column_list = [
@@ -238,13 +222,10 @@ class ImageCaptureAdmin(ModelView, model=ImageCapture):
     column_searchable_list = [ImageCapture.url]
     column_sortable_list = [ImageCapture.byte_size, ImageCapture.fetched_at]
     column_default_sort = [(ImageCapture.byte_size, True)]
-    can_create = False
-    can_edit = False
 
 
 class TrainingRuleAdmin(ModelView, model=TrainingRule):
     name = "Training rule"
-    name_plural = "Training rules"
     icon = "fa-solid fa-filter"
     # Full CRUD: these are hand-made and unrecoverable. A rule with no feed is global.
     column_list = [

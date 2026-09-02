@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import ColumnElement, exists, select
 from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,7 +55,7 @@ class Wanted:
     held: Carving
 
 
-def _carved() -> Any:
+def _carved() -> ColumnElement[bool]:
     """Whether the current parser has already read text out of this version."""
     # Correlated rather than `NOT IN` over the whole table: the stamp matches nearly every
     # row once the sweep has drained, so only the version can narrow it.
@@ -104,7 +104,7 @@ async def _stored(session: AsyncSession, document_id: uuid.UUID) -> Stored | Non
 async def _store(
     session: AsyncSession,
     document_id: uuid.UUID,
-    stored: Stored,
+    feed_id: uuid.UUID,
     parsed: parser.ParsedFeed,
     settings: Settings,
 ) -> int:
@@ -118,9 +118,7 @@ async def _store(
     texts: dict[str, str] = {}
     for item in parsed.items:
         texts.setdefault(item.identity.key, item.content or item.summary)
-    current = await dictionaries.current_for_feed(
-        session, stored.feed_id, DictionaryScope.FEED_ITEM
-    )
+    current = await dictionaries.current_for_feed(session, feed_id, DictionaryScope.FEED_ITEM)
     version = parser.parser_version()
 
     carried = 0
@@ -224,7 +222,7 @@ async def capture_feed(document_id: uuid.UUID, settings: Settings) -> int:
         parsed = parser.parse(stored.body, url=stored.url)
         current.set_attribute("feed.items", len(parsed.items))
 
-        captured = await _store(document_id, stored, parsed, settings)
+        captured = await _store(document_id, stored.feed_id, parsed, settings)
         current.set_attribute("feed.captured", captured)
         count("extract.feed_captures.stored", captured)
         return captured

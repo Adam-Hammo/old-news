@@ -9,11 +9,7 @@ from old_news.db import Dimension, Item, ItemVersion, TrainingRule
 def _contains(
     haystack: InstrumentedAttribute[str], needle: InstrumentedAttribute[str]
 ) -> ColumnElement[bool]:
-    """Case-insensitive substring, via position rather than LIKE.
-
-    The pattern is a column, so it cannot be escaped client-side. `strpos` has no
-    wildcards, so a rule containing `_` or `%` means itself.
-    """
+    """Case-insensitive substring. strpos, not LIKE: a column pattern can't be escaped."""
     return func.strpos(func.lower(haystack), func.lower(needle)) > 0
 
 

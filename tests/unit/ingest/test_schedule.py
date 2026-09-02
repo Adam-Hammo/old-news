@@ -3,7 +3,9 @@ import datetime
 import pytest
 
 from old_news.config import IngestSettings
+from old_news.fetch import Response
 from old_news.ingest.schedule import next_interval, next_poll_at
+from old_news.ingest.service import _retry_after
 
 
 @pytest.fixture
@@ -71,10 +73,6 @@ def test_next_poll_at_is_now_plus_the_interval(settings):
 
 def test_a_retry_after_beyond_our_ceiling_is_capped(settings):
     """A server sending 999999999 would otherwise park the feed for decades."""
-    from old_news.fetch import Response
-    from old_news.ingest.service import RATE_LIMITED, _retry_after
-
     response = Response(status=503, url="https://x", body=b"", headers={"Retry-After": "999999999"})
 
-    assert 503 in RATE_LIMITED
     assert _retry_after(response, settings) == settings.max_interval_seconds

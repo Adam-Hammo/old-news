@@ -19,7 +19,7 @@ from old_news.config import DatabaseSettings, Settings
 from old_news.db import Document, FeedCapture, FeedExtraction, Item, ItemVersion
 from old_news.db import bytes as codec
 from old_news.db.migrate import upgrade
-from old_news.subscriptions.service import add, unsubscribe
+from old_news.subscriptions.service import add, drop
 from old_news.tasks import app as procrastinate_app
 
 from factories import (
@@ -176,7 +176,7 @@ def feed() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
         made = await add(f"https://{host}/feed.xml", title=host, category=category)
         assert made is not None
         if not active:
-            await unsubscribe(made.url)
+            await drop(made.id)
         return made.id
 
     return build

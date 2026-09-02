@@ -119,34 +119,17 @@ async def _rules_for(host: str, settings: Settings) -> Rules:
     return _rules(body, settings)
 
 
-@db.transactional
-async def _has_policy(session: AsyncSession, host: str) -> bool:
-    return (
-        await session.execute(
-            select(RobotsPolicy.id)
-            .join(Host, Host.id == RobotsPolicy.host_id)
-            .where(Host.name == host)
-        )
-    ).first() is not None
-
-
 async def allows_after_redirect(requested: str, final: str, settings: Settings) -> bool:
-    """Whether a fetch that ended on another host may be archived.
-
-    Redirects are followed inside one call, so only the first host was ever asked.
-    """
+    """Whether a fetch that ended on another host may be archived; only the first was asked."""
     if host_of(final) == host_of(requested):
         return True
     return await rules_known(final) and await allows(final, settings)
 
 
 async def rules_known(url: str) -> bool:
-    """Whether this host's robots.txt has been asked for, whatever it said.
-
-    `allows` reads silence as permission, which is wrong for crawling a publisher's pages.
-    """
+    """Whether this host's robots.txt has been asked for, whatever it said — unlike `allows`."""
     host = host_of(url)
-    return not host or await _has_policy(host)
+    return not host or await _stored_body(host) is not None
 
 
 async def allows(url: str, settings: Settings) -> bool:

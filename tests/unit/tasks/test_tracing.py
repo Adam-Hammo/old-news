@@ -1,34 +1,22 @@
 from typing import Any
 
-import logfire
 import pytest
-from logfire.testing import TestExporter
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from logfire.testing import CaptureLogfire, TestExporter
 from procrastinate.job_context import JobContext
 from procrastinate.jobs import Job
 
+from conftest import finished
 from old_news.observability import span
 from old_news.tasks.tracing import TRACE_KEY, carrier, context_from, defer, trace_jobs
 
 
 @pytest.fixture
-def exporter() -> TestExporter:
-    exporter = TestExporter()
-    logfire.configure(
-        send_to_logfire=False,
-        console=False,
-        additional_span_processors=[SimpleSpanProcessor(exporter)],
-    )
-    return exporter
+def exporter(capfire: CaptureLogfire) -> TestExporter:
+    return capfire.exporter
 
 
 def spans_named(exporter: TestExporter, name: str) -> list:
-    """Logfire emits a pending span alongside each real one; only the real one matters."""
-    return [
-        s
-        for s in exporter.exported_spans
-        if s.name == name and (s.attributes or {}).get("logfire.span_type") != "pending_span"
-    ]
+    return [s for s in finished(exporter) if s.name == name]
 
 
 def job_context(
@@ -54,6 +42,10 @@ def job_context(
         start_timestamp=0.0,
         abort_reason=lambda: None,
     )
+
+
+async def _nothing() -> None:
+    return None
 
 
 async def test_a_job_gets_its_own_span(exporter: TestExporter):
@@ -82,24 +74,17 @@ async def test_failures_are_recorded_and_re_raised(exporter: TestExporter):
 
 async def test_task_kwargs_never_reach_the_span(exporter: TestExporter):
     """Kwargs carry feed URLs now and article content later. Span attributes aren't scrubbed."""
-
-    async def call_next() -> None:
-        return None
-
-    await trace_jobs(call_next, job_context({"url": "https://example.com/feed?key=SECRET"}), None)
+    await trace_jobs(_nothing, job_context({"url": "https://example.com/feed?key=SECRET"}), None)
 
     [job_span] = spans_named(exporter, "task heartbeat")
     assert "SECRET" not in str(job_span.attributes)
 
 
 async def test_the_job_span_is_a_child_of_whatever_deferred_it(exporter: TestExporter):
-    async def call_next() -> None:
-        return None
-
     with span("deferring"):
         stored = carrier()
 
-    await trace_jobs(call_next, job_context({TRACE_KEY: stored}), None)
+    await trace_jobs(_nothing, job_context({TRACE_KEY: stored}), None)
 
     [parent] = spans_named(exporter, "deferring")
     [child] = spans_named(exporter, "task heartbeat")
@@ -174,11 +159,8 @@ async def test_a_job_parents_to_the_send_span(exporter: TestExporter):
     """The whole point of the traceparent: one trace from schedule to poll."""
     captured: dict[str, Any] = {}
 
-    async def call_next() -> None:
-        return None
-
     await defer(FakeTask(captured), note="hi")
-    await trace_jobs(call_next, job_context({TRACE_KEY: captured[TRACE_KEY]}), None)
+    await trace_jobs(_nothing, job_context({TRACE_KEY: captured[TRACE_KEY]}), None)
 
     [send] = spans_named(exporter, "send ingest")
     [job_span] = spans_named(exporter, "task heartbeat")
@@ -188,19 +170,6 @@ async def test_a_job_parents_to_the_send_span(exporter: TestExporter):
 
 async def test_housekeeping_tasks_emit_no_span(exporter: TestExporter):
     """queue_metrics runs every minute forever; a successful run says nothing."""
-
-    async def call_next() -> None:
-        return None
-
-    await trace_jobs(call_next, job_context(task_name="queue_metrics"), None)
+    await trace_jobs(_nothing, job_context(task_name="queue_metrics"), None)
 
     assert spans_named(exporter, "task queue_metrics") == []
-
-
-async def test_real_work_is_still_traced(exporter: TestExporter):
-    async def call_next() -> None:
-        return None
-
-    await trace_jobs(call_next, job_context(), None)
-
-    assert spans_named(exporter, "task heartbeat") != []

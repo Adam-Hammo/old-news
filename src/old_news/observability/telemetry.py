@@ -120,18 +120,18 @@ def span(
 
 
 @cache
-def _counter(name: str, unit: str, description: str) -> metrics.Counter:
-    return _meter.create_counter(name, unit=unit, description=description)
+def _counter(name: str, unit: str) -> metrics.Counter:
+    return _meter.create_counter(name, unit=unit)
 
 
 @cache
-def _gauge(name: str, unit: str, description: str) -> metrics._Gauge:
-    return _meter.create_gauge(name, unit=unit, description=description)
+def _gauge(name: str, unit: str) -> metrics._Gauge:
+    return _meter.create_gauge(name, unit=unit)
 
 
 def count(name: str, /, amount: int = 1, *, unit: str = "1", **attributes: Any) -> None:
-    _counter(name, unit, "").add(amount, attributes)
+    _counter(name, unit).add(amount, attributes)
 
 
 def gauge(name: str, value: float, /, *, unit: str = "1", **attributes: Any) -> None:
-    _gauge(name, unit, "").set(value, attributes)
+    _gauge(name, unit).set(value, attributes)

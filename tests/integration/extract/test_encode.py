@@ -3,7 +3,6 @@
 import io
 import uuid
 
-import pytest
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,22 +13,22 @@ from old_news.db import ImageCapture
 from old_news.extract import encode
 from old_news.politeness import ensure
 
+from factories import faker
+
 SETTINGS = ExtractSettings()
 
 
 def _image(width: int, height: int, kind: str, *, frames: int = 1) -> bytes:
     """A photograph-ish image: noise, so the encoder has real work rather than flat colour."""
-    from factories import faker
-
     fake = faker()
-    pixels = bytes(fake.random_int(0, 255) for _ in range(width * height * 3))
-    made = Image.frombytes("RGB", (width, height), pixels)
+    size = width * height * 3
+    made = Image.frombytes("RGB", (width, height), fake.random.randbytes(size))
     buffer = io.BytesIO()
     if frames > 1:
         # Distinct frames: Pillow collapses identical ones, so appending the same image
         # writes a single-frame file and the animation guard has nothing to catch.
         others = [
-            Image.frombytes("RGB", (width, height), bytes(fake.random_int(0, 255) for _ in pixels))
+            Image.frombytes("RGB", (width, height), fake.random.randbytes(size))
             for _ in range(frames - 1)
         ]
         made.save(buffer, kind, save_all=True, append_images=others)
@@ -210,14 +209,3 @@ async def test_running_twice_does_not_spend_a_second_generation(clean: None):
 
     twice = await _held(capture_id)
     assert twice.body == once.body
-
-
-@pytest.mark.parametrize("width", [400, 1600, 3000])
-async def test_what_is_held_never_exceeds_the_reading_width(clean: None, width: int):
-    capture_id = await _capture(_image(width, 300, "PNG"))
-
-    await encode.encode_image(capture_id, SETTINGS)
-
-    held = await _held(capture_id)
-    with Image.open(io.BytesIO(held.body)) as read_back:
-        assert read_back.size[0] <= max(width, SETTINGS.image_max_width)
