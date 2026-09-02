@@ -292,7 +292,7 @@ def _refresh_feed(feed: Feed, parsed: parser.ParsedFeed, response: Response) -> 
     feed.icon_url = parsed.icon_url or feed.icon_url
     feed.platform = parsed.platform or feed.platform
     feed.hub_url = parsed.hub_url or feed.hub_url
-    feed.ttl_seconds = parsed.ttl_seconds if parsed.ttl_seconds else feed.ttl_seconds
+    feed.ttl_seconds = parsed.ttl_seconds or feed.ttl_seconds
     if parsed.categories:
         feed.categories = list(parsed.categories)
 

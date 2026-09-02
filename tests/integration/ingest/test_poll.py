@@ -232,7 +232,7 @@ async def test_a_dated_retry_after_falls_back_to_the_maximum(feed, fetcher, sett
 
 
 async def test_a_rate_limit_with_no_retry_after_uses_the_backoff_policy(feed, fetcher, settings):
-    """Absent is not unparseable: a bare 503 is an ordinary failure, not a day off."""
+    """Absent is not unparsable: a bare 503 is an ordinary failure, not a day off."""
     STATE.update(status=503, retry_after="")
 
     wait = await _wait_after_poll(feed, fetcher, settings)

@@ -35,7 +35,7 @@ async def fetcher(settings) -> AsyncIterator[Fetcher]:
 
 @pytest.fixture
 def site(http_server) -> str:
-    server = http_server(
+    return http_server(
         {
             "/article": (200, PAGE, HTML),
             "/moved": (301, b"", {"Location": "/article"}),
@@ -43,7 +43,6 @@ def site(http_server) -> str:
             "/gone": (404, b"Not here", HTML),
         }
     )
-    return server
 
 
 @pytest.fixture
