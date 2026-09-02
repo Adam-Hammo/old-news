@@ -19,7 +19,7 @@ JOB_STATUSES = ("todo", "doing", "failed", "cancelled", "aborted")
 
 @task(app, name="heartbeat")
 async def heartbeat(note: str = "") -> str:
-    """Proves the queue round-trips end to end. Delete once real tasks exist."""
+    """Proves the queue round-trips end to end."""
     logger.info("heartbeat %s", note)
     return note
 
@@ -53,15 +53,11 @@ async def prune_jobs(context: JobContext, timestamp: int) -> None:
     )
 
 
-# Hourly, not nightly: an untrained scope stores at twice the size and is never rewritten.
 # Once every scope has a fresh dictionary the sweep returns nothing, so asking is cheap.
 @app.periodic(cron="17 * * * *", periodic_id="train_dictionaries")
 @app.task(name="train_dictionaries")
 async def train_dictionaries(timestamp: int) -> None:
-    """Teach compression what each kind of stored body looks like.
-
-    Nothing already written is rewritten: a body keeps pointing at whatever compressed it.
-    """
+    """Teach compression what each kind of stored body looks like."""
     settings = get_settings().storage
     batch = settings.dictionary_batch_size
 

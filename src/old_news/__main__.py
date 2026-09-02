@@ -3,8 +3,12 @@ import asyncio
 import signal
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from old_news.config import Settings, get_settings
+
+if TYPE_CHECKING:
+    from procrastinate import App
 
 
 def _hash_admin_password() -> str:
@@ -52,7 +56,7 @@ def _stop_on_signal() -> asyncio.Event:
     return stopping
 
 
-async def _run_workers(queue_app, settings: Settings, stopping: asyncio.Event) -> None:
+async def _run_workers(queue_app: App, settings: Settings, stopping: asyncio.Event) -> None:
     """Run one worker per queue until `stopping` is set.
 
     Cancellation is how procrastinate is asked to wind down, so `CancelledError` is the
@@ -84,7 +88,7 @@ async def _run_workers(queue_app, settings: Settings, stopping: asyncio.Event) -
             raise outcome
 
 
-def serve(settings: Settings) -> None:
+def _serve(settings: Settings) -> None:
     import uvicorn
 
     import old_news
@@ -161,7 +165,7 @@ def main() -> None:
         return
 
     if args.command in (None, "serve"):
-        serve(settings)
+        _serve(settings)
         return
 
     if args.opml_command == "import":

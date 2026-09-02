@@ -5,7 +5,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column
 
 from old_news.db.base import NOW, Base, Timestamptz, UUIDPrimaryKey
-from old_news.db.models.page import host_failures, host_last_failure
+from old_news.db.models.page import failure_run
 
 
 class Host(UUIDPrimaryKey, Base):
@@ -30,7 +30,7 @@ class Host(UUIDPrimaryKey, Base):
     @capture_failures.inplace.expression
     @classmethod
     def _capture_failures_expression(cls):
-        return host_failures(cls.id)
+        return failure_run(cls.id).length
 
     @hybrid_property
     def last_capture_failure(self) -> datetime.datetime:
@@ -40,4 +40,4 @@ class Host(UUIDPrimaryKey, Base):
     @last_capture_failure.inplace.expression
     @classmethod
     def _last_capture_failure_expression(cls):
-        return host_last_failure(cls.id)
+        return failure_run(cls.id).latest

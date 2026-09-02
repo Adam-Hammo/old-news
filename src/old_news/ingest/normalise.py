@@ -47,19 +47,23 @@ def _is_tracking(key: str) -> bool:
 
 def canonical_url(url: str) -> str:
     """A URL reduced to what identifies the article, syntactically. No redirects resolved."""
-    if not url or not url.strip():
+    cleaned = url.strip()
+    if not cleaned:
         return ""
 
-    parts = urlsplit(url.strip())
+    # A malformed port raises here, as does a broken IPv6 literal in urlsplit.
+    try:
+        parts = urlsplit(cleaned)
+        host = (parts.hostname or "").removeprefix("www.")
+        port = parts.port
+    except ValueError:
+        return cleaned
     if not parts.netloc:
-        return url.strip()
-
-    host = parts.hostname or ""
-    host = host.removeprefix("www.")
+        return cleaned
 
     netloc = host
-    if parts.port and str(parts.port) != DEFAULT_PORTS.get(parts.scheme.lower()):
-        netloc = f"{host}:{parts.port}"
+    if port and str(port) != DEFAULT_PORTS.get(parts.scheme.lower()):
+        netloc = f"{host}:{port}"
 
     kept = sorted(
         (k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if not _is_tracking(k)
@@ -77,10 +81,15 @@ def normalise_text(value: str) -> str:
     return _WHITESPACE.sub(" ", _HTML_COMMENT.sub("", value)).strip()
 
 
-def content_fingerprint(*fields: str | None) -> bytes:
-    """A digest over every field a publisher supplied, so a redacted byline still registers."""
+def digest_fields(*fields: str) -> bytes:
+    """A sha256 over fields kept apart by a separator, so their boundaries count."""
     digest = hashlib.sha256()
     for field in fields:
-        digest.update(normalise_text(field or "").encode())
+        digest.update(field.encode())
         digest.update(_FIELD_SEPARATOR)
     return digest.digest()
+
+
+def content_fingerprint(*fields: str | None) -> bytes:
+    """A digest over every field a publisher supplied, so a redacted byline still registers."""
+    return digest_fields(*(normalise_text(field or "") for field in fields))

@@ -1,8 +1,4 @@
-"""Job spans, and the trace context linking them to whatever deferred them.
-
-Procrastinate has no metadata on a job, so the traceparent travels as a reserved
-kwarg that `task()` strips before the function is called.
-"""
+"""Job spans. Procrastinate has no job metadata, so the traceparent rides as a reserved kwarg."""
 
 import functools
 from collections.abc import Awaitable, Callable
@@ -117,11 +113,7 @@ async def defer(registered_task: Any, /, **kwargs: Any) -> Any:
 
 
 async def defer_unless_queued(registered_task: Any, /, **kwargs: Any) -> bool:
-    """Defer, unless the queueing lock says one is already waiting.
-
-    Procrastinate raises on the collision, and an unhandled one would kill the rest of
-    the sweep — while a job still queued a minute later is ordinary, not exceptional.
-    """
+    """Defer, unless the queueing lock says one is already waiting — ordinary, not an error."""
     try:
         await defer(registered_task, **kwargs)
     except AlreadyEnqueued:

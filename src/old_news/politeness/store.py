@@ -16,15 +16,14 @@ async def ensure(session: AsyncSession, name: str) -> uuid.UUID:
     if found is not None:
         return found
     await session.execute(insert(Host).values(name=name).on_conflict_do_nothing())
-    return (await _id_of(session, name)) or _unreachable(name)
+    created = await _id_of(session, name)
+    if created is None:
+        raise LookupError(f"host {name} vanished between insert and read")
+    return created
 
 
 async def _id_of(session: AsyncSession, name: str) -> uuid.UUID | None:
     return (await session.execute(select(Host.id).where(Host.name == name))).scalar_one_or_none()
-
-
-def _unreachable(name: str) -> uuid.UUID:
-    raise LookupError(f"host {name} vanished between insert and read")
 
 
 async def resolve(session: AsyncSession, url: str) -> uuid.UUID | None:

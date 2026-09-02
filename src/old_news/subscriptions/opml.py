@@ -3,7 +3,7 @@
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from xml.sax.saxutils import escape, quoteattr
+from xml.sax.saxutils import quoteattr
 
 from defusedxml import DefusedXmlException
 from defusedxml.ElementTree import fromstring as defused_fromstring
@@ -68,7 +68,7 @@ def _walk(element: ET.Element, *, category: str, into: list[Outline]) -> None:
             into.append(Outline(url=site_url, title=title, category=category, needs_discovery=True))
 
 
-def render(outlines: list[Outline], *, title: str = "old-news") -> bytes:
+def render(outlines: list[Outline]) -> bytes:
     """Regenerate an OPML file. Grouped by category, so a round trip is stable."""
     grouped: dict[str, list[Outline]] = {}
     for outline in outlines:
@@ -78,7 +78,7 @@ def render(outlines: list[Outline], *, title: str = "old-news") -> bytes:
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<opml version="2.0">',
         "  <head>",
-        f"    <title>{escape(title)}</title>",
+        "    <title>old-news</title>",
         f"    <dateCreated>{datetime.now(UTC).strftime('%a, %d %b %Y %H:%M:%S %z')}</dateCreated>",
         "  </head>",
         "  <body>",

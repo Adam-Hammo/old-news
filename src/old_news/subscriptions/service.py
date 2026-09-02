@@ -1,7 +1,6 @@
 """Managing what we are subscribed to. Operator-triggered, unlike polling."""
 
 import datetime
-import logging
 import uuid
 from dataclasses import dataclass
 
@@ -13,8 +12,6 @@ from old_news.db import Feed, Subscription
 from old_news.fetch import Fetcher, fetchable
 from old_news.politeness import resolve
 from old_news.subscriptions import discover, opml
-
-logger = logging.getLogger(__name__)
 
 
 class UnpollableUrl(ValueError):
@@ -189,32 +186,11 @@ async def subscribe(url: str, fetcher: Fetcher, *, category: str = "") -> Feed |
     return await add(found, category=category, site_url="" if found == url else url)
 
 
-@db.transactional
-async def _subscribed_rows(session: AsyncSession) -> list[tuple[Feed, Subscription]]:
-    return list(
-        (
-            await session.execute(
-                select(Feed, Subscription)
-                .join(Subscription, Subscription.feed_id == Feed.id)
-                .where(Subscription.active.is_(True))
-                .order_by(Subscription.category, Feed.title)
-            )
-        ).all()
-    )
-
-
 async def export_opml() -> bytes:
     """Only what we currently follow — an OPML file is a subscription list."""
-    rows = await _subscribed_rows()
-
     return opml.render(
         [
-            opml.Outline(
-                url=feed.url,
-                title=feed.title,
-                category=subscription.category,
-                site_url=feed.site_url,
-            )
-            for feed, subscription in rows
+            opml.Outline(url=row.url, title=row.title, category=row.category, site_url=row.site_url)
+            for row in await listing()
         ]
     )

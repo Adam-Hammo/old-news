@@ -1,8 +1,4 @@
-"""Password hashing for the admin UI. stdlib scrypt — no dependency, no service.
-
-Hashed so the copies that end up in `.env`, stack outputs and the box's environment
-are unusable, not because the UI is exposed.
-"""
+"""Password hashing for the admin UI. stdlib scrypt — no dependency, no service."""
 
 import base64
 import secrets
@@ -55,10 +51,6 @@ def verify(password: str, encoded: str) -> bool:
     try:
         cost, block, parallel = (int(part) for part in parts[1:4])
         salt, expected = base64.b64decode(parts[4]), base64.b64decode(parts[5])
-    except ValueError:
-        return False
-
-    try:
         candidate = _derive(password, salt, cost=cost, block=block, parallel=parallel)
     except ValueError:
         return False

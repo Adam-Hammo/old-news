@@ -1,10 +1,6 @@
-"""Fetching the images an extraction found. Eager for the lead, on request for the rest.
-
-Bytes are kept as received, so a rendition derived from them later can be undone.
-"""
+"""Fetching the images an extraction found. Eager for the lead, on request for the rest."""
 
 import hashlib
-import logging
 import uuid
 from typing import Any
 
@@ -18,8 +14,6 @@ from old_news.db import ExtractionImage, ImageCapture, ImageRole
 from old_news.fetch import Fetcher, FetchError, Response
 from old_news.observability import count, span
 from old_news.politeness import ensure, host_of
-
-logger = logging.getLogger(__name__)
 
 
 def digest_of(url: str) -> bytes:
@@ -42,14 +36,14 @@ async def due_images(
 
 @db.transactional
 async def hosts_for(session: AsyncSession, slot_ids: list[uuid.UUID]) -> list[str]:
-    """The URL behind each slot, in the order given, so the batch can be grouped by host."""
+    """The politeness host behind each slot, in the order given."""
     if not slot_ids:
         return []
     rows = await session.execute(
         select(ExtractionImage.id, ExtractionImage.url).where(ExtractionImage.id.in_(slot_ids))
     )
     urls = dict(rows.all())
-    return [urls.get(slot_id, "") for slot_id in slot_ids]
+    return [host_of(urls.get(slot_id, "")) for slot_id in slot_ids]
 
 
 @db.transactional
@@ -89,13 +83,14 @@ async def _store(
 ) -> ImageCapture:
     """One row per distinct bytes at a URL, and the slot pointed at it. Already compressed."""
     body = response.body if response is not None else b""
+    content_type = (response.header("content-type") or "") if response is not None else ""
     values = {
         "url": url,
         "final_url": response.url if response is not None else "",
         "url_digest": digest_of(url),
         "host_id": await ensure(session, host_of(url)),
         "status": response.status if response is not None else 0,
-        "content_type": (response.header("content-type") or "")[:64] if response else "",
+        "content_type": content_type[:64],
         "body_hash": hashlib.sha256(body).digest(),
         "body": body,
         "byte_size": len(body),
@@ -114,10 +109,8 @@ async def _store(
         )
     ).scalar_one()
 
-    # Asked of the row rather than the response, so this and `link_existing` cannot drift.
-    # `accept` refuses a body by its declared type in the fetcher but only below 300, so a
-    # 404's error page arrives untyped — and one was an article's lead image, twice: the
-    # first repair was undone by the reuse path, which had no such check.
+    # Asked of the row, not the response, so this and `link_existing` cannot drift: `accept`
+    # refuses a body by its type only below 300, so a 404's error page arrives untyped.
     if stored.usable:
         await session.execute(
             update(ExtractionImage)

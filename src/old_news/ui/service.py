@@ -65,12 +65,7 @@ class Article:
 
 def _last_poll():
     """The newest successful poll across everything we follow."""
-    return (
-        select(func.max(Feed.last_success_at))
-        .select_from(Feed)
-        .join(Subscription, and_(Subscription.feed_id == Feed.id, Subscription.active.is_(True)))
-        .scalar_subquery()
-    )
+    return select(func.max(Feed.last_success_at)).where(Feed.subscribed)
 
 
 def _shared():
@@ -91,9 +86,8 @@ def _reading(*columns):
     """Items joined to their head version, the feed they came from, and how it is filed."""
     return (
         select(*columns)
-        # Columns from three tables, so the left side of the first join is not inferable.
         .select_from(Item)
-        .join(ItemVersion, and_(ItemVersion.item_id == Item.id, ItemVersion.is_head))
+        .join(Item.current_version)
         .join(Feed, Feed.id == Item.feed_id)
         # Outer: unsubscribing must not take an open article away.
         .outerjoin(Subscription, Subscription.feed_id == Feed.id)
@@ -149,7 +143,7 @@ async def river(
     return River(
         entries=entries,
         cursor=_resume(entries[-1]) if more else "",
-        updated=await session.scalar(select(_last_poll())),
+        updated=await session.scalar(_last_poll()),
     )
 
 

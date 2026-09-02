@@ -2,7 +2,6 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from litestar import Litestar
-from litestar.datastructures import State
 from litestar.handlers import asgi
 from litestar.openapi import OpenAPIConfig
 from litestar.plugins.opentelemetry import OpenTelemetryPlugin
@@ -19,11 +18,8 @@ from old_news.tasks import app as queue_app
 
 
 @asynccontextmanager
-async def _lifespan(app: Litestar) -> AsyncGenerator[None]:
-    app.state.fetcher = fetch.client()
-
-    # The API reads queue state and will defer jobs from request handlers, both of
-    # which need procrastinate's own connection open in this process too.
+async def _lifespan(_app: Litestar) -> AsyncGenerator[None]:
+    # `/health/queue` reads queue state, which needs procrastinate's own connection open here.
     async with queue_app.open_async():
         try:
             yield
@@ -36,8 +32,6 @@ def create_app(settings: Settings | None = None) -> Litestar:
     settings = settings or get_settings()
     observability.configure(settings.telemetry, environment=settings.environment, component="api")
 
-    # `create_async_engine` opens nothing, so unlike a pre-opened pool this is safe to
-    # build outside the loop and the admin mount can hold it at construction time.
     engine = db.configure(settings.database)
     fetch.configure(settings.http)
 
@@ -61,7 +55,6 @@ def create_app(settings: Settings | None = None) -> Litestar:
     return Litestar(
         route_handlers=handlers,
         lifespan=[_lifespan],
-        state=State({"settings": settings}),
         plugins=[OpenTelemetryPlugin(observability.litestar_config())],
         before_request=observability.name_span_after_route,
         debug=settings.api.debug,

@@ -25,6 +25,4 @@ def decompress(body: bytes, dictionary: zstd.ZstdDict | None = None) -> bytes:
     """The way back. Uncompressed bodies pass through, and zstd rejects a wrong dictionary."""
     if not body.startswith(ZSTD_MAGIC):
         return body
-    if dictionary is None:
-        return zstd.decompress(body)
     return zstd.decompress(body, zstd_dict=dictionary)

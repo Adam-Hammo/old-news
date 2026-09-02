@@ -4,7 +4,6 @@ import uuid
 
 from sqlalchemy import (
     CheckConstraint,
-    ColumnElement,
     ForeignKey,
     Index,
     Integer,
@@ -114,7 +113,8 @@ class PageCapture(UUIDPrimaryKey, Base):
         return f"{self.outcome} {self.status} {self.url}"
 
 
-def _failures(host_id) -> Run:
+def failure_run(host_id) -> Run:
+    """Failed captures on this host since its last success, under the policy we ask by."""
     return run_of(
         PageCapture,
         at=lambda capture: capture.fetched_at,
@@ -126,13 +126,3 @@ def _failures(host_id) -> Run:
         # send say nothing either way, which is what lets us record them.
         resets=lambda capture: capture.outcome == CaptureOutcome.OK,
     )
-
-
-def host_failures(host_id) -> ColumnElement[int]:
-    """Failed captures on this host since its last success, under the policy we ask by."""
-    return _failures(host_id).length
-
-
-def host_last_failure(host_id) -> ColumnElement[datetime.datetime]:
-    """When that run last grew, or NULL if it is empty."""
-    return _failures(host_id).latest

@@ -1,8 +1,4 @@
-"""The robots.txt parser boundary. Nothing else imports it. An empty body allows everything.
-
-Protego because the stdlib percent-encodes `=` in a rule pattern and not in the query it
-matches, so a rule carrying one silently never fires.
-"""
+"""The robots.txt parser boundary. Nothing else imports it. An empty body allows everything."""
 
 import dataclasses
 from urllib.parse import urlsplit

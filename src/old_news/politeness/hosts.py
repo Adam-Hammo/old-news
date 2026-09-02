@@ -21,11 +21,7 @@ def host_lock(host: str) -> str | None:
 
 
 def with_www(url: str) -> str:
-    """The same URL under the `www.` name, unchanged if it is already there.
-
-    Rebuilt through `urlsplit`: the parsed host is lowercased and punycoded, so a string
-    replace finds nothing in an uppercase or IDN host.
-    """
+    """The same URL under the `www.` name, unchanged if it is already there."""
     if http_url(url) is None:
         return url
     parsed = urlsplit(url)
