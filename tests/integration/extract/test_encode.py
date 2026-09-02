@@ -22,14 +22,14 @@ def _image(width: int, height: int, kind: str, *, frames: int = 1) -> bytes:
     from factories import faker
 
     fake = faker()
-    pixels = bytes(fake.random_int(0, 255) for _ in range(width * height * 3))
-    made = Image.frombytes("RGB", (width, height), pixels)
+    size = width * height * 3
+    made = Image.frombytes("RGB", (width, height), fake.random.randbytes(size))
     buffer = io.BytesIO()
     if frames > 1:
         # Distinct frames: Pillow collapses identical ones, so appending the same image
         # writes a single-frame file and the animation guard has nothing to catch.
         others = [
-            Image.frombytes("RGB", (width, height), bytes(fake.random_int(0, 255) for _ in pixels))
+            Image.frombytes("RGB", (width, height), fake.random.randbytes(size))
             for _ in range(frames - 1)
         ]
         made.save(buffer, kind, save_all=True, append_images=others)
