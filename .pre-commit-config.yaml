@@ -147,6 +147,17 @@ repos:
         files: ^uv\.lock$
         pass_filenames: false
 
+      # The remote gitleaks hook above is `--staged`, so it scans nothing on a fresh
+      # checkout — this is the half that runs in CI, and catches a `--no-verify` commit.
+      # Keep the version in step with that hook's `rev`.
+      - id: gitleaks-tree
+        name: gitleaks (tree)
+        entry: gitleaks git . --redact --no-banner
+        language: golang
+        additional_dependencies: ["github.com/zricethezav/gitleaks/v8@v8.30.0"]
+        pass_filenames: false
+        always_run: true
+
       # infra/ is a second uv project, which the uv-lock hook above does not see.
       - id: uv-lock-infra
         name: uv lock --check (infra)
