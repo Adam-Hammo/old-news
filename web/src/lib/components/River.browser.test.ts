@@ -83,6 +83,7 @@ test('an unselected row reserves the width the selection marker takes', async ()
 	expect(getComputedStyle(row).borderLeftWidth).toBe('3px');
 });
 
+// The separator is a `::before` on the span, so an author nobody recorded must not get one.
 test('an author nobody recorded leaves no stray separator', async () => {
 	const screen = await render(River, {
 		page: page([entry({ author: '' })]),
@@ -90,13 +91,21 @@ test('an author nobody recorded leaves no stray separator', async () => {
 		selected: '',
 	});
 
-	expect(screen.container.querySelectorAll('.by span')).toHaveLength(1);
+	expect(screen.container.querySelectorAll('.by span')).toHaveLength(0);
 });
 
 test('an empty river says so rather than showing nothing at all', async () => {
 	const screen = await render(River, { page: page([]), section: '', selected: '' });
 
 	await expect.element(screen.getByText('Nothing here yet.')).toBeVisible();
+});
+
+// The masthead's last poll is the only clock on the screen. A date against a row that is
+// ordered by something else only reads as an ordering that has gone wrong.
+test('a row carries no date', async () => {
+	const screen = await render(River, { page: page([entry()]), section: '', selected: '' });
+
+	expect(screen.container.querySelector('.by')!.textContent).not.toMatch(/\d/);
 });
 
 // A third of the authors in the archive are messy strings, some of them whole production
@@ -117,19 +126,7 @@ test('a byline stays on one line however long the author is', async () => {
 	expect(byline.getBoundingClientRect().height).toBeLessThan(20);
 });
 
-test('and the timestamp is never the part that gets cut', async () => {
-	const screen = await render(River, {
-		page: page([entry({ author: 'A'.repeat(300) })]),
-		section: '',
-		selected: '',
-	});
-
-	const stampEl = screen.container.querySelector('.by span:last-child')!;
-	expect(stampEl.getBoundingClientRect().width).toBeGreaterThan(0);
-	expect(stampEl.textContent!.trim().length).toBeGreaterThan(0);
-});
-
-test('the outlet is never the part that gets cut either', async () => {
+test('the outlet is never the part that gets cut', async () => {
 	const screen = await render(River, {
 		page: page([entry({ outlet: 'London Review of Books', author: 'A'.repeat(300) })]),
 		section: '',

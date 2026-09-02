@@ -10,9 +10,10 @@ from old_news.ui import cursor
 
 def test_a_position_survives_the_round_trip():
     seen = datetime.datetime(2026, 8, 31, 12, 30, 45, 123456, tzinfo=datetime.UTC)
+    dated = datetime.datetime(2026, 8, 30, 9, 15, tzinfo=datetime.UTC)
     item_id = uuid.uuid4()
 
-    assert cursor.decode(cursor.encode(seen, item_id)) == (seen, item_id)
+    assert cursor.decode(cursor.encode(seen, dated, item_id)) == (seen, dated, item_id)
 
 
 @pytest.mark.parametrize("given", ["", "not-base64!", "Zm9vfGJhcg"])

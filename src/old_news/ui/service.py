@@ -100,11 +100,25 @@ def _reading(*columns):
     )
 
 
-def _before(seen: datetime.datetime, item_id: uuid.UUID):
-    """The keyset predicate, each half bound to the type of the column it meets."""
-    return tuple_(Item.first_seen_at, Item.id) < tuple_(
-        literal(seen, Item.first_seen_at.type), literal(item_id, Item.id.type)
+def _dated():
+    """What a tie is broken by: the publisher's date where there is one, ours where there is not."""
+    return func.coalesce(ItemVersion.published_at, Item.first_seen_at)
+
+
+def _before(seen: datetime.datetime, dated: datetime.datetime, item_id: uuid.UUID):
+    """The keyset predicate, each key bound to the type of the column it meets."""
+    stamp = Item.first_seen_at.type
+    return and_(
+        # Implied by the row comparison, and the only part of it the river index can use.
+        Item.first_seen_at <= literal(seen, stamp),
+        tuple_(Item.first_seen_at, _dated(), Item.id)
+        < tuple_(literal(seen, stamp), literal(dated, stamp), literal(item_id, Item.id.type)),
     )
+
+
+def _resume(entry: Entry) -> str:
+    """Where a page stopped, in the three keys it was ordered by."""
+    return cursor.encode(entry.first_seen_at, entry.published_at or entry.first_seen_at, entry.id)
 
 
 @db.transactional
@@ -115,13 +129,13 @@ async def river(
     after: str = "",
     limit: int = DEFAULT_LIMIT,
 ) -> River:
-    """A page of the river, newest first by when we first saw it — never the publisher's date."""
+    """A page of the river, newest first by when we first saw it, then by the publisher's date."""
     limit = max(1, min(limit, MAX_LIMIT))
 
     query = (
         _reading(*_shared())
         .where(Subscription.active.is_(True), ~training.blocked(ItemVersion, Item))
-        .order_by(Item.first_seen_at.desc(), Item.id.desc())
+        .order_by(Item.first_seen_at.desc(), _dated().desc(), Item.id.desc())
         .limit(limit + 1)
     )
     if section:
@@ -134,7 +148,7 @@ async def river(
     more = len(rows) > limit
     return River(
         entries=entries,
-        cursor=cursor.encode(entries[-1].first_seen_at, entries[-1].id) if more else "",
+        cursor=_resume(entries[-1]) if more else "",
         updated=await session.scalar(select(_last_poll())),
     )
 
