@@ -2,7 +2,7 @@
 # image, which bootstraps PostGIS, pg_ivm and pg_cron into template1 and your database.
 FROM paradedb/paradedb-extension:0.25.2-18-trixie AS pg_search
 
-FROM postgres:18.4-trixie
+FROM postgres:18.6-trixie
 
 ARG PGVECTORSCALE_VERSION=0.9.0
 ARG TARGETARCH

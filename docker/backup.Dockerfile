@@ -1,7 +1,7 @@
 # pg_dump and restic in one place, so backup and restore are the same code path
 # locally and on the host. Same Postgres major as the server — pg_dump refuses to
 # dump a newer server than itself.
-FROM postgres:18.4-trixie
+FROM postgres:18.6-trixie
 
 # curl and jq are for `report` — restic's numbers become OTLP metrics.
 # hadolint ignore=DL3008
