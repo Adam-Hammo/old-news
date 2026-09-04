@@ -1,10 +1,17 @@
 <script lang="ts">
+	import { held } from '#lib/api/client.ts';
 	import type { Article } from '#lib/api/client.ts';
 	import Pane from '#lib/components/Pane.svelte';
 	import { dateline } from '#lib/format.ts';
 	import { render } from '#lib/markdown.ts';
+	import { whenVisible } from '#lib/visible.ts';
 
-	let { article, back }: { article: Article; back: string } = $props();
+	let {
+		article,
+		back,
+		whence,
+		finish,
+	}: { article: Article; back: string; whence: string; finish: () => void } = $props();
 
 	let sheet = $state<HTMLDialogElement | undefined>();
 	let picked = $state<string | null>(null);
@@ -24,7 +31,7 @@
 	const origin = $derived(new URL(article.url).hostname.replace(/^www\./, ''));
 </script>
 
-<Pane {back}>
+<Pane {back} {whence}>
 	<article class="measured">
 		{#if article.section}<p class="kicker">{article.section}</p>{/if}
 		<h1>{article.title}</h1>
@@ -51,6 +58,13 @@
 		</p>
 		<div class="thin"></div>
 
+		{#if article.lead}
+			<!-- Served from the archive, so it outlives the publisher's copy. -->
+			<figure class="lead">
+				<img src={held(article.lead)} alt={article.lead_alt} />
+			</figure>
+		{/if}
+
 		{#if text}
 			<!-- Scrubbed in #lib/markdown.ts, the one place publisher html is let through. -->
 			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -58,11 +72,13 @@
 		{:else}
 			<p class="pending label">No text has been read out of this one yet.</p>
 		{/if}
+		<!-- Reaching this is what "read" means, as against opening the thing. -->
+		<div use:whenVisible={finish} class="finish"></div>
 	</article>
 
 	<div class="cap"></div>
 	<nav class="bar">
-		<a href={back}>&larr;&nbsp; Back to the river</a>
+		<a href={back}>&larr;&nbsp; Back to the {whence.toLowerCase()}</a>
 		<span class="divider"></span>
 		<button onclick={() => sheet?.showModal()} aria-label="Article actions"
 			>&#183;&#183;&#183;</button
@@ -87,6 +103,16 @@
 			</li>
 		{/if}
 		<li>
+			<button
+				onclick={() => {
+					finish();
+					sheet?.close();
+				}}
+			>
+				<span>Mark as read</span><em>keeps it off the Kindle</em>
+			</button>
+		</li>
+		<li>
 			<button onclick={() => navigator.clipboard?.writeText(article.url)}>
 				<span>Copy link</span>
 			</button>
@@ -106,6 +132,24 @@
 	.thin {
 		height: 1px;
 		background: var(--hair);
+	}
+
+	/* `whenVisible` fires 600px early, which for the last screen of an article is the
+	   point: the bottom is in view long before the very last line is. */
+	.finish {
+		height: 1px;
+	}
+
+	/* Held to the measure like everything else, and given its own height rather than a
+	   ratio: the archive keeps one rendition and its shape is the publisher's. */
+	.lead {
+		margin: 1.4rem 0 0;
+	}
+
+	.lead img {
+		display: block;
+		width: 100%;
+		height: auto;
 	}
 
 	.kicker {

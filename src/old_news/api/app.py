@@ -8,6 +8,7 @@ from litestar.plugins.opentelemetry import OpenTelemetryPlugin
 
 from old_news import __version__, db, fetch, observability
 from old_news.api.routes import (
+    archive_router,
     health_router,
     reading_router,
     reports_router,
@@ -35,7 +36,13 @@ def create_app(settings: Settings | None = None) -> Litestar:
     engine = db.configure(settings.database)
     fetch.configure(settings.http)
 
-    handlers = [health_router(), reading_router(), reports_router(), subscriptions_router()]
+    handlers = [
+        archive_router(),
+        health_router(),
+        reading_router(),
+        reports_router(),
+        subscriptions_router(),
+    ]
     if settings.admin.enabled:
         if settings.environment == "production" and not settings.admin.configured:
             raise RuntimeError(

@@ -2,10 +2,11 @@
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import * as api from '#lib/api/client.ts';
-	import type { River as Page } from '#lib/api/client.ts';
+	import ArchiveHead from '#lib/components/ArchiveHead.svelte';
 	import Masthead from '#lib/components/Masthead.svelte';
 	import River from '#lib/components/River.svelte';
 	import SectionStrip from '#lib/components/SectionStrip.svelte';
+	import { archived } from '#lib/links.ts';
 	import { pull, type Phase } from '#lib/pull.ts';
 	import { report } from '#lib/report.ts';
 	import { STALE, whenStale } from '#lib/stale.ts';
@@ -15,20 +16,25 @@
 	let { data, children }: LayoutProps = $props();
 
 	let pane = $state<HTMLDivElement | undefined>();
-	let list = $state<HTMLDivElement | undefined>();
+	let column = $state<HTMLDivElement | undefined>();
 	let phase = $state<Phase>('');
 
 	// A refetched first page, held beside the load's rather than through it. A load that
 	// throws takes the whole screen to the error page, and a poll that did not answer is
 	// no reason to lose the river that is already on it.
-	let latest = $state<Page | null>(null);
+	let latest = $state<api.Result | null>(null);
 	let loaded = 0;
 	let asking = false;
 
-	const river = $derived(latest ?? data.river);
+	const list = $derived(latest?.listing ?? data.list);
+	const shelf = $derived(archived(data.view));
+	const total = $derived(latest ? latest.total : data.total);
 
-	// Anything that is not the river gets the second pane: an article, or settings.
-	const open = $derived(page.route.id !== '/');
+	// The contents page is a destination rather than a slice, so it takes the whole width.
+	const solo = $derived(!list);
+	// Anything that is not the list gets the second pane: an article, or settings. Never
+	// both this and `solo` — open is the two-pane state and solo is the one-pane one.
+	const open = $derived(page.route.id !== '/' && !solo);
 	const selected = $derived(page.params.id ?? '');
 	const note = $derived(
 		phase === 'refreshing'
@@ -46,10 +52,10 @@
 	});
 
 	async function refresh() {
-		if (asking) return;
+		if (asking || !data.list) return;
 		asking = true;
 		try {
-			latest = await api.river(fetch, { section: data.section });
+			latest = await api.listing(fetch, data.view);
 			loaded = Date.now();
 		} catch {
 			// The river on screen is still the best answer there is.
@@ -60,7 +66,7 @@
 
 	// Never under a scrolled list: the pages after the first are refetched from the top,
 	// so a refresh there would take the reader's place away to say nothing new.
-	$effect(() => whenStale(() => Date.now() - loaded >= STALE && !list?.scrollTop, refresh));
+	$effect(() => whenStale(() => Date.now() - loaded >= STALE && !column?.scrollTop, refresh));
 
 	// A navigation that lands on an article and leaves the river on screen is the fault
 	// worth catching. A paint that went stale is invisible from here and reports nothing,
@@ -71,7 +77,7 @@
 		requestAnimationFrame(() => {
 			if (!pane) return;
 			const showing = getComputedStyle(pane).visibility === 'visible';
-			if (showing !== open) {
+			if (showing !== (open || solo)) {
 				report('mismatch', `route=${page.route.id} pane=${showing}`, page.url.pathname);
 			}
 		});
@@ -79,21 +85,31 @@
 </script>
 
 <div class="sheet">
-	<Masthead section={data.section} updated={river.updated} />
+	<Masthead
+		view={data.view}
+		inside={solo}
+		updated={list?.updated ?? data.contents?.updated ?? null}
+	/>
 
-	<div class="shell" class:open>
-		<div
-			class="list scroller"
-			bind:this={list}
-			data-pull={phase || undefined}
-			use:pull={{ pulled: (next) => (phase = next), refresh }}
-		>
-			<div class="pulled">
-				<p class="asking label">{note}</p>
-				<SectionStrip sections={data.sections} current={data.section} />
-				<River page={river} section={data.section} {selected} />
+	<div class="shell" class:open class:solo>
+		{#if list}
+			<div
+				class="list scroller"
+				bind:this={column}
+				data-pull={phase || undefined}
+				use:pull={{ pulled: (next) => (phase = next), refresh }}
+			>
+				<div class="pulled">
+					<p class="asking label">{note}</p>
+					{#if shelf}
+						<ArchiveHead view={data.view} shelf={list.shelf} {total} />
+					{:else}
+						<SectionStrip sections={data.sections} current={data.view.section} />
+					{/if}
+					<River page={list} view={data.view} {selected} />
+				</div>
 			</div>
-		</div>
+		{/if}
 		<div class="reading-pane scroller" bind:this={pane}>
 			{@render children?.()}
 		</div>
@@ -141,6 +157,11 @@
 	}
 
 	.shell.open > .reading-pane {
+		visibility: visible;
+	}
+
+	/* No list to sit beside, so the pane is the screen. */
+	.shell.solo > .reading-pane {
 		visibility: visible;
 	}
 

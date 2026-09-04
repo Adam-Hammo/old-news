@@ -10,6 +10,7 @@ from old_news.config.database import DatabaseSettings
 from old_news.config.extract import ExtractSettings
 from old_news.config.http import HttpSettings
 from old_news.config.ingest import IngestSettings
+from old_news.config.kindle import KindleSettings
 from old_news.config.robots import RobotsSettings
 from old_news.config.storage import StorageSettings
 from old_news.config.telemetry import TelemetrySettings
@@ -35,6 +36,7 @@ class Settings(BaseSettings):
     robots: RobotsSettings = Field(default_factory=RobotsSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     extract: ExtractSettings = Field(default_factory=ExtractSettings)
+    kindle: KindleSettings = Field(default_factory=KindleSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
 
 
@@ -50,6 +52,7 @@ __all__ = [
     "ExtractSettings",
     "HttpSettings",
     "IngestSettings",
+    "KindleSettings",
     "RobotsSettings",
     "Settings",
     "StorageSettings",

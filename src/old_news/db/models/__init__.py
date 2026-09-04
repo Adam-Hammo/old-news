@@ -16,11 +16,12 @@ from old_news.db.models.feed import Feed
 from old_news.db.models.feed_capture import FeedCapture
 from old_news.db.models.host import Host
 from old_news.db.models.image import ImageCapture
+from old_news.db.models.issue import Issue, IssueItem
 from old_news.db.models.item import Item, ItemVersion, item_reading
 from old_news.db.models.page import CAPTURE_POLICY, CaptureOutcome, PageCapture
 from old_news.db.models.poll import FeedPoll, PollOutcome
 from old_news.db.models.robots import RobotsPolicy
-from old_news.db.models.subscription import Subscription
+from old_news.db.models.subscription import Subscription, Tier, at_least, unexpired
 from old_news.db.models.training import Dimension, RuleSource, TrainingRule
 
 __all__ = [
@@ -41,6 +42,8 @@ __all__ = [
     "Host",
     "ImageCapture",
     "ImageRole",
+    "Issue",
+    "IssueItem",
     "Item",
     "ItemVersion",
     "PageCapture",
@@ -49,7 +52,10 @@ __all__ = [
     "RobotsPolicy",
     "RuleSource",
     "Subscription",
+    "Tier",
     "TrainingRule",
     "ZstdDictionary",
+    "at_least",
     "item_reading",
+    "unexpired",
 ]

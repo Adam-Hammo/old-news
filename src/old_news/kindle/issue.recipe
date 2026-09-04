@@ -1,0 +1,114 @@
+"""Assemble a periodical from a manifest the app wrote. Fetches nothing.
+
+Calibre's own readability is what this exists to avoid: the archive already holds a
+better reading with a quality signal against it. So every article here is a local
+file, `recursions` is zero, and the only thing calibre is asked for is the
+periodical structure and the format.
+
+Read by `ebook-convert`, which imports it rather than importing it as a module, so
+it declares its own imports and takes the manifest path from the environment.
+"""
+
+import json
+import os
+from pathlib import Path
+
+from calibre.web.feeds.news import BasicNewsRecipe
+
+MANIFEST = json.loads(Path(os.environ["OLD_NEWS_MANIFEST"]).read_text(encoding="utf-8"))
+
+
+def rasterise(svg, width, height):
+    """One plate, as PNG bytes.
+
+    Done here rather than handed over as SVG because calibre rasterises a downloaded
+    cover before it has a QGuiApplication, and Qt's font machinery needs one — the
+    failure is `QFontDatabase: Must construct a QGuiApplication`.
+    """
+    from calibre.gui2 import must_use_qt
+
+    must_use_qt()
+    from qt.core import QBuffer, QImage, QPainter, QSvgRenderer
+
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(0xFFFFFFFF)
+    painter = QPainter(image)
+    QSvgRenderer(str(svg)).render(painter)
+    painter.end()
+
+    buffer = QBuffer()
+    buffer.open(QBuffer.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    return bytes(buffer.data())
+
+
+class OldNews(BasicNewsRecipe):
+    title = MANIFEST["title"]
+    description = MANIFEST["subject"]
+    publication_type = "magazine"
+    language = "en"
+
+    __author__ = "old-news"
+
+    # Nothing is fetched, so none of the machinery for fetching is wanted.
+    no_stylesheets = True
+    auto_cleanup = False
+    use_embedded_content = False
+    remove_javascript = True
+    recursions = 0
+    delay = 0
+    simultaneous_downloads = 1
+    timeout = 30
+
+    # Default is 100, which would silently drop the tail of a busy section.
+    max_articles_per_feed = 1000
+
+    # Already flattened to JPEG at device width on the way in.
+    compress_news_images = False
+    scale_news_images_to_device = False
+
+    # No masthead_url: calibre synthesises one from the title, which carries the
+    # issue date and is the same serif as the cover. A supplied one bought nothing.
+
+    extra_css = """
+        h1 { font-size: 1.45em; line-height: 1.15; margin: 0 0 0.35em; text-align: left; }
+        h2 { font-size: 1.15em; margin: 1.4em 0 0.4em; }
+        h3 { font-size: 1em; margin: 1.2em 0 0.3em; }
+        p { margin: 0 0 0.85em; text-indent: 0; line-height: 1.45; }
+        .byline { font-size: 0.72em; letter-spacing: 0.08em; text-transform: uppercase;
+                  margin: 0 0 1.4em; }
+        .lead { margin: 0 0 1.2em; text-align: center; }
+        .lead img { max-width: 100%; }
+        blockquote { margin: 0 0 0.9em 1.1em; padding-left: 0.7em;
+                     border-left: 2px solid #999; font-style: italic; }
+        ul, ol { margin: 0 0 0.9em 1.2em; }
+        li { margin: 0 0 0.3em; }
+        img { max-width: 100%; }
+        pre, code { font-size: 0.85em; white-space: pre-wrap; }
+        .source { font-size: 0.7em; margin: 1.6em 0 0; word-wrap: break-word; }
+    """
+
+    def default_cover(self, cover_file):
+        """The nameplate over this issue's date and tally."""
+        cover_file.write(rasterise(MANIFEST["cover"], 1200, 1600))
+        cover_file.flush()
+        return True
+
+    def parse_index(self):
+        """One section per outlet, every article a file already on disk."""
+        return [
+            (
+                section["title"],
+                [
+                    {
+                        "title": article["title"],
+                        "url": Path(article["file"]).as_uri(),
+                        "author": article["author"],
+                        "description": article["description"],
+                        "date": article["date"],
+                    }
+                    for article in section["articles"]
+                ],
+            )
+            for section in MANIFEST["sections"]
+        ]

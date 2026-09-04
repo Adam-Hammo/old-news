@@ -24,7 +24,8 @@ src/old_news/
 
   # what the reader wants
   training/          rules about what is worth keeping
-  ui/                what the reading UI asks for: a river, an article, sections
+  ui/                what the reading UI asks for: a river, an article, the archive
+  kindle/            the weekly periodical: what goes in it, and getting it there
 
   # edges
   api/               Litestar app, routes, admin mount
@@ -51,9 +52,14 @@ The contract between the two is generated rather than written: Litestar publishe
 remains the only thing `web/` talks to, which is the same direction rule as everywhere else.
 
 `ui/` is the Python half of that pairing and stays inside the tree: it is a service like any other,
-holding the queries the two screens are made of. It renders nothing. The split is what stops the
-river's ordering, its keyset cursor and what counts as opened from being written again in TypeScript
-where no test would reach them.
+holding the queries the screens are made of. It renders nothing. The split is what stops the river's
+ordering, its keyset cursor and what counts as opened from being written again in TypeScript where
+no test would reach them.
+
+Inside it, `entries.py` holds the row shape and the keyset every list of items shares, and the three
+screens are the ways of choosing which rows: `service.py` the river, `archive.py` a shelf,
+`search.py` what the words reach. A list is one page of an ordered query in all three cases, so
+`Listing` is what all three return and one component renders them.
 
 ### There is no ports/adapters layer, deliberately
 
@@ -108,6 +114,77 @@ quotes and pictures, since that is all a comic has; and only then, which is long
 still breaks a tie. The share and the character floor sit next to it in `db/models/item.py`, because
 they are what "the same article told twice" means rather than a measure of extraction quality — that
 one is `judge()`, and its thresholds are config.
+
+### The periodical fetches nothing, and calibre only converts
+
+`kindle/` builds a weekly book out of what the archive already holds. Nothing in it makes a network
+call except the one that posts the finished thing to Amazon.
+
+That is the whole reason it exists. The obvious way to get a Kindle edition is a calibre recipe over
+a feed, and that is what the arrangement it replaced did — `use_embedded_content = False` and
+`auto_cleanup = True`, so calibre re-fetched every article and ran its own readability, throwing
+away a better reading that was already stored and crawling publisher hosts outside everything
+`politeness/` and `robots/` are for. Here the recipe reads a manifest the app wrote and every
+article is a local file, so calibre is asked for the periodical structure and the format and nothing
+else.
+
+Two things about it are not guessable from the code. **The cover is SVG**, because it carries the
+issue's date and tally and so cannot be a checked-in asset — and Pillow belongs to `extract/`, where
+a nameplate is not a rendition of anything held. **It is rasterised inside the recipe**, after
+`must_use_qt()`, because calibre rasterises a downloaded cover before it has a `QGuiApplication` and
+Qt's font machinery needs one. The masthead is calibre's own: a supplied one bought nothing, and the
+synthesised one carries the date.
+
+Expiry is the other half of the same idea and is deliberately not a job. A window on the
+subscription and a clause in the river's `WHERE` means widening one is instant rather than a rewrite
+of the archive, and the cutoff lands on the leading column of `ix_items_river`, so it costs less
+than no cutoff at all.
+
+That window is then read a third time, by the sweep that fetches body images. Whether a picture is
+worth holding is the same question as whether the article is — a long window, or a book to appear in
+— and the wire is where the volume is: measured on this archive, the short-window feeds are about
+88% of the ongoing image bill and none of what gets read twice. Leads stay unconditional, because a
+card or a page with a hole in it is a different problem.
+
+### The archive is a contents page, not a longer river
+
+Lifting the cutoff off the river was the first version of the archive and it was the wrong screen.
+The river answers "what is new", which wants no navigation at all; an archive answers "where was
+that thing" and "what did this publication run that I never got to", and one reverse-chronological
+list answers neither. It also grows without bound — at present rates six figures inside a year, over
+half of it wire — so the list has no end to reach and no landmark to come back to.
+
+So the archive lands on a contents page instead, and everything off it is bounded. Publications are
+shelved by tier, because the tier is already the judgement of whether a back catalogue is worth
+walking, and the wire's arrives folded. Months carry their counts, so a shelf too big to enter says
+so before you enter it. A dropped feed keeps its shelf: unfollowing stops a poll and takes nothing
+away. Sections are absent on purpose — they are how you skim what is new, and a third axis crossed
+with the other two is a screen nobody can hold in their head.
+
+A shelf is `first_seen_at` between two instants, or one `feed_id`, or both, which is what
+`ix_items_river` and `ix_items_feed_first_seen` are already built for. Months are grouped in the
+reader's own zone and turned into those two instants in Python, so the label a shelf carries and the
+rows it holds cannot disagree about where midnight was.
+
+### Search is two indexes, because the text is in two tables
+
+A headline is on `item_versions` and the article on `extractions`, and BM25 wants its fields side by
+side. Putting them there means a third table copying what the first two already say, kept in step by
+a task — and a copy of the archive that a task maintains is a copy that will drift, silently, in the
+direction of the reader not finding something. Two indexes on the two real columns are maintained by
+Postgres on every write instead, so nothing is ever stale and a backfill needs no rebuild.
+
+The cost is that scores from the two are not comparable, so nothing pretends otherwise: a headline
+match outranks a reading match and BM25 only breaks the tie inside each group. In practice the
+reading carries the headline anyway — trafilatura keeps it, which is why the book has to strip it —
+so the body index alone reaches almost everything and the title index is a boost rather than the
+only route in.
+
+Two smaller decisions. Terms go through `paradedb.match` rather than the query-string form, so a
+colon in what was typed is a word and not a field name and a stray quote is not a parse error. And
+every word is required: either-of-them is what makes a search over a hundred thousand rows useless,
+and it makes the match count a number worth showing. Results page by depth rather than by keyset,
+because relevance is not a column there is an ordering to cut on.
 
 ### The extractor writes markdown trafilatura will not
 
@@ -170,6 +247,7 @@ And for a request:
 
 ```text
 api/routes/reading.py        ──►  ui/service.py             ──►  db/
+api/routes/archive.py        ──►  ui/archive.py, ui/search.py  ──►  db/
 api/routes/subscriptions.py  ──►  subscriptions/service.py  ──►  fetch/, db/
 ```
 

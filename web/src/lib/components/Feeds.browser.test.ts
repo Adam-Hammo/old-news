@@ -12,8 +12,8 @@ vi.mock('#lib/api/client.ts', () => ({
 		calls.push(`follow ${url} ${category}`);
 		return Promise.resolve(fails.with);
 	},
-	file: (id: string, category: string) => {
-		calls.push(`file ${id} ${category}`);
+	file: (id: string, filing: Record<string, unknown>) => {
+		calls.push(`file ${id} ${JSON.stringify(filing)}`);
 		return Promise.resolve(fails.with);
 	},
 	unfollow: (id: string) => {
@@ -29,6 +29,8 @@ function feed(over: Partial<Following> = {}): Following {
 		url: 'https://astralcodexten.com/feed',
 		site_url: '',
 		category: 'Edition',
+		tier: 'wire',
+		expires_after_seconds: null,
 		last_success_at: null,
 		...over,
 	};
@@ -81,7 +83,14 @@ test('a feed is refiled by typing another section against it', async () => {
 		.element()
 		.dispatchEvent(new Event('change', { bubbles: true }));
 
-	await expect.poll(() => calls).toEqual(['file aaaaaaaa-0000-4000-8000-000000000001 Science']);
+	// The whole filing goes, not just the field that moved: a partial one cannot say
+	// "never expires" and "leave it alone" apart.
+	await expect
+		.poll(() => calls)
+		.toEqual([
+			'file aaaaaaaa-0000-4000-8000-000000000001 ' +
+				'{"category":"Science","tier":"wire","expires_after_seconds":null}',
+		]);
 });
 
 // One press was the whole gesture, and the thing it takes away is a poll history.
@@ -153,4 +162,53 @@ test('nothing followed says so rather than showing an empty rule', async () => {
 	const screen = await setup([]);
 
 	await expect.element(screen.getByText('Nothing followed yet.')).toBeVisible();
+});
+
+test('a tier is set from the feed it belongs to', async () => {
+	const screen = await setup([feed({ tier: 'archive', expires_after_seconds: 604800 })]);
+
+	await screen.getByLabelText('Tier for Astral Codex Ten').selectOptions('kindle');
+
+	await expect
+		.poll(() => calls)
+		.toEqual([
+			'file aaaaaaaa-0000-4000-8000-000000000001 ' +
+				'{"category":"Edition","tier":"kindle","expires_after_seconds":604800}',
+		]);
+});
+
+test('a window is set the same way, and carries the tier with it', async () => {
+	const screen = await setup([feed({ tier: 'kindle', expires_after_seconds: 604800 })]);
+
+	await screen.getByLabelText('Window for Astral Codex Ten').selectOptions('3628800');
+
+	await expect
+		.poll(() => calls)
+		.toEqual([
+			'file aaaaaaaa-0000-4000-8000-000000000001 ' +
+				'{"category":"Edition","tier":"kindle","expires_after_seconds":3628800}',
+		]);
+});
+
+// Null is the feed nothing ages out of, which no number can express.
+test('never is a window too, and goes as null', async () => {
+	const screen = await setup([feed({ expires_after_seconds: 604800 })]);
+
+	await screen.getByLabelText('Window for Astral Codex Ten').selectOptions('');
+
+	await expect
+		.poll(() => calls)
+		.toEqual([
+			'file aaaaaaaa-0000-4000-8000-000000000001 ' +
+				'{"category":"Edition","tier":"wire","expires_after_seconds":null}',
+		]);
+});
+
+test('the controls show what the feed is already set to', async () => {
+	const screen = await setup([feed({ tier: 'archive', expires_after_seconds: 259200 })]);
+
+	await expect.element(screen.getByLabelText('Tier for Astral Codex Ten')).toHaveValue('archive');
+	await expect
+		.element(screen.getByLabelText('Window for Astral Codex Ten'))
+		.toHaveValue('259200');
 });

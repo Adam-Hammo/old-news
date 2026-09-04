@@ -1,4 +1,6 @@
 <script lang="ts">
+	import * as links from '#lib/links.ts';
+
 	let { sections, current }: { sections: string[]; current: string } = $props();
 
 	let sheet = $state<HTMLDialogElement | undefined>();
@@ -6,7 +8,7 @@
 	const all = $derived(['', ...sections]);
 
 	function href(name: string): string {
-		return name ? `/?section=${encodeURIComponent(name)}` : '/';
+		return links.section(name);
 	}
 
 	function label(name: string): string {

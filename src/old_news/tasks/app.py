@@ -12,6 +12,7 @@ app = App(
         "old_news.tasks.ingest",
         "old_news.tasks.robots",
         "old_news.tasks.extract",
+        "old_news.tasks.kindle",
     ],
     worker_defaults={
         "worker_middleware": [trace_jobs],

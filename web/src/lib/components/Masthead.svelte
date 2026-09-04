@@ -1,23 +1,38 @@
 <script lang="ts">
 	import { stamp, today } from '#lib/format.ts';
+	import * as links from '#lib/links.ts';
+	import type { View } from '#lib/links.ts';
 
-	let { section = '', updated = null }: { section?: string; updated?: string | null } = $props();
+	let {
+		view = links.NOWHERE,
+		inside = false,
+		updated = null,
+	}: { view?: View; inside?: boolean; updated?: string | null } = $props();
 
-	const home = $derived(section ? `/?section=${encodeURIComponent(section)}` : '/');
 	const polled = $derived(stamp(updated));
 	const dated = today();
+
+	// Anywhere in the archive, the nameplate says so and the crossing goes back to the
+	// river. The foot of the river carries a door too, but reaching it means paging to
+	// the end of the list.
+	const archive = $derived(inside || links.archived(view));
 </script>
 
 <header>
 	<div class="line">
-		<a href={home} class="name">Old News</a>
+		<a href={links.list({ ...links.NOWHERE, section: view.section })} class="name">Old News</a>
+		{#if archive}<span class="mode">Archive</span>{/if}
 		<!-- The last successful poll, which answers "is this working". Not a count: the
 		     roadmap ruled those out and nothing here reopens it. -->
 		<span class="polled">
 			<span class="dated">{dated}</span><span class="poll"
 				>{polled ? `Updated ${polled}` : 'Not polled yet'}</span
 			>
-			<a href="/settings" class="settings">Settings</a>
+			<span class="sep"></span><a
+				href={archive ? links.list(links.NOWHERE) : links.contents()}
+				class="linked">{archive ? 'River' : 'Archive'}</a
+			>
+			<span class="sep"></span><a href="/settings" class="linked">Settings</a>
 		</span>
 	</div>
 	<div class="hair"></div>
@@ -37,6 +52,18 @@
 		align-items: baseline;
 		justify-content: space-between;
 		gap: 1rem;
+	}
+
+	/* Beside the nameplate rather than replacing it: the archive is a view, not a
+	   different paper. */
+	.mode {
+		flex: none;
+		margin-right: auto;
+		font-size: 10.5px;
+		font-weight: 700;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--ink-faint);
 	}
 
 	.name {
@@ -63,13 +90,15 @@
 		}
 	}
 
-	.settings {
+	.linked {
 		border-bottom: 1px solid var(--underline);
 	}
 
-	.settings::before {
+	/* Its own element, not a `::before` on the link: an underline on the anchor draws
+	   under everything inside it, separator included, and no rule on the pseudo-element
+	   can lift the parent's. `.dated::after` already does it this way. */
+	.sep::before {
 		content: '\00a0\00a0·\00a0\00a0';
-		border-bottom: 0;
 	}
 
 	.polled {

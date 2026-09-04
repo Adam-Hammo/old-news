@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
-import { TIMEOUT, article, river } from './client.ts';
+import { NOWHERE } from '#lib/links.ts';
+import { TIMEOUT, article, listing } from './client.ts';
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
@@ -12,7 +13,7 @@ test('every request carries a deadline', async () => {
 		return Promise.resolve(json({ entries: [], cursor: '', updated: null }));
 	};
 
-	await river(ok);
+	await listing(ok, NOWHERE);
 
 	expect(carried).toBeInstanceOf(AbortSignal);
 	expect(carried!.aborted).toBe(false);
@@ -36,5 +37,5 @@ test('a request that answers in time is not touched', async () => {
 	const ok: typeof fetch = () =>
 		Promise.resolve(json({ entries: [], cursor: '', updated: null }));
 
-	await expect(river(ok)).resolves.toMatchObject({ entries: [] });
+	await expect(listing(ok, NOWHERE)).resolves.toMatchObject({ listing: { entries: [] } });
 });

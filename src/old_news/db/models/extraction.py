@@ -49,6 +49,15 @@ class Extraction(UUIDPrimaryKey, Base):
         UniqueConstraint(*READING_IDENTITY, name=READING_KEY),
         # The extractor does not lead the unique constraint, so it cannot serve the sweep.
         Index("ix_extractions_extractor", "extractor", "extractor_version"),
+        # The half of search that reaches the article rather than the headline. Declared
+        # here so autogenerate knows it exists — undeclared, the next revision drops it.
+        Index(
+            "ix_extractions_body_bm25",
+            "id",
+            "body",
+            postgresql_using="bm25",
+            postgresql_with={"key_field": "id"},
+        ),
         CheckConstraint(one_of("source", ExtractionSource), name="known_source"),
     )
 

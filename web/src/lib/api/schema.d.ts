@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+	'/archive': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** What the archive holds, shelved by publication and by month. */
+		get: operations['ArchiveContents'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/archive/search': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** What the terms reach, best first, across every reading held. */
+		get: operations['ArchiveSearchSearch'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/archive/items': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** One shelf of the archive: a publication, a month, or both. */
+		get: operations['ArchiveItemsShelf'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/health/live': {
 		parameters: {
 			query?: never;
@@ -106,6 +157,40 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/items/{item_id}/finished': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		/** Record that an article was read to the bottom. */
+		post: operations['ItemsItemIdFinishedFinished'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/images/{capture_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** One held image, as it is stored. */
+		get: operations['ImagesCaptureIdImage'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/sections': {
 		parameters: {
 			query?: never;
@@ -172,7 +257,7 @@ export interface paths {
 		delete: operations['SubscriptionsFeedIdUnfollow'];
 		options?: never;
 		head?: never;
-		/** File a feed under a section. */
+		/** Set how a feed is filed. */
 		patch: operations['SubscriptionsFeedIdRefile'];
 		trace?: never;
 	};
@@ -198,6 +283,15 @@ export interface components {
 			comments_url: string;
 			versions: number;
 			section: string;
+			lead: string;
+			lead_alt: string;
+		};
+		/** Contents */
+		Contents: {
+			items: number;
+			months: components['schemas']['Volume'][];
+			feeds: components['schemas']['Run'][];
+			updated: string | null;
 		};
 		/** Entry */
 		Entry: {
@@ -211,10 +305,22 @@ export interface components {
 			/** Format: date-time */
 			first_seen_at: string;
 			read: boolean;
+			sent: boolean;
+			queued: boolean;
+			/** @default  */
+			snippet: string;
 		};
 		/** Filing */
 		Filing: {
 			category: string;
+			/** @default wire */
+			tier: string;
+			expires_after_seconds?: number | null;
+		};
+		/** Finished */
+		Finished: {
+			/** Format: date-time */
+			finished_at: string;
 		};
 		/** Following */
 		Following: {
@@ -224,7 +330,22 @@ export interface components {
 			url: string;
 			site_url: string;
 			category: string;
+			tier: string;
+			expires_after_seconds: number | null;
 			last_success_at: string | null;
+		};
+		/** Found */
+		Found: {
+			listing: components['schemas']['Listing'];
+			total: number;
+		};
+		/** Listing */
+		Listing: {
+			entries: components['schemas']['Entry'][];
+			cursor: string;
+			updated: string | null;
+			/** @default  */
+			shelf: string;
 		};
 		/** NewFeed */
 		NewFeed: {
@@ -245,11 +366,22 @@ export interface components {
 			display: string;
 			since_visible: number;
 		};
-		/** River */
-		River: {
-			entries: components['schemas']['Entry'][];
-			cursor: string;
-			updated: string | null;
+		/** Run */
+		Run: {
+			/** Format: uuid */
+			feed_id: string;
+			title: string;
+			url: string;
+			tier: string;
+			dropped: boolean;
+			items: number;
+			/** Format: date-time */
+			latest: string;
+		};
+		/** Volume */
+		Volume: {
+			month: string;
+			items: number;
 		};
 	};
 	responses: never;
@@ -260,6 +392,141 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+	ArchiveContents: {
+		parameters: {
+			query?: {
+				/** @description An IANA zone; months are grouped in it. */
+				zone?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Contents'];
+				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	ArchiveSearchSearch: {
+		parameters: {
+			query?: {
+				/** @description Words, not query syntax. Every one is meant. */
+				q?: string;
+				/** @description The cursor a previous page ended on. */
+				after?: string;
+				limit?: number;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Found'];
+				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	ArchiveItemsShelf: {
+		parameters: {
+			query?: {
+				/** @description A feed's whole run. */
+				feed?: string | null;
+				/** @description A month as YYYY-MM, in `zone`. */
+				month?: string;
+				/** @description Only feeds filed at this tier or above. */
+				tier?: string;
+				/** @description The cursor a previous page ended on. */
+				after?: string;
+				limit?: number;
+				/** @description An IANA zone; months are grouped in it. */
+				zone?: string;
+			};
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Listing'];
+				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
 	HealthLiveLive: {
 		parameters: {
 			query?: never;
@@ -347,7 +614,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['River'];
+					'application/json': components['schemas']['Listing'];
 				};
 			};
 			/** @description Bad request syntax or unsupported method */
@@ -428,6 +695,86 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['Opened'];
+				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	ItemsItemIdFinishedFinished: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				item_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Document created, URL follows */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Finished'];
+				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	ImagesCaptureIdImage: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				capture_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/octet-stream': string;
 				};
 			};
 			/** @description Bad request syntax or unsupported method */

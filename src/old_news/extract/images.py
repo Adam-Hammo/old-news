@@ -1,7 +1,9 @@
-"""Fetching the images an extraction found. Eager for the lead, on request for the rest."""
+"""Fetching the images an extraction found: every lead, and the body of what is kept."""
 
+import dataclasses
 import hashlib
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import func, select, update
@@ -10,7 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, robots
 from old_news.config import Settings
-from old_news.db import ExtractionImage, ImageCapture, ImageRole
+from old_news.db import (
+    Extraction,
+    ExtractionImage,
+    ImageCapture,
+    ImageRole,
+    Item,
+    ItemVersion,
+    Subscription,
+    Tier,
+    at_least,
+)
 from old_news.fetch import Fetcher, FetchError, Response
 from old_news.observability import count, span
 from old_news.politeness import ensure, host_of
@@ -18,6 +30,60 @@ from old_news.politeness import ensure, host_of
 
 def digest_of(url: str) -> bytes:
     return hashlib.sha256(url.encode()).digest()
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Held:
+    """One picture the archive has, and which article asked for it."""
+
+    item_id: uuid.UUID
+    url: str
+    role: str
+    alt: str
+    capture_id: uuid.UUID
+
+
+@db.transactional
+async def held_for(session: AsyncSession, item_ids: Sequence[uuid.UUID]) -> tuple[Held, ...]:
+    """Every usable picture behind these articles, leads first, one row per URL."""
+    if not item_ids:
+        return ()
+
+    rows = await session.execute(
+        select(
+            Item.id.label("item_id"),
+            ExtractionImage.url.label("url"),
+            ExtractionImage.role.label("role"),
+            ExtractionImage.alt.label("alt"),
+            ImageCapture.id.label("capture_id"),
+        )
+        .select_from(ExtractionImage)
+        .join(Extraction, Extraction.id == ExtractionImage.extraction_id)
+        .join(ItemVersion, ItemVersion.id == Extraction.item_version_id)
+        .join(Item, Item.id == ItemVersion.item_id)
+        .join(ImageCapture, ImageCapture.id == ExtractionImage.image_capture_id)
+        .where(Item.id.in_(item_ids), ImageCapture.usable)
+        # Newest version wins where a publisher re-cropped between edits.
+        .order_by(Item.id, ExtractionImage.role, ExtractionImage.position, ItemVersion.id.desc())
+    )
+
+    seen: dict[tuple[uuid.UUID, str], Held] = {}
+    for row in rows.mappings():
+        seen.setdefault((row["item_id"], row["url"]), Held(**row))
+    return tuple(seen.values())
+
+
+@db.transactional
+async def bytes_of(session: AsyncSession, capture_id: uuid.UUID) -> tuple[bytes, str] | None:
+    """One held picture, as it is stored. None where nothing usable is held."""
+    row = (
+        await session.execute(
+            select(ImageCapture.body, ImageCapture.content_type).where(
+                ImageCapture.id == capture_id, ImageCapture.usable
+            )
+        )
+    ).first()
+    return None if row is None else (row.body, row.content_type)
 
 
 @db.transactional
@@ -29,6 +95,31 @@ async def due_images(
         select(ExtractionImage.id)
         .where(ExtractionImage.role == role, ExtractionImage.image_capture_id.is_(None))
         .order_by(ExtractionImage.id)
+        .limit(limit)
+    )
+    return list(rows.scalars().all())
+
+
+@db.transactional
+async def due_body_images(session: AsyncSession, limit: int) -> list[uuid.UUID]:
+    """Body slots behind articles worth their pictures. Newest first, because images rot."""
+    rows = await session.execute(
+        select(ExtractionImage.id)
+        .join(Extraction, Extraction.id == ExtractionImage.extraction_id)
+        .join(ItemVersion, ItemVersion.id == Extraction.item_version_id)
+        .join(Item, Item.id == ItemVersion.item_id)
+        .join(Subscription, Subscription.feed_id == Item.feed_id)
+        .where(
+            ExtractionImage.role == ImageRole.BODY,
+            ExtractionImage.image_capture_id.is_(None),
+            Subscription.active.is_(True),
+            # The wire gets its lead and nothing else: measured, the short-tier feeds
+            # are about 88% of the ongoing image bill and none of what gets read twice.
+            at_least(Tier.ARCHIVE),
+        )
+        # uuidv7, so this is arrival order. A fresh article's pictures are still up;
+        # a year-old one's are already gone or already stable.
+        .order_by(ExtractionImage.id.desc())
         .limit(limit)
     )
     return list(rows.scalars().all())

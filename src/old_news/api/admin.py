@@ -22,6 +22,8 @@ from old_news.db import (
     FeedCapture,
     FeedPoll,
     ImageCapture,
+    Issue,
+    IssueItem,
     Item,
     ItemVersion,
     PageCapture,
@@ -106,14 +108,49 @@ class FeedPollAdmin(MachineWritten, ModelView, model=FeedPoll):
 
 class SubscriptionAdmin(ModelView, model=Subscription):
     icon = "fa-solid fa-star"
-    column_list = [Subscription.category, Subscription.active, Subscription.added_at]
-    column_sortable_list = [Subscription.category, Subscription.added_at]
+    # Where the window and the tier are set. Both are taste, and this is the screen
+    # the roadmap already gives per-feed choices.
+    column_list = [
+        Subscription.category,
+        Subscription.active,
+        Subscription.expires_after,
+        Subscription.tier,
+        Subscription.added_at,
+    ]
+    column_sortable_list = [
+        Subscription.category,
+        Subscription.expires_after,
+        Subscription.tier,
+        Subscription.added_at,
+    ]
+
+
+class IssueAdmin(MachineWritten, ModelView, model=Issue):
+    icon = "fa-solid fa-newspaper"
+    # Not `body`: the bytes are kept for a resend, not for reading in a browser.
+    column_list = [Issue.built_at, Issue.title, Issue.byte_size, Issue.sent_at, Issue.error]
+    column_sortable_list = [Issue.built_at, Issue.sent_at, Issue.byte_size]
+    column_default_sort = [(Issue.built_at, True)]
+
+
+class IssueItemAdmin(MachineWritten, ModelView, model=IssueItem):
+    name = "Issue article"
+    icon = "fa-solid fa-list-ol"
+    column_list = [IssueItem.issue_id, IssueItem.section, IssueItem.position, IssueItem.item_id]
+    column_sortable_list = [IssueItem.section, IssueItem.position]
 
 
 class ItemAdmin(ModelView, model=Item):
     icon = "fa-solid fa-fingerprint"
     # Identity only; the content lives on the versions.
-    column_list = [Item.id, Item.identity_key, Item.identity_source, Item.first_seen_at, Item.read]
+    column_list = [
+        Item.id,
+        Item.identity_key,
+        Item.identity_source,
+        Item.first_seen_at,
+        Item.read,
+        Item.finished_at,
+    ]
     column_sortable_list = [Item.first_seen_at]
     column_default_sort = [(Item.first_seen_at, True)]
 
@@ -255,6 +292,8 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
         FeedAdmin,
         FeedPollAdmin,
         SubscriptionAdmin,
+        IssueAdmin,
+        IssueItemAdmin,
         ItemAdmin,
         ItemVersionAdmin,
         DocumentAdmin,
