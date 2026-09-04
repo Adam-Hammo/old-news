@@ -8,14 +8,18 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, ui
+from old_news.config import KindleSettings
 from old_news.db import Dimension, Feed, RuleSource, TrainingRule
 
 NOW = datetime.datetime(2026, 8, 31, 12, 0, tzinfo=datetime.UTC)
 MINUTE = datetime.timedelta(minutes=1)
+DAY = datetime.timedelta(days=1)
+
+KINDLE = KindleSettings()
 
 
 async def _titles(**kwargs) -> list[str]:
-    return [entry.title for entry in (await ui.river(**kwargs)).entries]
+    return [entry.title for entry in (await ui.river(KINDLE, **kwargs)).entries]
 
 
 @db.transactional
@@ -52,7 +56,7 @@ async def test_items_from_one_poll_share_a_timestamp_and_still_page_cleanly(
     seen: list[str] = []
     cursor = ""
     while True:
-        page = await ui.river(after=cursor, limit=2)
+        page = await ui.river(KINDLE, after=cursor, limit=2)
         seen.extend(entry.title for entry in page.entries)
         cursor = page.cursor
         if not cursor:
@@ -89,7 +93,7 @@ async def test_paging_a_tied_batch_holds_the_order_across_pages(clean: None, fee
     seen: list[str] = []
     cursor = ""
     while True:
-        page = await ui.river(after=cursor, limit=2)
+        page = await ui.river(KINDLE, after=cursor, limit=2)
         seen.extend(entry.title for entry in page.entries)
         cursor = page.cursor
         if not cursor:
@@ -102,7 +106,7 @@ async def test_the_last_page_ends_the_cursor(clean: None, feed, story):
     feed_id = await feed("outlet.example.com")
     await story(feed_id, "Only one")
 
-    assert (await ui.river(limit=2)).cursor == ""
+    assert (await ui.river(KINDLE, limit=2)).cursor == ""
 
 
 async def test_a_section_shows_only_the_feeds_filed_under_it(clean: None, feed, story):
@@ -141,7 +145,7 @@ async def test_a_blocked_item_never_shows(clean: None, feed, story):
 async def test_an_item_with_nothing_extracted_yet_still_shows(clean: None, feed, story):
     await story(await feed("outlet.example.com"), "Just arrived")
 
-    entry = (await ui.river()).entries[0]
+    entry = (await ui.river(KINDLE)).entries[0]
 
     assert (entry.title, entry.read) == ("Just arrived", False)
 
@@ -157,7 +161,7 @@ async def test_sections_are_the_categories_of_active_subscriptions(clean: None, 
 
 async def test_a_cursor_we_did_not_write_is_refused(clean: None):
     with pytest.raises(ui.BadCursor):
-        await ui.river(after="nonsense!")
+        await ui.river(KINDLE, after="nonsense!")
 
 
 async def test_the_masthead_carries_the_newest_successful_poll(clean: None, feed, story):
@@ -166,7 +170,7 @@ async def test_the_masthead_carries_the_newest_successful_poll(clean: None, feed
     await story(feed_id, "A headline")
     await _polled(feed_id, NOW)
 
-    assert (await ui.river()).updated == NOW
+    assert (await ui.river(KINDLE)).updated == NOW
 
 
 @db.transactional

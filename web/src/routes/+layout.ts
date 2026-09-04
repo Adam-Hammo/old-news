@@ -10,10 +10,13 @@ export const ssr = false;
 // renders beside it, so the list cannot belong to the page the article replaces.
 export const load: LayoutLoad = async ({ fetch, url }) => {
 	const section = url.searchParams.get('section') ?? '';
+	// The archive is the river with the cutoff lifted, which is a query rather than a
+	// second screen — so it survives onto the article route and back again.
+	const archive = url.searchParams.has('archive');
 	const [sections, river] = await Promise.all([
 		api.sections(fetch),
-		api.river(fetch, { section }),
+		api.river(fetch, { section, archive: archive ? 1 : undefined }),
 	]);
 	// When, so the reading UI knows how old what it is showing has got.
-	return { sections, river, section, at: Date.now() };
+	return { sections, river, section, archive, at: Date.now() };
 };

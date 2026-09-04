@@ -8,6 +8,7 @@ from litestar.exceptions import ClientException, HTTPException, NotFoundExceptio
 from litestar.params import FromPath
 
 from old_news import fetch
+from old_news.db import Tier
 from old_news.subscriptions import service
 
 
@@ -21,9 +22,14 @@ class NewFeed:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Filing:
-    """Where a feed belongs. Empty is unfiled, which the river still carries."""
+    """Every per-feed choice, sent whole: a partial one cannot say "never expires"."""
 
+    # Empty is unfiled, which the river still carries.
     category: str
+    # `wire`, `archive` or `kindle`. The levels nest, so kindle takes what archive does.
+    tier: str = Tier.WIRE
+    # Null is a feed nothing ages out of.
+    expires_after_seconds: int | None = None
 
 
 @get("/subscriptions", summary="Every feed we follow, and how it is filed.")
@@ -44,9 +50,18 @@ async def follow(data: NewFeed) -> None:
         raise HTTPException(status_code=409, detail="already following that one")
 
 
-@patch("/subscriptions/{feed_id:uuid}", summary="File a feed under a section.", status_code=204)
+@patch("/subscriptions/{feed_id:uuid}", summary="Set how a feed is filed.", status_code=204)
 async def refile(feed_id: FromPath[uuid.UUID], data: Filing) -> None:
-    if not await service.refile(feed_id, data.category):
+    if data.tier not in set(Tier):
+        raise ClientException(detail=f"not a tier: {data.tier}")
+
+    filed = await service.refile(
+        feed_id,
+        category=data.category,
+        tier=data.tier,
+        expires_after_seconds=data.expires_after_seconds,
+    )
+    if not filed:
         raise NotFoundException(detail="not a feed we follow")
 
 

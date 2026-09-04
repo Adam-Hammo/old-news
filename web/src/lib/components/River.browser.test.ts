@@ -1,4 +1,5 @@
 import type { Entry, River as Page } from '#lib/api/client.ts';
+import { finished } from '#lib/finished.ts';
 import { opened } from '#lib/opened.ts';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -24,6 +25,7 @@ beforeEach(() => {
 	next.answer = null;
 	next.asked.length = 0;
 	opened.clear();
+	finished.clear();
 });
 
 function entry(over: Partial<Entry> = {}): Entry {
@@ -37,14 +39,22 @@ function entry(over: Partial<Entry> = {}): Entry {
 		published_at: now,
 		first_seen_at: now,
 		read: false,
+		sent: false,
+		queued: false,
 		...over,
 	};
 }
 
 const page = (entries: Entry[], cursor = ''): Page => ({ entries, cursor, updated: null });
 
-const show = (entries: Entry[], over: { section?: string; selected?: string } = {}, cursor = '') =>
-	render(River, { page: page(entries, cursor), section: '', selected: '', ...over });
+// The foot of the river carries a link too, so a test after a row has to name it.
+const ROW = { name: /A quiet street/ };
+
+const show = (
+	entries: Entry[],
+	over: { section?: string; selected?: string; archive?: boolean } = {},
+	cursor = '',
+) => render(River, { page: page(entries, cursor), section: '', selected: '', ...over });
 
 test('a row is a headline and a byline', async () => {
 	const screen = await show([entry()]);
@@ -58,27 +68,27 @@ test('a row is a headline and a byline', async () => {
 test('no row claims a section', async () => {
 	const screen = await show([entry()], { section: 'Technology' });
 
-	await expect.element(screen.getByRole('link')).not.toHaveTextContent('Technology');
+	await expect.element(screen.getByRole('link', ROW)).not.toHaveTextContent('Technology');
 });
 
 test('the section travels with the link, so coming back lands where you left', async () => {
 	const screen = await show([entry({ id: 'abc' })], { section: 'Long form' });
 
 	await expect
-		.element(screen.getByRole('link'))
+		.element(screen.getByRole('link', ROW))
 		.toHaveAttribute('href', '/item/abc?section=Long%20form');
 });
 
 test('an opened row is dimmed', async () => {
 	const screen = await show([entry({ read: true })]);
 
-	await expect.element(screen.getByRole('link')).toHaveClass(/\bread\b/);
+	await expect.element(screen.getByRole('link', ROW)).toHaveClass(/\bread\b/);
 });
 
 test('the row being read is marked, which is what the second pane is for', async () => {
 	const screen = await show([entry({ id: 'abc' })], { selected: 'abc' });
 
-	await expect.element(screen.getByRole('link')).toHaveClass(/\bselected\b/);
+	await expect.element(screen.getByRole('link', ROW)).toHaveClass(/\bselected\b/);
 });
 
 // Selecting a row must not move the rows around it, so every row reserves the bar.
@@ -169,7 +179,7 @@ test('the next page is appended under the first', async () => {
 	await expect.element(screen.getByText('Later that week')).toBeVisible();
 	await expect.element(screen.getByText('A quiet street in Leeds')).toBeVisible();
 	// That page carried no cursor of its own, so there is nothing left to reach for.
-	await expect.poll(() => screen.container.querySelector('.note')).toBeNull();
+	await expect.poll(() => screen.container.querySelector('.more')).toBeNull();
 });
 
 // A river that gives up halfway has taken the rest of the archive with it.
@@ -205,5 +215,74 @@ test('a row opened here is dimmed like one the server calls read', async () => {
 
 	const screen = await show([row]);
 
-	await expect.element(screen.getByRole('link')).toHaveClass(/\bread\b/);
+	await expect.element(screen.getByRole('link', ROW)).toHaveClass(/\bread\b/);
+});
+
+test('a sent row is marked solid and a due one dashed', async () => {
+	const screen = await show([
+		entry({ id: 'aaaaaaaa-0000-4000-8000-00000000000a', sent: true }),
+		entry({ id: 'aaaaaaaa-0000-4000-8000-00000000000b', queued: true }),
+	]);
+
+	const marks = screen.container.querySelectorAll('.kindle');
+	expect(marks).toHaveLength(2);
+	expect(getComputedStyle(marks[0]).borderBottomStyle).toBe('solid');
+	expect(getComputedStyle(marks[1]).borderBottomStyle).toBe('dashed');
+});
+
+test('a row nothing has claimed carries no mark', async () => {
+	const screen = await show([entry()]);
+
+	expect(screen.container.querySelectorAll('.kindle')).toHaveLength(0);
+});
+
+test('reading a due row to the bottom drops its mark without a refetch', async () => {
+	const due = entry({ queued: true });
+	const screen = await show([due]);
+	expect(screen.container.querySelectorAll('.kindle')).toHaveLength(1);
+
+	finished.add(due.id);
+
+	await expect.poll(() => screen.container.querySelectorAll('.kindle').length).toBe(0);
+});
+
+// The book has already gone out; reading it afterwards cannot unsend it.
+test('a sent row keeps its mark', async () => {
+	const gone = entry({ sent: true });
+	const screen = await show([gone]);
+
+	finished.add(gone.id);
+
+	await expect.poll(() => screen.container.querySelectorAll('.kindle.sent').length).toBe(1);
+});
+
+test('the foot of the river is the door to the archive', async () => {
+	const screen = await show([entry()], { section: 'Essays' });
+
+	await expect
+		.element(screen.getByRole('link', { name: /archive/i }))
+		.toHaveAttribute('href', '/?section=Essays&archive=1');
+});
+
+test('the archive offers the way back rather than a door to itself', async () => {
+	const screen = await show([entry()], { archive: true });
+
+	await expect
+		.element(screen.getByRole('link', { name: /back to the river/i }))
+		.toHaveAttribute('href', '/');
+});
+
+// Not the end of the list, so not where the door belongs.
+test('a page still loading offers no door', async () => {
+	const screen = await show([entry()], {}, 'more');
+
+	expect(screen.container.querySelectorAll('.end')).toHaveLength(0);
+});
+
+test('the archive travels with a row link, so coming back stays in the archive', async () => {
+	const screen = await show([entry({ id: 'abc' })], { section: 'Essays', archive: true });
+
+	await expect
+		.element(screen.getByRole('link', { name: /A quiet street/ }))
+		.toHaveAttribute('href', '/item/abc?section=Essays&archive=1');
 });

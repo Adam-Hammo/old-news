@@ -2,10 +2,19 @@
 	import { navigating } from '$app/state';
 	import * as api from '#lib/api/client.ts';
 	import type { Entry, River } from '#lib/api/client.ts';
+	import { finished } from '#lib/finished.ts';
+	import * as links from '#lib/links.ts';
 	import { opened } from '#lib/opened.ts';
 	import { whenVisible } from '#lib/visible.ts';
 
-	let { page, section, selected }: { page: River; section: string; selected: string } = $props();
+	let {
+		page,
+		section,
+		selected,
+		archive = false,
+	}: { page: River; section: string; selected: string; archive?: boolean } = $props();
+
+	const view = $derived({ section, archive });
 
 	// Pages fetched after the first, which the layout's load knows nothing about.
 	let extra = $state<Entry[]>([]);
@@ -27,7 +36,11 @@
 		if (!cursor || loading) return;
 		loading = true;
 		try {
-			const next = await api.river(fetch, { section, after: cursor });
+			const next = await api.river(fetch, {
+				section,
+				after: cursor,
+				archive: archive ? 1 : undefined,
+			});
 			extra = [...extra, ...next.entries];
 			cursor = next.cursor;
 			failed = false;
@@ -39,7 +52,13 @@
 	}
 
 	function href(id: string): string {
-		return section ? `/item/${id}?section=${encodeURIComponent(section)}` : `/item/${id}`;
+		return links.item(id, view);
+	}
+
+	/** Solid once a book carrying it has gone; dashed while it is only due to. */
+	function mark(entry: Entry): '' | 'sent' | 'queued' {
+		if (entry.sent) return 'sent';
+		return entry.queued && !finished.has(entry.id) ? 'queued' : '';
 	}
 
 	// The article's own load has to answer before the pane can swap, so without this a tap
@@ -49,6 +68,7 @@
 
 <ol>
 	{#each entries as entry (entry.id)}
+		{@const kindle = mark(entry)}
 		<li>
 			<a
 				href={href(entry.id)}
@@ -61,6 +81,13 @@
 				<p class="by">
 					<b>{entry.outlet}</b>
 					{#if entry.author}<span class="author">{entry.author}</span>{/if}
+					{#if kindle}
+						<span
+							class="kindle {kindle}"
+							title={kindle === 'sent' ? 'On the Kindle' : 'Due on the Kindle'}
+							>K</span
+						>
+					{/if}
 				</p>
 			</a>
 		</li>
@@ -68,11 +95,20 @@
 </ol>
 
 {#if entries.length === 0}
-	<p class="note label">Nothing here yet.</p>
+	<p class="note label">{archive ? 'Nothing in the archive yet.' : 'Nothing here yet.'}</p>
 {:else if failed}
 	<p class="note label"><button onclick={more}>Could not load more. Try again.</button></p>
 {:else if cursor}
-	<div use:whenVisible={more} class="note label">{loading ? 'Loading…' : ''}</div>
+	<div use:whenVisible={more} class="note label more">{loading ? 'Loading…' : ''}</div>
+{:else if !archive}
+	<!-- The end of the river is where the door has to be, or ageing out loses things. -->
+	<p class="note label end">
+		<a href={links.archive(view, true)}>Older stories are in the archive &nbsp;&rarr;</a>
+	</p>
+{:else}
+	<p class="note label end">
+		<a href={links.archive(view, false)}>&larr;&nbsp; Back to the river</a>
+	</p>
 {/if}
 
 <style>
@@ -164,7 +200,30 @@
 		font-weight: 700;
 	}
 
-	.by span::before {
+	/* Pushed to the far edge so the author gives way to it rather than to the row. */
+	.kindle {
+		flex: none;
+		margin-left: auto;
+		padding: 0 1px;
+		font-weight: 700;
+	}
+
+	.kindle.sent {
+		color: var(--ink);
+		border-bottom: 1.5px solid var(--ink);
+	}
+
+	/* Dashed and faint: due to go, not gone. */
+	.kindle.queued {
+		color: var(--ink-faint);
+		border-bottom: 1.5px dashed var(--ink-faint);
+	}
+
+	.end {
+		border-top: 1px solid var(--hair);
+	}
+
+	.by span:not(.kindle)::before {
 		content: '\00a0\00a0·\00a0\00a0';
 	}
 

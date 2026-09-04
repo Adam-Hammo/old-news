@@ -28,3 +28,38 @@ test('the name goes back to the river, keeping the section you were in', async (
 		.element(screen.getByRole('link', { name: 'Old News' }))
 		.toHaveAttribute('href', '/?section=Long%20form');
 });
+
+// The separator used to be a `::before` inside each link, so the anchor's underline ran
+// under the bullet as well as the word.
+test('the separator between the controls is not underlined', async () => {
+	const screen = await render(Masthead, { updated: null });
+
+	const separators = screen.container.querySelectorAll('.sep');
+	expect(separators.length).toBeGreaterThan(0);
+	for (const separator of separators) {
+		expect(getComputedStyle(separator).borderBottomWidth).toBe('0px');
+		expect(getComputedStyle(separator, '::before').borderBottomWidth).toBe('0px');
+	}
+});
+
+test('but the controls themselves are', async () => {
+	const screen = await render(Masthead, { updated: null });
+
+	for (const control of screen.container.querySelectorAll('.linked')) {
+		expect(getComputedStyle(control).borderBottomWidth).toBe('1px');
+	}
+});
+
+test('the archive is reachable without paging to the foot of the river', async () => {
+	const screen = await render(Masthead, { section: 'Essays', updated: null });
+
+	await expect
+		.element(screen.getByRole('link', { name: 'Archive' }))
+		.toHaveAttribute('href', '/?section=Essays&archive=1');
+});
+
+test('and from the archive the masthead crosses back', async () => {
+	const screen = await render(Masthead, { archive: true, updated: null });
+
+	await expect.element(screen.getByRole('link', { name: 'River' })).toHaveAttribute('href', '/');
+});

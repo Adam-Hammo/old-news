@@ -1,5 +1,6 @@
 import datetime
 import hashlib
+import io
 import subprocess
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
@@ -8,17 +9,31 @@ from typing import Any
 
 import pytest
 from litestar.testing import AsyncTestClient
+from PIL import Image
 from procrastinate import PsycopgConnector
-from sqlalchemy import text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from testcontainers.community.postgres import PostgresContainer
 
 from old_news import db, fetch
 from old_news.api.app import create_app
 from old_news.config import DatabaseSettings, Settings
-from old_news.db import Document, FeedCapture, FeedExtraction, Item, ItemVersion
+from old_news.db import (
+    Document,
+    Extraction,
+    ExtractionImage,
+    FeedCapture,
+    FeedExtraction,
+    ImageCapture,
+    ImageRole,
+    Item,
+    ItemVersion,
+    Subscription,
+    Tier,
+)
 from old_news.db import bytes as codec
 from old_news.db.migrate import upgrade
+from old_news.politeness import ensure
 from old_news.subscriptions.service import add, drop
 from old_news.tasks import app as procrastinate_app
 
@@ -115,9 +130,9 @@ async def database(migrated: None, settings: Settings) -> AsyncIterator[None]:
 
 @pytest.fixture
 async def clean(database: None) -> AsyncIterator[None]:
-    """From the root down: hosts cascades to feeds, and feeds to everything else."""
+    """Both roots. Hosts cascades to feeds and on down; an issue outlives the feeds it drew on."""
     async with db.session() as session:
-        await session.execute(text("TRUNCATE hosts CASCADE"))
+        await session.execute(text("TRUNCATE hosts, issues CASCADE"))
     yield
 
 
@@ -168,13 +183,37 @@ async def served(client: AsyncTestClient, clean: None) -> Callable[[], Awaitable
 # --- rows for the reading screens, built by hand: a poll is not what they are about ---
 
 
+@db.transactional
+async def _filed(
+    session: AsyncSession,
+    feed_id: uuid.UUID,
+    *,
+    expires_after: datetime.timedelta | None,
+    tier: Tier,
+) -> None:
+    await session.execute(
+        update(Subscription)
+        .where(Subscription.feed_id == feed_id)
+        .values(expires_after=expires_after, tier=tier)
+    )
+
+
 @pytest.fixture
 def feed() -> Callable[..., Coroutine[Any, Any, uuid.UUID]]:
     """A subscribed feed, filed under a category unless told otherwise."""
 
-    async def build(host: str, *, category: str = "", active: bool = True) -> uuid.UUID:
+    async def build(
+        host: str,
+        *,
+        category: str = "",
+        active: bool = True,
+        expires_after: datetime.timedelta | None = None,
+        tier: Tier = Tier.WIRE,
+    ) -> uuid.UUID:
         made = await add(f"https://{host}/feed.xml", title=host, category=category)
         assert made is not None
+        if expires_after is not None or tier != Tier.WIRE:
+            await _filed(made.id, expires_after=expires_after, tier=tier)
         if not active:
             await drop(made.id)
         return made.id
@@ -232,6 +271,50 @@ async def _story(
         await session.flush()
 
     return item.id
+
+
+@db.transactional
+async def _held_image(
+    session: AsyncSession, item_id: uuid.UUID, url: str, *, role: str = ImageRole.BODY
+) -> uuid.UUID:
+    """A usable capture behind one article, drawn rather than fetched."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (60, 40), (20, 20, 20)).save(buffer, "PNG")
+    body = buffer.getvalue()
+
+    capture = ImageCapture(
+        url=url,
+        url_digest=hashlib.sha256(url.encode()).digest(),
+        host_id=await ensure(session, "cdn.example.com"),
+        status=200,
+        content_type="image/png",
+        body_hash=hashlib.sha256(body).digest(),
+        body=body,
+        byte_size=len(body),
+    )
+    session.add(capture)
+    extraction_id = await session.scalar(
+        select(Extraction.id)
+        .join(ItemVersion, ItemVersion.id == Extraction.item_version_id)
+        .where(ItemVersion.item_id == item_id)
+    )
+    await session.flush()
+    session.add(
+        ExtractionImage(
+            extraction_id=extraction_id,
+            url=url,
+            image_capture_id=capture.id,
+            role=role,
+            alt=url.rsplit("/", 1)[-1],
+        )
+    )
+    return capture.id
+
+
+@pytest.fixture
+def held_image() -> Callable[..., Awaitable[uuid.UUID]]:
+    """A picture the archive holds for one article. `transactional` hands back an awaitable."""
+    return _held_image
 
 
 @pytest.fixture

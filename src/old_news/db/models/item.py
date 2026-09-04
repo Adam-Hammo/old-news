@@ -228,6 +228,10 @@ class Item(UUIDPrimaryKey, Base):
     read: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     read_at: Mapped[datetime.datetime | None] = mapped_column(Timestamptz, nullable=True)
 
+    # Opened is a tap; finished is the bottom of the article. Only the second is
+    # evidence of having read it, which is what an issue must not send again.
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(Timestamptz, nullable=True)
+
     if TYPE_CHECKING:
         # Assigned below the class, since it names `ItemVersion`. Under TYPE_CHECKING the
         # annotation never reaches `__annotations__`, so declarative does not map it.

@@ -5,6 +5,27 @@
 
 	let { feeds, sections }: { feeds: Following[]; sections: string[] } = $props();
 
+	// How much trouble a feed is worth. The levels nest, so kindle takes what archive
+	// does: every picture held, and the book on top.
+	const TIERS = [
+		{ value: 'wire', label: 'Wire' },
+		{ value: 'archive', label: 'Archive' },
+		{ value: 'kindle', label: 'Kindle' },
+	];
+
+	// A handful of named lengths rather than a number: the difference between five days
+	// and six is not an opinion anybody has. Null is the feed nothing ages out of.
+	const WINDOWS = [
+		{ value: '21600', label: '6 hours' },
+		{ value: '86400', label: '1 day' },
+		{ value: '259200', label: '3 days' },
+		{ value: '604800', label: '1 week' },
+		{ value: '1209600', label: '2 weeks' },
+		{ value: '3628800', label: '6 weeks' },
+		{ value: '15552000', label: '6 months' },
+		{ value: '', label: 'Never' },
+	];
+
 	let url = $state('');
 	let category = $state('');
 	let busy = $state(false);
@@ -34,6 +55,16 @@
 		busy = false;
 	}
 
+	/** The whole filing, with one field replaced. A partial PATCH cannot say "never". */
+	function filing(feed: Following, over: Partial<api.Filing> = {}): api.Filing {
+		return {
+			category: feed.category,
+			tier: feed.tier,
+			expires_after_seconds: feed.expires_after_seconds,
+			...over,
+		};
+	}
+
 	function drop(id: string) {
 		if (arming !== id) {
 			arming = id;
@@ -55,7 +86,9 @@
 	<h2>Feeds</h2>
 	<p class="say">
 		Paste a feed, or the address of a site that has one &mdash; it will be found. Dropping a
-		feed stops the polling and keeps everything already read; it takes two presses.
+		feed stops the polling and keeps everything already read; it takes two presses. The tier is
+		how much trouble a feed is worth: the wire keeps a lead image, archive holds every picture,
+		and kindle does that and sends the weekly book.
 	</p>
 
 	<form
@@ -112,7 +145,14 @@
 								placeholder="Unfiled"
 								aria-label="Section for {feed.title || feed.url}"
 								onchange={(event) =>
-									act(() => api.file(feed.id, event.currentTarget.value.trim()))}
+									act(() =>
+										api.file(
+											feed.id,
+											filing(feed, {
+												category: event.currentTarget.value.trim(),
+											}),
+										),
+									)}
 							/>
 							<button
 								disabled={busy}
@@ -124,6 +164,47 @@
 									: `Drop ${feed.title || feed.url}`}
 								>{arming === feed.id ? 'Confirm' : 'Drop'}</button
 							>
+						</div>
+						<div class="row settings">
+							<label>
+								<span class="what-for">Tier</span>
+								<select
+									value={feed.tier}
+									aria-label="Tier for {feed.title || feed.url}"
+									onchange={(event) =>
+										act(() =>
+											api.file(
+												feed.id,
+												filing(feed, { tier: event.currentTarget.value }),
+											),
+										)}
+								>
+									{#each TIERS as tier (tier.value)}
+										<option value={tier.value}>{tier.label}</option>
+									{/each}
+								</select>
+							</label>
+							<label>
+								<span class="what-for">Ages out after</span>
+								<select
+									value={String(feed.expires_after_seconds ?? '')}
+									aria-label="Window for {feed.title || feed.url}"
+									onchange={(event) =>
+										act(() =>
+											api.file(
+												feed.id,
+												filing(feed, {
+													expires_after_seconds:
+														Number(event.currentTarget.value) || null,
+												}),
+											),
+										)}
+								>
+									{#each WINDOWS as span (span.value)}
+										<option value={span.value}>{span.label}</option>
+									{/each}
+								</select>
+							</label>
 						</div>
 					</li>
 				{/each}
@@ -275,5 +356,42 @@
 
 	li .row {
 		flex: 0 1 20rem;
+	}
+
+	/* Their own line: on a phone the section box and the Drop button already fill one. */
+	li .settings {
+		flex: 1 1 100%;
+	}
+
+	label {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.what-for {
+		font-size: 9.5px;
+		font-weight: 700;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--ink-faint);
+	}
+
+	select {
+		width: 100%;
+		padding: 8px 10px;
+		font: inherit;
+		font-size: 14px;
+		color: var(--ink);
+		background: var(--paper);
+		border: 1px solid var(--hair);
+		border-radius: 0;
+	}
+
+	select:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: -2px;
 	}
 </style>

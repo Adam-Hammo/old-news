@@ -25,6 +25,7 @@ src/old_news/
   # what the reader wants
   training/          rules about what is worth keeping
   ui/                what the reading UI asks for: a river, an article, sections
+  kindle/            the weekly periodical: what goes in it, and getting it there
 
   # edges
   api/               Litestar app, routes, admin mount
@@ -108,6 +109,37 @@ quotes and pictures, since that is all a comic has; and only then, which is long
 still breaks a tie. The share and the character floor sit next to it in `db/models/item.py`, because
 they are what "the same article told twice" means rather than a measure of extraction quality — that
 one is `judge()`, and its thresholds are config.
+
+### The periodical fetches nothing, and calibre only converts
+
+`kindle/` builds a weekly book out of what the archive already holds. Nothing in it makes a network
+call except the one that posts the finished thing to Amazon.
+
+That is the whole reason it exists. The obvious way to get a Kindle edition is a calibre recipe over
+a feed, and that is what the arrangement it replaced did — `use_embedded_content = False` and
+`auto_cleanup = True`, so calibre re-fetched every article and ran its own readability, throwing
+away a better reading that was already stored and crawling publisher hosts outside everything
+`politeness/` and `robots/` are for. Here the recipe reads a manifest the app wrote and every
+article is a local file, so calibre is asked for the periodical structure and the format and nothing
+else.
+
+Two things about it are not guessable from the code. **The cover is SVG**, because it carries the
+issue's date and tally and so cannot be a checked-in asset — and Pillow belongs to `extract/`, where
+a nameplate is not a rendition of anything held. **It is rasterised inside the recipe**, after
+`must_use_qt()`, because calibre rasterises a downloaded cover before it has a `QGuiApplication` and
+Qt's font machinery needs one. The masthead is calibre's own: a supplied one bought nothing, and the
+synthesised one carries the date.
+
+Expiry is the other half of the same idea and is deliberately not a job. A window on the
+subscription and a clause in the river's `WHERE` means widening one is instant rather than a rewrite
+of the archive, and the cutoff lands on the leading column of `ix_items_river`, so it costs less
+than no cutoff at all. The archive screen is the same query with the clause left off.
+
+That window is then read a third time, by the sweep that fetches body images. Whether a picture is
+worth holding is the same question as whether the article is — a long window, or a book to appear in
+— and the wire is where the volume is: measured on this archive, the short-window feeds are about
+88% of the ongoing image bill and none of what gets read twice. Leads stay unconditional, because a
+card or a page with a hole in it is a different problem.
 
 ### The extractor writes markdown trafilatura will not
 

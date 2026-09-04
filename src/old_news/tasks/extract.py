@@ -110,7 +110,7 @@ async def capture_image(slot_id: str) -> None:
 @app.periodic(cron="*/2 * * * *", periodic_id="schedule_lead_images")
 @app.task(name="schedule_lead_images", queue=QUEUE, priority=SCHEDULER_PRIORITY)
 async def schedule_lead_images(timestamp: int) -> None:
-    """Lead images only. The same task serves body images, when a reader asks."""
+    """Every lead, unconditionally: it is the one picture a card or a page needs."""
     settings = get_settings()
     due = await images.due_images(settings.extract.image_batch_size)
     deferred = await sweep.defer_each(
@@ -125,6 +125,26 @@ async def schedule_lead_images(timestamp: int) -> None:
     if due:
         logger.info("deferred %d of %d due images", deferred, len(due))
         count("extract.images.deferred", deferred)
+
+
+@app.periodic(cron="*/5 * * * *", periodic_id="schedule_body_images")
+@app.task(name="schedule_body_images", queue=QUEUE, priority=SCHEDULER_PRIORITY)
+async def schedule_body_images(timestamp: int) -> None:
+    """The rest of an article's pictures, for the feeds worth holding them for."""
+    settings = get_settings()
+    due = await extract.due_body_images(settings.extract.image_batch_size)
+    deferred = await sweep.defer_each(
+        capture_image,
+        due,
+        kwarg="slot_id",
+        lock_prefix="image",
+        hosts=await images.hosts_for(due),
+        min_host_interval_seconds=settings.http.min_host_interval_seconds,
+    )
+
+    if due:
+        logger.info("deferred %d of %d due body images", deferred, len(due))
+        count("extract.body_images.deferred", deferred)
 
 
 @task(app, name="encode_image", queue=QUEUE)

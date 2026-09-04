@@ -104,6 +104,30 @@ def encode(body: bytes, settings: ExtractSettings) -> Encoded | None:
     return Encoded(encoded, CONTENT_TYPE)
 
 
+DEVICE_CONTENT_TYPE = "image/jpeg"
+
+
+def flatten(body: bytes, *, max_width: int, quality: int) -> Encoded:
+    """Re-encode to JPEG at a device's width. A Kindle reads none of the archive's formats."""
+    with Image.open(io.BytesIO(body)) as opened:
+        opened.seek(0)
+        width, height = opened.size
+        # Onto white rather than converted: a transparent logo dropped straight into RGB
+        # comes out with a black background.
+        flat = Image.new("RGB", opened.size, (255, 255, 255))
+        source = opened.convert("RGBA")
+        flat.paste(source, mask=source.split()[-1])
+        if width > max_width:
+            flat = flat.resize(
+                (max_width, round(height * max_width / width)), Image.Resampling.LANCZOS
+            )
+
+        buffer = io.BytesIO()
+        flat.save(buffer, "JPEG", quality=quality, optimize=True, progressive=True)
+
+    return Encoded(buffer.getvalue(), DEVICE_CONTENT_TYPE)
+
+
 @db.transactional
 async def _replace(
     session: AsyncSession,

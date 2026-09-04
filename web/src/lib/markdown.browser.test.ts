@@ -42,3 +42,17 @@ test('a picture survives with the words the publisher hung off it', () => {
 	expect(html).toContain('alt="Geology Class"');
 	expect(html).toContain('title="The joke, in the title."');
 });
+
+test("a held picture is asked of the api, not of the page's own origin", () => {
+	const html = render('![a chart](/images/aaaaaaaa-0000-4000-8000-000000000001/)');
+
+	expect(html).toContain('src="/api/images/aaaaaaaa-0000-4000-8000-000000000001/"');
+	expect(html).toContain('alt="a chart"');
+});
+
+// The API leaves these alone, and so must the prefix.
+test("a publisher's own picture is left where it is", () => {
+	expect(render('![a chart](https://cdn.example.com/a.png)')).toContain(
+		'src="https://cdn.example.com/a.png"',
+	);
+});

@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import signal
 import sys
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -139,6 +140,42 @@ async def _export_opml(settings: Settings) -> int:
     return 0
 
 
+async def _build_issue(settings: Settings) -> int:
+    from old_news import db, kindle
+
+    db.configure(settings.database)
+    try:
+        built = await kindle.build_issue(settings.kindle)
+    finally:
+        await db.dispose()
+
+    if built.issue_id is None:
+        print("nothing due; no issue built")
+        return 0
+    print(f"issue {built.issue_id}: {built.articles} articles, {built.byte_size} bytes")
+    if built.error:
+        print(f"  not delivered: {built.error}", file=sys.stderr)
+        return 1
+    print("  sent" if built.sent else "  built; delivery is not configured")
+    return 0
+
+
+async def _resend_issue(issue_id: str, settings: Settings) -> int:
+    from old_news import db, kindle
+
+    db.configure(settings.database)
+    try:
+        error = await kindle.resend(uuid.UUID(issue_id), settings.kindle)
+    finally:
+        await db.dispose()
+
+    if error:
+        print(f"not delivered: {error}", file=sys.stderr)
+        return 1
+    print("sent")
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="old-news")
     commands = parser.add_subparsers(dest="command")
@@ -152,6 +189,13 @@ def main() -> None:
     importer = opml.add_parser("import", help="subscribe to everything in an OPML file")
     importer.add_argument("path", help="an OPML file, or - to read stdin")
     opml.add_parser("export", help="write subscriptions as OPML to stdout")
+
+    issues = commands.add_parser("kindle", help="build or resend a periodical").add_subparsers(
+        dest="kindle_command", required=True
+    )
+    issues.add_parser("build", help="build an issue from whatever is due, and send it")
+    resend = issues.add_parser("resend", help="post an issue's stored bytes again")
+    resend.add_argument("issue_id", help="the id of an issue already built")
 
     args = parser.parse_args()
     settings = get_settings()
@@ -167,6 +211,11 @@ def main() -> None:
     if args.command in (None, "serve"):
         _serve(settings)
         return
+
+    if args.command == "kindle":
+        if args.kindle_command == "build":
+            raise SystemExit(asyncio.run(_build_issue(settings)))
+        raise SystemExit(asyncio.run(_resend_issue(args.issue_id, settings)))
 
     if args.opml_command == "import":
         # Read before the loop starts: blocking I/O inside it stalls everything.

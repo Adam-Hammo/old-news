@@ -49,7 +49,10 @@
 		if (asking) return;
 		asking = true;
 		try {
-			latest = await api.river(fetch, { section: data.section });
+			latest = await api.river(fetch, {
+				section: data.section,
+				archive: data.archive ? 1 : undefined,
+			});
 			loaded = Date.now();
 		} catch {
 			// The river on screen is still the best answer there is.
@@ -79,7 +82,7 @@
 </script>
 
 <div class="sheet">
-	<Masthead section={data.section} updated={river.updated} />
+	<Masthead section={data.section} archive={data.archive} updated={river.updated} />
 
 	<div class="shell" class:open>
 		<div
@@ -90,8 +93,12 @@
 		>
 			<div class="pulled">
 				<p class="asking label">{note}</p>
-				<SectionStrip sections={data.sections} current={data.section} />
-				<River page={river} section={data.section} {selected} />
+				<SectionStrip
+					sections={data.sections}
+					current={data.section}
+					archive={data.archive}
+				/>
+				<River page={river} section={data.section} {selected} archive={data.archive} />
 			</div>
 		</div>
 		<div class="reading-pane scroller" bind:this={pane}>

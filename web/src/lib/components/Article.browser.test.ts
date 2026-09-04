@@ -20,12 +20,14 @@ function article(over: Partial<Article> = {}): Article {
 		comments_url: '',
 		versions: 1,
 		section: 'Surveillance',
+		lead: '',
+		lead_alt: '',
 		...over,
 	};
 }
 
-const show = (over: Partial<Article> = {}, back = '/') =>
-	render(ArticleView, { article: article(over), back });
+const show = (over: Partial<Article> = {}, back = '/', finish = () => {}) =>
+	render(ArticleView, { article: article(over), back, finish });
 
 test('the headline, the byline and the text', async () => {
 	const screen = await show();
@@ -163,4 +165,35 @@ test('the version count keeps its corner when the toggle joins it', async () => 
 
 	await expect.element(screen.getByText('v3 of 3')).toBeVisible();
 	expect(screen.container.querySelectorAll('.meta button')).toHaveLength(2);
+});
+
+test('reaching the foot of the article is what counts as reading it', async () => {
+	let read = 0;
+	await show({}, '/', () => (read += 1));
+
+	await expect.poll(() => read).toBeGreaterThan(0);
+});
+
+test('marking it read by hand is in the sheet, beside the reason for it', async () => {
+	let read = 0;
+	const screen = await show({}, '/', () => (read += 1));
+	await screen.getByRole('button', { name: 'Article actions' }).click();
+
+	await screen.getByRole('button', { name: /mark as read/i }).click();
+
+	expect(read).toBeGreaterThan(0);
+	expect(screen.container.querySelector('dialog')?.open).toBeFalsy();
+});
+
+test('a held lead image is set above the body', async () => {
+	const screen = await show({ lead: '/images/abc/', lead_alt: 'A quiet street' });
+
+	await expect.element(screen.getByRole('img', { name: 'A quiet street' })).toBeVisible();
+});
+
+// The reading already carries it, or there is not one held.
+test('no lead leaves no gap where one would be', async () => {
+	const screen = await show();
+
+	expect(screen.container.querySelector('.lead')).toBeNull();
 });

@@ -8,5 +8,5 @@ class WorkerSettings(BaseModel):
     """
 
     concurrency: dict[str, int] = Field(
-        default_factory=lambda: {"ingest": 2, "pages": 4, "default": 1, "builtin": 1}
+        default_factory=lambda: {"ingest": 2, "pages": 4, "kindle": 1, "default": 1, "builtin": 1}
     )

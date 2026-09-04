@@ -75,3 +75,44 @@ async def test_an_address_we_cannot_poll_is_refused(served):
     response = await client.post("/subscriptions", json={"url": "mailto:someone@example.com"})
 
     assert response.status_code == 400
+
+
+async def test_a_feed_is_filed_with_its_tier_and_window_in_one_call(served):
+    feed = await add(FEED, title="An essay", category="Edition")
+    assert feed is not None
+    client = await served()
+
+    filed = await client.patch(
+        f"/subscriptions/{feed.id}",
+        json={"category": "Essays", "tier": "kindle", "expires_after_seconds": 1209600},
+    )
+    listed = (await client.get("/subscriptions")).json()[0]
+
+    assert filed.status_code == 204
+    assert (listed["category"], listed["tier"], listed["expires_after_seconds"]) == (
+        "Essays",
+        "kindle",
+        1209600,
+    )
+
+
+async def test_a_feed_arrives_at_the_cheap_end(served):
+    """Nothing ages out and no picture past the lead is fetched until a feed is promoted."""
+    await add(FEED)
+    client = await served()
+
+    listed = (await client.get("/subscriptions")).json()[0]
+
+    assert (listed["tier"], listed["expires_after_seconds"]) == ("wire", None)
+
+
+async def test_a_tier_that_is_not_one_is_refused(served):
+    feed = await add(FEED)
+    assert feed is not None
+    client = await served()
+
+    response = await client.patch(
+        f"/subscriptions/{feed.id}", json={"category": "", "tier": "whenever"}
+    )
+
+    assert response.status_code == 400

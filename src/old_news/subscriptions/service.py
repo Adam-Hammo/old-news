@@ -4,7 +4,7 @@ import datetime
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
@@ -31,6 +31,10 @@ class Following:
     url: str
     site_url: str
     category: str
+    tier: str
+    # Seconds, not an interval: JSON has no duration, and the screen offers a handful of
+    # named lengths rather than a number. Null is a feed nothing ages out of.
+    expires_after_seconds: int | None
     last_success_at: datetime.datetime | None
 
 
@@ -134,13 +138,29 @@ async def already_following(session: AsyncSession, url: str) -> bool:
 
 
 @db.transactional
-async def refile(session: AsyncSession, feed_id: uuid.UUID, category: str) -> bool:
-    """Move a feed to another section. Empty is unfiled, which the river still carries."""
+async def refile(
+    session: AsyncSession,
+    feed_id: uuid.UUID,
+    *,
+    category: str,
+    tier: str,
+    expires_after_seconds: int | None,
+) -> bool:
+    """Every per-feed choice at once, so the screen never has to send a partial one."""
     subscription = await _following(session, Feed.id == feed_id)
     if subscription is None or not subscription.active:
         return False
     subscription.category = category
+    subscription.tier = tier
+    subscription.expires_after = (
+        None if expires_after_seconds is None else datetime.timedelta(seconds=expires_after_seconds)
+    )
     return True
+
+
+def _seconds():
+    """The window as the wire carries it. Postgres does the arithmetic, not Python."""
+    return cast(func.extract("epoch", Subscription.expires_after), Integer)
 
 
 @db.transactional
@@ -153,6 +173,8 @@ async def listing(session: AsyncSession) -> tuple[Following, ...]:
             Feed.url,
             Feed.site_url,
             Subscription.category,
+            Subscription.tier,
+            _seconds().label("expires_after_seconds"),
             Feed.last_success_at,
         )
         .join(Subscription, Subscription.feed_id == Feed.id)
