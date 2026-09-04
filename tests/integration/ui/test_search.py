@@ -141,12 +141,67 @@ async def test_punctuation_in_what_was_typed_is_just_words(clean: None, feed, st
     assert await _titles('density: "housing') == ["A quiet street"]
 
 
+# A liveblog rewrites its headline every few hours. Matching a superseded one surfaces an
+# article whose headline says something else entirely, with no fragment to explain it.
+async def test_a_headline_that_has_been_rewritten_is_not_what_search_matches(
+    clean: None, feed, story, supersede
+):
+    feed_id = await feed("wire.example.com")
+    item_id = await story(feed_id, "Tariff talks collapse", body=BIRDS)
+    await supersede(item_id, "Who is calling the shots on trade")
+
+    assert await _titles("tariff") == []
+    assert (await ui.look(KINDLE, terms="tariff")).total == 0
+    assert await _titles("shots") == ["Who is calling the shots on trade"]
+
+
+async def test_a_reading_of_a_superseded_version_is_not_searched_either(
+    clean: None, feed, story, supersede
+):
+    feed_id = await feed("wire.example.com")
+    item_id = await story(feed_id, "A quiet street", body=DENSITY)
+    await supersede(item_id, "A quiet street", body=BIRDS)
+
+    assert await _titles("density") == []
+    assert await _titles("wrens") == ["A quiet street"]
+
+
+# A title score and a body score come off two different indexes and are not on one scale,
+# so a body score must never decide the order inside the headline group.
+async def test_a_body_score_does_not_order_the_headline_group(clean: None, feed, story):
+    feed_id = await feed("essays.example.com")
+    await story(feed_id, "Density itself", body="A word about nothing much.")
+    await story(feed_id, "Density and more", body=" ".join(["density"] * 200))
+
+    assert (await _titles("density"))[0] == "Density itself"
+
+
 @pytest.mark.parametrize("terms", ["", "   "])
 async def test_searching_for_nothing_is_refused(clean: None, terms):
     with pytest.raises(ui.BadQuery):
         await ui.look(KINDLE, terms=terms)
 
 
-async def test_a_page_that_is_not_a_number_is_refused(clean: None):
+@pytest.mark.parametrize(
+    "after",
+    [
+        pytest.param("nonsense", id="not-a-number"),
+        # `isdigit` is true for these and `int` refuses them, which used to be a 500.
+        pytest.param("\u00b2", id="superscript-two"),
+        pytest.param("\u0663", id="arabic-indic-three"),
+        pytest.param("9999999999999999999", id="past-what-a-bigint-holds"),
+    ],
+)
+async def test_a_page_that_is_not_a_number_is_refused(clean: None, after):
     with pytest.raises(ui.BadQuery):
-        await ui.look(KINDLE, terms="density", after="nonsense")
+        await ui.look(KINDLE, terms="density", after=after)
+
+
+async def test_paging_stops_rather_than_running_forever(clean: None, feed, story):
+    """The cursor is not offered past the depth anyone would page to."""
+    feed_id = await feed("essays.example.com")
+    await story(feed_id, "A quiet street", body=DENSITY)
+
+    found = await ui.look(KINDLE, terms="density", after=str(ui.MAX_DEPTH), limit=1)
+
+    assert found.listing.cursor == ""

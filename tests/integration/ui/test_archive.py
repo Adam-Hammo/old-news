@@ -162,6 +162,9 @@ async def test_a_shelf_of_everything_is_refused(clean: None):
     [
         pytest.param({"month": "2026-13"}, id="no-thirteenth-month"),
         pytest.param({"month": "June"}, id="not-a-month-at-all"),
+        pytest.param({"month": "2026-06-15"}, id="a-day-is-not-a-month"),
+        # The month after this one does not fit in a date, which used to be a 500.
+        pytest.param({"month": "9999-12"}, id="past-the-last-month-there-is"),
         pytest.param({"month": "2026-06", "zone": "Mars/Olympus"}, id="no-such-zone"),
         pytest.param({"feed": uuid.UUID(int=1), "tier": "gold"}, id="no-such-tier"),
     ],
@@ -171,6 +174,34 @@ async def test_an_impossible_shelf_is_refused(clean: None, kwargs):
         await ui.shelf(KINDLE, **kwargs)
 
 
-async def test_an_unusable_zone_is_refused_by_the_contents(clean: None):
+@pytest.mark.parametrize(
+    "zone",
+    [
+        pytest.param("Mars/Olympus", id="no-such-place"),
+        # Python's tzdata knows 113 names this Postgres does not, and a browser can still
+        # report one of the legacy aliases. Validating against the wrong copy was a 500.
+        pytest.param("Asia/Calcutta", id="a-legacy-alias-python-alone-knows"),
+        pytest.param("America/Buenos_Aires", id="another-of-them"),
+    ],
+)
+async def test_a_zone_postgres_does_not_know_is_refused(clean: None, zone):
     with pytest.raises(ui.BadShelf):
-        await ui.contents(zone="Mars/Olympus")
+        await ui.contents(zone=zone)
+    with pytest.raises(ui.BadShelf):
+        await ui.shelf(KINDLE, month="2026-06", zone=zone)
+
+
+# Two copies of tzdata deciding where midnight was is how a shelf comes to hold rows the
+# contents page counted under the month before it. Postgres does both.
+@pytest.mark.parametrize("zone", ["Australia/Sydney", "America/Edmonton", "Africa/Casablanca"])
+async def test_the_month_a_row_is_counted_under_is_the_month_it_is_served_on(
+    clean: None, feed, story, zone
+):
+    feed_id = await feed("wire.example.com")
+    for month in range(1, 13):
+        at = datetime.datetime(2026, month, 1, 6, 30, tzinfo=datetime.UTC)
+        await story(feed_id, f"Month {month}", first_seen_at=at)
+
+    for volume in (await ui.contents(zone=zone)).months:
+        shelved = await _titles(month=volume.month, zone=zone)
+        assert len(shelved) == volume.items, f"{zone} {volume.month}"

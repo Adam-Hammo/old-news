@@ -3,9 +3,9 @@
 import dataclasses
 import datetime
 import uuid
-import zoneinfo
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, cast, func, literal, select, text
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
@@ -15,6 +15,11 @@ from old_news.ui import cursor, entries
 
 MONTH = "YYYY-MM"
 UTC = "UTC"
+
+# Postgres carries its own tzdata and it is the copy that does the arithmetic here, so it
+# is also the copy that decides what a zone is. Python's `zoneinfo` knows 113 names this
+# does not — the legacy aliases — and a browser can still report one of them.
+KNOWN_ZONE = text("select exists (select 1 from pg_timezone_names where name = :zone)")
 
 
 class BadShelf(ValueError):
@@ -53,11 +58,10 @@ class Contents:
     updated: datetime.datetime | None
 
 
-def _zoned(zone: str) -> zoneinfo.ZoneInfo:
-    try:
-        return zoneinfo.ZoneInfo(zone)
-    except (zoneinfo.ZoneInfoNotFoundError, ValueError) as exc:
-        raise BadShelf(zone) from exc
+async def _zoned(session: AsyncSession, zone: str) -> str:
+    if not await session.scalar(KNOWN_ZONE, {"zone": zone}):
+        raise BadShelf(zone)
+    return zone
 
 
 def _tiered(query: Select, tier: str) -> Select:
@@ -69,19 +73,23 @@ def _tiered(query: Select, tier: str) -> Select:
         raise BadShelf(tier) from exc
 
 
-def _edges(month: str, zone: zoneinfo.ZoneInfo) -> tuple[datetime.datetime, datetime.datetime]:
+def _edges(month: str, zone: str):
     """A month's two instants, so the shelf is a range scan on the river index's own column."""
+    # Naive arithmetic, then one conversion, by the same tzdata that labels the months.
+    year, _, ordinal = month.partition("-")
     try:
-        start = datetime.datetime.strptime(month, "%Y-%m").replace(tzinfo=zone)
-    except ValueError as exc:
+        start = datetime.date(int(year), int(ordinal), 1)
+        following = (start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+    except (ValueError, OverflowError) as exc:
         raise BadShelf(month) from exc
-    return start, (start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+    at = (cast(literal(edge.isoformat()), TIMESTAMP) for edge in (start, following))
+    return tuple(func.timezone(zone, naive) for naive in at)
 
 
 @db.transactional
 async def contents(session: AsyncSession, *, zone: str = UTC) -> Contents:
     """The contents page. Months are grouped in the reader's own zone, or they read wrong."""
-    local = func.timezone(_zoned(zone).key, Item.first_seen_at)
+    local = func.timezone(await _zoned(session, zone), Item.first_seen_at)
     volumes = await session.execute(
         entries.held(
             func.to_char(func.date_trunc("month", local), MONTH).label("month"),
@@ -134,7 +142,7 @@ async def shelf(
         query = query.where(Item.feed_id == feed)
         named = await session.scalar(select(Feed.title).where(Feed.id == feed)) or ""
     if month:
-        since, until = _edges(month, _zoned(zone))
+        since, until = _edges(month, await _zoned(session, zone))
         query = query.where(Item.first_seen_at >= since, Item.first_seen_at < until)
     if after:
         query = query.where(entries.before(*cursor.decode(after)))

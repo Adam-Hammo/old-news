@@ -163,8 +163,11 @@ with the other two is a screen nobody can hold in their head.
 
 A shelf is `first_seen_at` between two instants, or one `feed_id`, or both, which is what
 `ix_items_river` and `ix_items_feed_first_seen` are already built for. Months are grouped in the
-reader's own zone and turned into those two instants in Python, so the label a shelf carries and the
-rows it holds cannot disagree about where midnight was.
+reader's own zone, and Postgres does that conversion for both the label and the shelf's edges —
+Python's `zoneinfo` and Postgres carry different copies of tzdata, and they disagree about where
+midnight was in four zones this year. One copy deciding is how a shelf stops holding rows the
+contents page counted under the month before it. It is also why a zone is checked against
+`pg_timezone_names`: Python knows 113 names Postgres does not, and a browser can still report one.
 
 ### Search is two indexes, because the text is in two tables
 
@@ -174,17 +177,26 @@ a task — and a copy of the archive that a task maintains is a copy that will d
 direction of the reader not finding something. Two indexes on the two real columns are maintained by
 Postgres on every write instead, so nothing is ever stale and a backfill needs no rebuild.
 
-The cost is that scores from the two are not comparable, so nothing pretends otherwise: a headline
-match outranks a reading match and BM25 only breaks the tie inside each group. In practice the
-reading carries the headline anyway — trafilatura keeps it, which is why the book has to strip it —
-so the body index alone reaches almost everything and the title index is a boost rather than the
-only route in.
+The cost is that scores from the two are not comparable, so nothing pretends otherwise: the two
+maxima are kept apart and only a group's own score orders that group. In practice the reading
+carries the headline anyway — trafilatura keeps it, which is why the book has to strip it — so the
+body index alone reaches almost everything and the title index is a boost rather than the only route
+in. Both halves ask for the head version only: a liveblog rewrites its headline every few hours, and
+matching a superseded one surfaces an article whose headline says something else.
 
 Two smaller decisions. Terms go through `paradedb.match` rather than the query-string form, so a
 colon in what was typed is a word and not a field name and a stray quote is not a parse error. And
 every word is required: either-of-them is what makes a search over a hundred thousand rows useless,
 and it makes the match count a number worth showing. Results page by depth rather than by keyset,
-because relevance is not a column there is an ordering to cut on.
+because relevance is not a column there is an ordering to cut on — so the ordering carries the id as
+a last key, or a tie can serve one row twice and never serve the other.
+
+The fragment under each result is **not** `paradedb.snippet`. That costs about a millisecond for
+every document a term reaches, whatever the page size, so a term matching a tenth of the archive
+spends the whole request building fragments nobody asked for — measured at 1.2s against 74ms. It is
+built in Python from the same reading the article screen shows, which costs what the page costs. The
+price is that marking is a prefix test rather than the index's stemming, so a row can arrive with no
+fragment rather than a wrong one.
 
 ### The extractor writes markdown trafilatura will not
 
