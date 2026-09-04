@@ -32,6 +32,18 @@ test('and the sift is a link back to the same shelf either way', () => {
 	expect(links.wire(view({ month: '2026-06' }), false)).toBe('/?month=2026-06&tier=archive');
 });
 
+// A URL carrying both would claim a filter the results do not have: the client sends only
+// `q` to the search endpoint.
+test('a search is its own view and carries no shelf keys', () => {
+	expect(links.list(view({ q: 'gaza', month: '2026-06', tier: 'archive', feed: 'f1' }))).toBe(
+		'/?q=gaza',
+	);
+});
+
+test('every key is encoded, not just the ones with spaces in them', () => {
+	expect(links.list(view({ month: '2026-06&q=cats' }))).toBe('/?month=2026-06%26q%3Dcats');
+});
+
 test('a shelf travels with an article, so coming back lands on it', () => {
 	expect(links.item('abc', view({ month: '2026-06' }))).toBe('/item/abc?month=2026-06');
 });
