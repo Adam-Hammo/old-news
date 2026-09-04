@@ -301,6 +301,15 @@ class ItemVersion(UUIDPrimaryKey, Base):
         # Postgres doesn't index foreign keys. Ordered by id so it also serves
         # walking an item's chain and finding its tail.
         Index("ix_item_versions_item_id", "item_id", "id"),
+        # Half of what search reads; the other half is on `extractions`. Declared here so
+        # autogenerate knows it exists — undeclared, the next revision drops it.
+        Index(
+            "ix_item_versions_title_bm25",
+            "id",
+            "title",
+            postgresql_using="bm25",
+            postgresql_with={"key_field": "id"},
+        ),
         # What the feed capture sweep groups by, and what a document delete has to find.
         Index("ix_item_versions_document_id", "document_id"),
     )
