@@ -1,8 +1,14 @@
 import { error } from '@sveltejs/kit';
+import * as links from '#lib/links.ts';
+import type { View } from '#lib/links.ts';
 import type { components } from './schema';
 
 export type Entry = components['schemas']['Entry'];
-export type River = components['schemas']['River'];
+export type Listing = components['schemas']['Listing'];
+export type Found = components['schemas']['Found'];
+export type Contents = components['schemas']['Contents'];
+export type Run = components['schemas']['Run'];
+export type Volume = components['schemas']['Volume'];
 export type Article = components['schemas']['Article'];
 export type Report = components['schemas']['Report'];
 export type Following = components['schemas']['Following'];
@@ -10,6 +16,15 @@ export type Following = components['schemas']['Following'];
 // A prefix, not a host. `tailscale serve --set-path=/api` puts Litestar behind it in the
 // deployment and the dev proxy does the same, so nothing here knows where the API lives.
 export const BASE = '/api';
+
+// What the API rewrites a held picture's address to. It is an API path like any other, so
+// it needs the prefix — an `<img src="/images/…">` asks the node process serving the page.
+const HELD = '/images/';
+
+/** A held picture's address, behind the prefix. Anything else is the publisher's and stays. */
+export function held(url: string): string {
+	return url.startsWith(HELD) ? `${BASE}${url}` : url;
+}
 
 // A navigation waits on its load, so a request that never answers is a tap that never
 // does anything. Better to give up and say so than to hang on a phone's dead signal.
@@ -40,8 +55,27 @@ async function get<T>(fetcher: Fetcher, path: string, query: Query = {}): Promis
 	return (await response.json()) as T;
 }
 
-export function river(fetcher: Fetcher, query: Query = {}): Promise<River> {
-	return get<River>(fetcher, '/river/', query);
+/** Months are grouped where the reader is, so the shelf a date lands on is the right one. */
+export const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+export function contents(fetcher: Fetcher): Promise<Contents> {
+	return get<Contents>(fetcher, '/archive/', { zone: ZONE });
+}
+
+/** A list, and how much matched where anything counted it. Null is nobody counting. */
+export type Result = { listing: Listing; total: number | null };
+
+/** Whichever list the view describes: a slice of the river, a shelf, or a search. */
+export async function listing(fetcher: Fetcher, view: View, after = ''): Promise<Result> {
+	if (view.q) {
+		return get<Found>(fetcher, '/archive/search/', { q: view.q, after });
+	}
+	const { feed, month, tier } = view;
+	const listing = links.archived(view)
+		? await get<Listing>(fetcher, '/archive/items/', { feed, month, tier, after, zone: ZONE })
+		: await get<Listing>(fetcher, '/river/', { section: view.section, after });
+	// The river has no total by design, and a shelf's is already on the contents page.
+	return { listing, total: null };
 }
 
 export function article(fetcher: Fetcher, id: string): Promise<Article> {

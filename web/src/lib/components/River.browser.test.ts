@@ -1,5 +1,6 @@
-import type { Entry, River as Page } from '#lib/api/client.ts';
+import type { Entry, Listing } from '#lib/api/client.ts';
 import { finished } from '#lib/finished.ts';
+import { NOWHERE, type View } from '#lib/links.ts';
 import { opened } from '#lib/opened.ts';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
@@ -15,8 +16,8 @@ const next = vi.hoisted(() => ({
 	asked: [] as string[],
 }));
 vi.mock('#lib/api/client.ts', () => ({
-	river: (_fetcher: unknown, query: { after?: string }) => {
-		next.asked.push(query.after ?? '');
+	listing: (_fetcher: unknown, _view: unknown, after = '') => {
+		next.asked.push(after);
 		return next.answer?.() ?? new Promise(() => {});
 	},
 }));
@@ -41,20 +42,34 @@ function entry(over: Partial<Entry> = {}): Entry {
 		read: false,
 		sent: false,
 		queued: false,
+		snippet: '',
 		...over,
 	};
 }
 
-const page = (entries: Entry[], cursor = ''): Page => ({ entries, cursor, updated: null });
+const page = (entries: Entry[], cursor = ''): Listing => ({
+	entries,
+	cursor,
+	updated: null,
+	shelf: '',
+});
+
+// What `api.listing` answers with: the list, and a count where anything counted.
+const result = (entries: Entry[], cursor = '') => ({ listing: page(entries, cursor), total: null });
 
 // The foot of the river carries a link too, so a test after a row has to name it.
 const ROW = { name: /A quiet street/ };
 
 const show = (
 	entries: Entry[],
-	over: { section?: string; selected?: string; archive?: boolean } = {},
+	over: { view?: Partial<View>; selected?: string } = {},
 	cursor = '',
-) => render(River, { page: page(entries, cursor), section: '', selected: '', ...over });
+) =>
+	render(River, {
+		page: page(entries, cursor),
+		selected: over.selected ?? '',
+		view: { ...NOWHERE, ...over.view },
+	});
 
 test('a row is a headline and a byline', async () => {
 	const screen = await show([entry()]);
@@ -66,13 +81,13 @@ test('a row is a headline and a byline', async () => {
 
 // A feed in two sections has no correct one to show, so the outlet does that work.
 test('no row claims a section', async () => {
-	const screen = await show([entry()], { section: 'Technology' });
+	const screen = await show([entry()], { view: { section: 'Technology' } });
 
 	await expect.element(screen.getByRole('link', ROW)).not.toHaveTextContent('Technology');
 });
 
 test('the section travels with the link, so coming back lands where you left', async () => {
-	const screen = await show([entry({ id: 'abc' })], { section: 'Long form' });
+	const screen = await show([entry({ id: 'abc' })], { view: { section: 'Long form' } });
 
 	await expect
 		.element(screen.getByRole('link', ROW))
@@ -172,7 +187,7 @@ test('the page after the first is asked for by the foot of the list', async () =
 });
 
 test('the next page is appended under the first', async () => {
-	next.answer = () => Promise.resolve(page([entry({ id: 'bbb', title: 'Later that week' })]));
+	next.answer = () => Promise.resolve(result([entry({ id: 'bbb', title: 'Later that week' })]));
 
 	const screen = await show([entry()], {}, 'page-2');
 
@@ -190,14 +205,14 @@ test('a page that would not load can be asked for again', async () => {
 	const retry = screen.getByRole('button', { name: /Could not load more/ });
 	await expect.element(retry).toBeVisible();
 
-	next.answer = () => Promise.resolve(page([entry({ id: 'bbb', title: 'Later that week' })]));
+	next.answer = () => Promise.resolve(result([entry({ id: 'bbb', title: 'Later that week' })]));
 	await retry.click();
 
 	await expect.element(screen.getByText('Later that week')).toBeVisible();
 });
 
 test('a new first page replaces what had been appended to the old one', async () => {
-	next.answer = () => Promise.resolve(page([entry({ id: 'bbb', title: 'Later that week' })]));
+	next.answer = () => Promise.resolve(result([entry({ id: 'bbb', title: 'Later that week' })]));
 
 	const screen = await show([entry()], {}, 'page-2');
 	await expect.element(screen.getByText('Later that week')).toBeVisible();
@@ -257,19 +272,25 @@ test('a sent row keeps its mark', async () => {
 });
 
 test('the foot of the river is the door to the archive', async () => {
-	const screen = await show([entry()], { section: 'Essays' });
+	const screen = await show([entry()], { view: { section: 'Essays' } });
 
 	await expect
 		.element(screen.getByRole('link', { name: /archive/i }))
-		.toHaveAttribute('href', '/?section=Essays&archive=1');
+		.toHaveAttribute('href', '/archive');
 });
 
-test('the archive offers the way back rather than a door to itself', async () => {
-	const screen = await show([entry()], { archive: true });
+// A shelf has an end, which is the whole reason it is a shelf and not the river.
+test('a shelf says where it stops rather than offering another door', async () => {
+	const screen = await show([entry()], { view: { feed: 'f1' } });
 
-	await expect
-		.element(screen.getByRole('link', { name: /back to the river/i }))
-		.toHaveAttribute('href', '/');
+	await expect.element(screen.getByText('That is the whole shelf.')).toBeVisible();
+	expect(screen.container.querySelectorAll('.end a')).toHaveLength(0);
+});
+
+test('an empty shelf says so in its own words', async () => {
+	const screen = await show([], { view: { month: '2026-06' } });
+
+	await expect.element(screen.getByText('Nothing on this shelf.')).toBeVisible();
 });
 
 // Not the end of the list, so not where the door belongs.
@@ -279,10 +300,44 @@ test('a page still loading offers no door', async () => {
 	expect(screen.container.querySelectorAll('.end')).toHaveLength(0);
 });
 
-test('the archive travels with a row link, so coming back stays in the archive', async () => {
-	const screen = await show([entry({ id: 'abc' })], { section: 'Essays', archive: true });
+test('the shelf travels with a row link, so coming back stays on the shelf', async () => {
+	const screen = await show([entry({ id: 'abc' })], {
+		view: { month: '2026-06', tier: 'archive' },
+	});
 
 	await expect
-		.element(screen.getByRole('link', { name: /A quiet street/ }))
-		.toHaveAttribute('href', '/item/abc?section=Essays&archive=1');
+		.element(screen.getByRole('link', ROW))
+		.toHaveAttribute('href', '/item/abc?month=2026-06&tier=archive');
+});
+
+// Only a search row has one, and it is what makes a result recognisable without opening it.
+test('a search row carries the fragment that says why it matched', async () => {
+	const screen = await show([entry({ snippet: 'the \u0002density\u0003 of it' })], {
+		view: { q: 'density' },
+	});
+
+	const found = screen.container.querySelector('.found')!;
+	expect(found.textContent).toContain('density');
+	expect(found.querySelector('b')!.textContent).toBe('density');
+});
+
+// A publisher's prose, so markup in it is shown rather than run.
+test('markup in a fragment is text', async () => {
+	const screen = await show([entry({ snippet: 'a <b>bold</b> claim' })], { view: { q: 'bold' } });
+
+	const found = screen.container.querySelector('.found')!;
+	expect(found.querySelector('b')).toBeNull();
+	expect(found.textContent).toContain('<b>bold</b>');
+});
+
+test('a river row carries no fragment', async () => {
+	const screen = await show([entry()]);
+
+	expect(screen.container.querySelector('.found')).toBeNull();
+});
+
+test('a search that matched nothing says so in its own words', async () => {
+	const screen = await show([], { view: { q: 'wombat' } });
+
+	await expect.element(screen.getByText('Nothing matched.')).toBeVisible();
 });

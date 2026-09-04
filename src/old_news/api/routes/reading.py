@@ -35,16 +35,9 @@ async def river(
     section: str = Parameter(default="", description="A subscription category; empty is all."),
     after: str = Parameter(default="", description="The cursor a previous page ended on."),
     limit: int = Parameter(default=ui.DEFAULT_LIMIT, ge=1, le=ui.MAX_LIMIT),
-    archive: bool = Parameter(default=False, description="Include what has aged out of view."),
-) -> ui.River:
+) -> ui.Listing:
     try:
-        return await ui.river(
-            get_settings().kindle,
-            section=section,
-            after=after,
-            limit=limit,
-            archive=archive,
-        )
+        return await ui.river(get_settings().kindle, section=section, after=after, limit=limit)
     except ui.BadCursor as exc:
         raise ClientException(detail="unreadable cursor") from exc
 

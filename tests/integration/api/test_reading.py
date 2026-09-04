@@ -81,17 +81,14 @@ async def test_reading_to_the_bottom_is_recorded(served, feed, story):
     assert article.json()["read"] is True
 
 
-async def test_the_archive_serves_what_the_river_has_dropped(served, feed, story):
+async def test_the_river_drops_what_has_aged_out(served, feed, story):
     old = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=30)
     feed_id = await feed("outlet.example.com", expires_after=datetime.timedelta(days=2))
     await story(feed_id, "Aged out", first_seen_at=old)
-    client = await served()
 
-    river = await client.get("/river")
-    archive = await client.get("/river", params={"archive": True})
+    river = await (await served()).get("/river")
 
     assert river.json()["entries"] == []
-    assert [entry["title"] for entry in archive.json()["entries"]] == ["Aged out"]
 
 
 async def test_a_row_says_whether_an_issue_has_it(served, feed, story):

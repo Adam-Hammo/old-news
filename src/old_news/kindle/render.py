@@ -9,6 +9,8 @@ from markdown_it import MarkdownIt
 from markdown_it.renderer import RendererHTML
 from markdown_it.token import Token
 
+from old_news.extract import plain
+
 # Roughly 230 words a minute at 5.7 characters a word, which is what a subject line
 # is claiming when it says how long an issue is.
 CHARS_PER_MINUTE = 1310
@@ -70,14 +72,7 @@ def minutes(chars: int) -> int:
 
 def teaser(body: str) -> str:
     """A line of the article for the table of contents, with the markup taken out."""
-    flat = re.sub(r"^[-*+#>\s]+", " ", body, flags=re.MULTILINE)
-    # The URL stops at the closing bracket, or a greedy \S+ eats it and the sentence's
-    # punctuation along with it.
-    flat = re.sub(r"[#>*_`\[\]()!]|https?://[^\s)]+", " ", flat)
-    flat = re.sub(r"\s+", " ", flat).strip()
-    if len(flat) <= TEASER_CHARS:
-        return flat
-    return flat[:TEASER_CHARS].rsplit(" ", 1)[0] + "…"
+    return plain.clipped(plain.flatten(body), TEASER_CHARS)
 
 
 def page(

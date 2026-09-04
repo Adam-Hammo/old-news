@@ -1,25 +1,26 @@
 <script lang="ts">
 	import { stamp, today } from '#lib/format.ts';
 	import * as links from '#lib/links.ts';
+	import type { View } from '#lib/links.ts';
 
 	let {
-		section = '',
-		archive = false,
+		view = links.NOWHERE,
+		inside = false,
 		updated = null,
-	}: { section?: string; archive?: boolean; updated?: string | null } = $props();
+	}: { view?: View; inside?: boolean; updated?: string | null } = $props();
 
-	const home = $derived(links.river({ section, archive }));
 	const polled = $derived(stamp(updated));
 	const dated = today();
 
-	// The way in and back out. The foot of the river carries a door too, but reaching it
-	// means paging to the end of the list.
-	const crossing = $derived(links.archive({ section, archive }, !archive));
+	// Anywhere in the archive, the nameplate says so and the crossing goes back to the
+	// river. The foot of the river carries a door too, but reaching it means paging to
+	// the end of the list.
+	const archive = $derived(inside || links.archived(view));
 </script>
 
 <header>
 	<div class="line">
-		<a href={home} class="name">Old News</a>
+		<a href={links.list({ ...links.NOWHERE, section: view.section })} class="name">Old News</a>
 		{#if archive}<span class="mode">Archive</span>{/if}
 		<!-- The last successful poll, which answers "is this working". Not a count: the
 		     roadmap ruled those out and nothing here reopens it. -->
@@ -27,8 +28,9 @@
 			<span class="dated">{dated}</span><span class="poll"
 				>{polled ? `Updated ${polled}` : 'Not polled yet'}</span
 			>
-			<span class="sep"></span><a href={crossing} class="linked"
-				>{archive ? 'River' : 'Archive'}</a
+			<span class="sep"></span><a
+				href={archive ? links.list(links.NOWHERE) : links.contents()}
+				class="linked">{archive ? 'River' : 'Archive'}</a
 			>
 			<span class="sep"></span><a href="/settings" class="linked">Settings</a>
 		</span>

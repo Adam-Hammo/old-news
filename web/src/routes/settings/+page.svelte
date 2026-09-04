@@ -8,7 +8,7 @@
 
 <svelte:head><title>Settings — old news</title></svelte:head>
 
-<Pane back="/">
+<Pane back="/" whence="River">
 	<div class="body measured">
 		<p class="kicker">Settings</p>
 		<Feeds feeds={data.feeds} sections={data.sections} />

@@ -32,14 +32,6 @@ async def test_an_item_older_than_its_window_leaves_the_river(clean: None, feed,
     assert await _titles() == ["Today"]
 
 
-async def test_the_archive_is_the_same_river_with_the_cutoff_lifted(clean: None, feed, story):
-    feed_id = await feed("wire.example.com", expires_after=2 * DAY)
-    await story(feed_id, "Today", first_seen_at=NOW - DAY)
-    await story(feed_id, "Last week", first_seen_at=NOW - 7 * DAY)
-
-    assert await _titles(archive=True) == ["Today", "Last week"]
-
-
 async def test_each_feed_ages_out_on_its_own_window(clean: None, feed, story):
     """The point of hanging it off the subscription rather than the section."""
     fast = await feed("wire.example.com", category="Wire", expires_after=2 * DAY)

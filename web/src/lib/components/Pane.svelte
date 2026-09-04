@@ -1,12 +1,12 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	let { back, children }: { back: string; children: Snippet } = $props();
+	let { back, whence, children }: { back: string; whence: string; children: Snippet } = $props();
 </script>
 
 <div class="pane">
 	<div class="top measured">
-		<a href={back} class="up">&larr;&nbsp;&nbsp;River</a>
+		<a href={back} class="up">&larr;&nbsp;&nbsp;{whence}</a>
 		<div class="hair"></div>
 	</div>
 

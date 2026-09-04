@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { navigating } from '$app/state';
 	import * as api from '#lib/api/client.ts';
-	import type { Entry, River } from '#lib/api/client.ts';
+	import type { Entry, Listing } from '#lib/api/client.ts';
 	import { finished } from '#lib/finished.ts';
 	import * as links from '#lib/links.ts';
+	import type { View } from '#lib/links.ts';
 	import { opened } from '#lib/opened.ts';
+	import { marked } from '#lib/snippet.ts';
 	import { whenVisible } from '#lib/visible.ts';
 
-	let {
-		page,
-		section,
-		selected,
-		archive = false,
-	}: { page: River; section: string; selected: string; archive?: boolean } = $props();
+	let { page, view, selected }: { page: Listing; view: View; selected: string } = $props();
 
-	const view = $derived({ section, archive });
+	const archived = $derived(links.archived(view));
+	const empty = $derived(
+		view.q ? 'Nothing matched.' : archived ? 'Nothing on this shelf.' : 'Nothing here yet.',
+	);
 
 	// Pages fetched after the first, which the layout's load knows nothing about.
 	let extra = $state<Entry[]>([]);
@@ -36,11 +36,7 @@
 		if (!cursor || loading) return;
 		loading = true;
 		try {
-			const next = await api.river(fetch, {
-				section,
-				after: cursor,
-				archive: archive ? 1 : undefined,
-			});
+			const next = (await api.listing(fetch, view, cursor)).listing;
 			extra = [...extra, ...next.entries];
 			cursor = next.cursor;
 			failed = false;
@@ -89,25 +85,31 @@
 						>
 					{/if}
 				</p>
+				<!-- Rendered as text, never as markup: the fragment is a publisher's prose. -->
+				{#if entry.snippet}
+					<p class="found">
+						{#each marked(entry.snippet) as run, index (index)}
+							{#if run.hit}<b>{run.text}</b>{:else}{run.text}{/if}
+						{/each}
+					</p>
+				{/if}
 			</a>
 		</li>
 	{/each}
 </ol>
 
 {#if entries.length === 0}
-	<p class="note label">{archive ? 'Nothing in the archive yet.' : 'Nothing here yet.'}</p>
+	<p class="note label">{empty}</p>
 {:else if failed}
 	<p class="note label"><button onclick={more}>Could not load more. Try again.</button></p>
 {:else if cursor}
 	<div use:whenVisible={more} class="note label more">{loading ? 'Loading…' : ''}</div>
-{:else if !archive}
+{:else if archived}
+	<p class="note label end">That is the whole shelf.</p>
+{:else}
 	<!-- The end of the river is where the door has to be, or ageing out loses things. -->
 	<p class="note label end">
-		<a href={links.archive(view, true)}>Older stories are in the archive &nbsp;&rarr;</a>
-	</p>
-{:else}
-	<p class="note label end">
-		<a href={links.archive(view, false)}>&larr;&nbsp; Back to the river</a>
+		<a href={links.contents()}>Older stories are in the archive &nbsp;&rarr;</a>
 	</p>
 {/if}
 
@@ -217,6 +219,25 @@
 	.kindle.queued {
 		color: var(--ink-faint);
 		border-bottom: 1.5px dashed var(--ink-faint);
+	}
+
+	/* Only a search row has one. Two lines of it, because the point is the words around
+	   the match and one line is not enough of them. */
+	.found {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		overflow: hidden;
+		margin: 6px 0 0;
+		font-size: 13px;
+		line-height: 1.35;
+		color: var(--ink-soft);
+	}
+
+	.found b {
+		color: var(--ink);
+		font-weight: 700;
 	}
 
 	.end {

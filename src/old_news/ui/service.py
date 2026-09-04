@@ -4,14 +4,13 @@ import dataclasses
 import datetime
 import uuid
 
-from sqlalchemy import and_, func, literal, select, tuple_, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from old_news import db, extract, kindle, training
+from old_news import db, extract
 from old_news.config import KindleSettings
 from old_news.db import (
     ExtractionSource,
-    Feed,
     ImageRole,
     Item,
     ItemVersion,
@@ -19,38 +18,7 @@ from old_news.db import (
     item_reading,
     unexpired,
 )
-from old_news.ui import cursor
-
-DEFAULT_LIMIT = 40
-MAX_LIMIT = 100
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Entry:
-    """One row of the river."""
-
-    id: uuid.UUID
-    title: str
-    url: str
-    outlet: str
-    author: str
-    published_at: datetime.datetime | None
-    first_seen_at: datetime.datetime
-    read: bool
-    # Solid once a book carrying it has gone out; dashed while it is only due to.
-    sent: bool
-    queued: bool
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class River:
-    """A page of entries, and where the next one starts. An empty cursor is the end."""
-
-    entries: tuple[Entry, ...]
-    cursor: str
-    # What the masthead carries. It answers "is this working", which is the question a
-    # reader actually has, rather than "how much have you missed".
-    updated: datetime.datetime | None
+from old_news.ui import cursor, entries
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -80,66 +48,6 @@ class Article:
     lead_alt: str
 
 
-def _last_poll():
-    """The newest successful poll across everything we follow."""
-    return select(func.max(Feed.last_success_at)).where(Feed.subscribed)
-
-
-def _shared():
-    """The columns both screens show. `canonical_url` wins where the publisher set one."""
-    return (
-        Item.id.label("id"),
-        ItemVersion.title.label("title"),
-        func.coalesce(func.nullif(ItemVersion.canonical_url, ""), ItemVersion.url).label("url"),
-        Feed.title.label("outlet"),
-        ItemVersion.author.label("author"),
-        ItemVersion.published_at.label("published_at"),
-        Item.first_seen_at.label("first_seen_at"),
-        Item.read.label("read"),
-    )
-
-
-def _marks(cutoff: datetime.datetime):
-    """Whether an issue has carried this, or is going to."""
-    return (
-        kindle.sent().label("sent"),
-        kindle.queued(cutoff).label("queued"),
-    )
-
-
-def _reading(*columns):
-    """Items joined to their head version, the feed they came from, and how it is filed."""
-    return (
-        select(*columns)
-        .select_from(Item)
-        .join(Item.current_version)
-        .join(Feed, Feed.id == Item.feed_id)
-        # Outer: unsubscribing must not take an open article away.
-        .outerjoin(Subscription, Subscription.feed_id == Feed.id)
-    )
-
-
-def _dated():
-    """What a tie is broken by: the publisher's date where there is one, ours where there is not."""
-    return func.coalesce(ItemVersion.published_at, Item.first_seen_at)
-
-
-def _before(seen: datetime.datetime, dated: datetime.datetime, item_id: uuid.UUID):
-    """The keyset predicate, each key bound to the type of the column it meets."""
-    stamp = Item.first_seen_at.type
-    return and_(
-        # Implied by the row comparison, and the only part of it the river index can use.
-        Item.first_seen_at <= literal(seen, stamp),
-        tuple_(Item.first_seen_at, _dated(), Item.id)
-        < tuple_(literal(seen, stamp), literal(dated, stamp), literal(item_id, Item.id.type)),
-    )
-
-
-def _resume(entry: Entry) -> str:
-    """Where a page stopped, in the three keys it was ordered by."""
-    return cursor.encode(entry.first_seen_at, entry.published_at or entry.first_seen_at, entry.id)
-
-
 @db.transactional
 async def river(
     session: AsyncSession,
@@ -147,35 +55,18 @@ async def river(
     *,
     section: str = "",
     after: str = "",
-    limit: int = DEFAULT_LIMIT,
-    archive: bool = False,
-) -> River:
+    limit: int = entries.DEFAULT_LIMIT,
+) -> entries.Listing:
     """A page of the river, newest first by when we first saw it, then by the publisher's date."""
-    limit = max(1, min(limit, MAX_LIMIT))
-
-    query = (
-        _reading(*_shared(), *_marks(kindle.cutoff_from(settings)))
-        .where(Subscription.active.is_(True), ~training.blocked(ItemVersion, Item))
-        .order_by(Item.first_seen_at.desc(), _dated().desc(), Item.id.desc())
-        .limit(limit + 1)
+    query = entries.newest(
+        entries.listed(settings).where(Subscription.active.is_(True), unexpired(Item.first_seen_at))
     )
-    # A bound on the leading column of the river index, so the cutoff costs less than
-    # no cutoff. The archive is the same query with the door left open.
-    if not archive:
-        query = query.where(unexpired(Item.first_seen_at))
     if section:
         query = query.where(Subscription.category == section)
     if after:
-        query = query.where(_before(*cursor.decode(after)))
+        query = query.where(entries.before(*cursor.decode(after)))
 
-    rows = (await session.execute(query)).mappings().all()
-    entries = tuple(Entry(**row) for row in rows[:limit])
-    more = len(rows) > limit
-    return River(
-        entries=entries,
-        cursor=_resume(entries[-1]) if more else "",
-        updated=await session.scalar(_last_poll()),
-    )
+    return await entries.page(session, query, entries.bounded(limit))
 
 
 # What the article screen asks for a picture by. The reader's own prefix, not the
@@ -205,8 +96,8 @@ def _lead(held: tuple[extract.Held, ...], readings: str) -> tuple[str, str]:
 @db.transactional
 async def _reading_row(session: AsyncSession, item_id: uuid.UUID) -> dict | None:
     """One item and its text. Not scoped to a subscription: an open article outlives one."""
-    query = _reading(
-        *_shared(),
+    query = entries.joined(
+        *entries.shared(),
         Item.reading_body.label("body"),
         item_reading(ExtractionSource.FEED).label("feed"),
         item_reading(ExtractionSource.PAGE).label("page"),

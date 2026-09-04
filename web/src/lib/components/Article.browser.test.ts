@@ -26,8 +26,8 @@ function article(over: Partial<Article> = {}): Article {
 	};
 }
 
-const show = (over: Partial<Article> = {}, back = '/', finish = () => {}) =>
-	render(ArticleView, { article: article(over), back, finish });
+const show = (over: Partial<Article> = {}, back = '/', finish = () => {}, whence = 'River') =>
+	render(ArticleView, { article: article(over), back, whence, finish });
 
 test('the headline, the byline and the text', async () => {
 	const screen = await show();
@@ -196,4 +196,26 @@ test('no lead leaves no gap where one would be', async () => {
 	const screen = await show();
 
 	expect(screen.container.querySelector('.lead')).toBeNull();
+});
+
+// The lead is an API path, so without the prefix it asks the node process serving the page
+// and every hero on the site is a broken image.
+test('a held lead is asked for behind the api prefix', async () => {
+	const screen = await show({ lead: '/images/abc/', lead_alt: 'a chart' });
+
+	await expect
+		.element(screen.getByRole('img', { name: 'a chart' }))
+		.toHaveAttribute('src', '/api/images/abc/');
+});
+
+test('and an article with no lead shows no figure', async () => {
+	const screen = await show();
+
+	expect(screen.container.querySelector('.lead')).toBeNull();
+});
+
+test('the way back is named after the list it goes to', async () => {
+	const screen = await show({}, '/?q=density', () => {}, 'Results');
+
+	await expect.element(screen.getByRole('link', { name: /Back to the results/i })).toBeVisible();
 });
