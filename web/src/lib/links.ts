@@ -11,14 +11,17 @@ export function archived(view: View): boolean {
 function query(view: View): string {
 	// `encodeURIComponent`, not `URLSearchParams`: that spells a space `+`, and the rest
 	// of the app spells it `%20`. Two spellings of one view is two URLs for one screen.
-	const pairs = archived(view)
-		? [
-				view.q ? `q=${encodeURIComponent(view.q)}` : '',
-				view.feed ? `feed=${view.feed}` : '',
-				view.month ? `month=${view.month}` : '',
-				view.tier ? `tier=${view.tier}` : '',
-			]
-		: [view.section ? `section=${encodeURIComponent(view.section)}` : ''];
+	// A search is its own view: the shelf keys are not sent with it, so a URL carrying
+	// both would claim a filter the results do not have.
+	const pairs = view.q
+		? [`q=${encodeURIComponent(view.q)}`]
+		: archived(view)
+			? [
+					view.feed ? `feed=${encodeURIComponent(view.feed)}` : '',
+					view.month ? `month=${encodeURIComponent(view.month)}` : '',
+					view.tier ? `tier=${encodeURIComponent(view.tier)}` : '',
+				]
+			: [view.section ? `section=${encodeURIComponent(view.section)}` : ''];
 	const set = pairs.filter(Boolean);
 	return set.length ? `?${set.join('&')}` : '';
 }

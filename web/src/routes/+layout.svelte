@@ -54,8 +54,14 @@
 	async function refresh() {
 		if (asking || !data.list) return;
 		asking = true;
+		// The view it was asked for. A refetch takes up to `TIMEOUT`, and a tap in that
+		// window has already changed the screen — landing the river's rows under a shelf's
+		// header. Identity is enough: every load builds a new one.
+		const asked = data.view;
 		try {
-			latest = await api.listing(fetch, data.view);
+			const answer = await api.listing(fetch, asked);
+			if (asked !== data.view) return;
+			latest = answer;
 			loaded = Date.now();
 		} catch {
 			// The river on screen is still the best answer there is.

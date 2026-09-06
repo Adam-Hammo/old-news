@@ -274,6 +274,66 @@ async def _story(
 
 
 @db.transactional
+async def _supersede(
+    session: AsyncSession, item_id: uuid.UUID, *, title: str, body: str
+) -> uuid.UUID:
+    """A newer version of an item, which makes the one it replaces the history."""
+    old = (
+        (
+            await session.execute(
+                select(ItemVersion)
+                .where(ItemVersion.item_id == item_id)
+                .order_by(ItemVersion.id.desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+    assert old is not None
+
+    version = ItemVersion(
+        item_id=item_id,
+        document_id=old.document_id,
+        supersedes_id=old.id,
+        **ItemVersionFields.kwargs(
+            title=title, url=old.url, canonical_url=old.canonical_url, published_at=old.published_at
+        ),
+    )
+    session.add(version)
+    await session.flush()
+
+    if body:
+        capture = FeedCapture(
+            item_version_id=version.id,
+            document_id=old.document_id,
+            body=codec.compress(body.encode(), level=12),
+            **FeedCaptureFields.kwargs(body_hash=hashlib.sha256(body.encode()).digest()),
+        )
+        session.add(capture)
+        await session.flush()
+        session.add(
+            FeedExtraction(
+                item_version_id=version.id,
+                feed_capture_id=capture.id,
+                **ExtractionFields.kwargs(body=body),
+            )
+        )
+        await session.flush()
+
+    return version.id
+
+
+@pytest.fixture
+def supersede() -> Callable[..., Awaitable[uuid.UUID]]:
+    """Rewrite an item's headline, the way a liveblog does. The old version stays."""
+
+    def build(item_id: uuid.UUID, title: str, *, body: str = "") -> Awaitable[uuid.UUID]:
+        return _supersede(item_id, title=title, body=body)
+
+    return build
+
+
+@db.transactional
 async def _held_image(
     session: AsyncSession, item_id: uuid.UUID, url: str, *, role: str = ImageRole.BODY
 ) -> uuid.UUID:

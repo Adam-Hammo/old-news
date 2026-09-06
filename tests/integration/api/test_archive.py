@@ -2,6 +2,8 @@
 
 import datetime
 
+import pytest
+
 from old_news.db import Tier
 
 JUNE = datetime.datetime(2026, 6, 15, tzinfo=datetime.UTC)
@@ -70,7 +72,29 @@ async def test_a_search_for_nothing_is_a_bad_request(client):
     assert (await client.get("/archive/search", params={"q": "  "})).status_code == 400
 
 
-async def test_a_search_page_that_is_not_a_number_is_a_bad_request(client):
-    params = {"q": "density", "after": "nonsense"}
-
-    assert (await client.get("/archive/search", params=params)).status_code == 400
+# Every one of these was a 500 before: an exception the handler does not catch reaches the
+# client as "internal server error" over a query string anyone could type.
+@pytest.mark.parametrize(
+    ("path", "params"),
+    [
+        pytest.param("/archive/search", {"q": "density", "after": "nonsense"}, id="after-words"),
+        pytest.param(
+            "/archive/search", {"q": "density", "after": "\u00b2"}, id="after-a-digit-int-refuses"
+        ),
+        pytest.param(
+            "/archive/search",
+            {"q": "density", "after": "9999999999999999999"},
+            id="after-past-a-bigint",
+        ),
+        pytest.param("/archive/items", {"month": "9999-12"}, id="month-past-the-last-one"),
+        pytest.param("/archive/items", {"month": "2026-06-15"}, id="a-day-as-a-month"),
+        pytest.param("/archive", {"zone": "Asia/Calcutta"}, id="a-zone-only-python-knows"),
+        pytest.param(
+            "/archive/items",
+            {"month": "2026-06", "zone": "Asia/Calcutta"},
+            id="the-same-on-a-shelf",
+        ),
+    ],
+)
+async def test_what_cannot_be_served_is_a_bad_request_not_a_500(client, path, params):
+    assert (await client.get(path, params=params)).status_code == 400
