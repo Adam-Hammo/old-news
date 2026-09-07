@@ -74,3 +74,18 @@ test('a shelf is named as the archive without being told', async () => {
 	expect(screen.container.querySelector('.mode')!.textContent).toBe('Archive');
 	await expect.element(screen.getByRole('link', { name: 'River' })).toHaveAttribute('href', '/');
 });
+
+// The article's scrollbar, drawn as the rule the whole masthead already leans on.
+test('the heavy rule is bold behind where the reader has got to', async () => {
+	const screen = await render(Masthead, { updated: null, through: 0.4 });
+
+	const rule = screen.container.querySelector('.heavy') as HTMLElement;
+	expect(rule.style.getPropertyValue('--through')).toBe('40%');
+});
+
+test('and is the plain rule everywhere that is not an article', async () => {
+	const screen = await render(Masthead, { updated: null });
+
+	const rule = screen.container.querySelector('.heavy') as HTMLElement;
+	expect(rule.style.getPropertyValue('--through')).toBe('100%');
+});

@@ -7,6 +7,7 @@
 	import River from '#lib/components/River.svelte';
 	import SectionStrip from '#lib/components/SectionStrip.svelte';
 	import { archived } from '#lib/links.ts';
+	import { progressed } from '#lib/progress.ts';
 	import { pull, type Phase } from '#lib/pull.ts';
 	import { report } from '#lib/report.ts';
 	import { STALE, whenStale } from '#lib/stale.ts';
@@ -18,6 +19,9 @@
 	let pane = $state<HTMLDivElement | undefined>();
 	let column = $state<HTMLDivElement | undefined>();
 	let phase = $state<Phase>('');
+	// How far down the article the reader has got, which the masthead's rule draws instead
+	// of a scrollbar. Only an article has one: nothing else is a thing you are partway through.
+	let through = $state(1);
 
 	// A refetched first page, held beside the load's rather than through it. A load that
 	// throws takes the whole screen to the error page, and a poll that did not answer is
@@ -36,6 +40,7 @@
 	// both this and `solo` — open is the two-pane state and solo is the one-pane one.
 	const open = $derived(page.route.id !== '/' && !solo);
 	const selected = $derived(page.params.id ?? '');
+	const reading = $derived(page.route.id === '/item/[id]');
 	const note = $derived(
 		phase === 'refreshing'
 			? 'Refreshing…'
@@ -95,6 +100,7 @@
 		view={data.view}
 		inside={solo}
 		updated={list?.updated ?? data.contents?.updated ?? null}
+		through={reading ? through : 1}
 	/>
 
 	<div class="shell" class:open class:solo>
@@ -116,7 +122,12 @@
 				</div>
 			</div>
 		{/if}
-		<div class="reading-pane scroller" bind:this={pane}>
+		<div
+			class="reading-pane scroller"
+			class:reading
+			bind:this={pane}
+			use:progressed={{ told: (share) => (through = share), of: page.url.pathname }}
+		>
 			{@render children?.()}
 		</div>
 	</div>
@@ -154,6 +165,16 @@
 	.reading-pane {
 		visibility: hidden;
 		background: var(--paper-read);
+	}
+
+	/* The masthead's rule is the gauge here, so a second one down the edge says the same
+	   thing twice and takes a strip of the column to do it. */
+	.reading-pane.reading {
+		scrollbar-width: none;
+	}
+
+	.reading-pane.reading::-webkit-scrollbar {
+		display: none;
 	}
 
 	/* Hidden rather than removed: a scroller that stops being displayed comes back at the

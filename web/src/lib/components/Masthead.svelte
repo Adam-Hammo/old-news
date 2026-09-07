@@ -7,7 +7,8 @@
 		view = links.NOWHERE,
 		inside = false,
 		updated = null,
-	}: { view?: View; inside?: boolean; updated?: string | null } = $props();
+		through = 1,
+	}: { view?: View; inside?: boolean; updated?: string | null; through?: number } = $props();
 
 	const polled = $derived(stamp(updated));
 	const dated = today();
@@ -36,7 +37,7 @@
 		</span>
 	</div>
 	<div class="hair"></div>
-	<div class="heavy"></div>
+	<div class="heavy" style="--through: {through * 100}%"></div>
 </header>
 
 <style>
@@ -116,9 +117,17 @@
 		margin-top: 9px;
 	}
 
+	/* The rule doubles as the article's scrollbar: full weight behind where you have read
+	   to, greyed ahead of it — grey rather than the hairline, or the masthead loses the
+	   one piece of furniture it leans on at the moment an article opens. Everywhere else
+	   `through` is 1 and it is the plain rule. */
 	.heavy {
 		height: 3px;
-		background: var(--rule);
 		margin-top: 2px;
+		background: linear-gradient(
+			to right,
+			var(--rule) 0 var(--through),
+			var(--underline) var(--through) 100%
+		);
 	}
 </style>
