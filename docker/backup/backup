@@ -15,10 +15,20 @@ restic snapshots >/dev/null 2>&1 || restic init
 pg_dump --format=custom --compress=none --no-owner --no-privileges \
   | restic backup --stdin --stdin-filename "${PGDATABASE}.dump" --tag old-news
 
-restic forget --tag old-news --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune
+# Forgetting a snapshot is a metadata write; pruning is what repacks, and repacking is
+# what downloads. Backblaze bills egress past three times what is stored, so the repack
+# happens once a week and the six nights between it only drop the references.
+# An `if`, not `&&`: under `set -e` a false test is a non-zero line and the six nights
+# it is false would be six failed backups.
+prune=()
+if [[ "$(date -u +%u)" == "7" ]]; then
+  prune=(--prune)
+fi
+
+restic forget --tag old-news --keep-daily 7 --keep-weekly 4 --keep-monthly 12 "${prune[@]}"
 restic check
 
-# After the prune, so the sizes reported are the sizes kept. Never fatal: a
+# After the forget, so the sizes reported are the sizes kept. Never fatal: a
 # telemetry outage must not turn a good backup into a failed unit.
 report || true
 

@@ -13,16 +13,23 @@ def settings() -> IngestSettings:
     return IngestSettings()
 
 
-def test_a_healthy_feed_that_published_is_visited_sooner(settings):
-    interval = next_interval(settings, current_seconds=1800, new_items=3)
+HALF_AN_HOUR = 1800
 
-    assert interval == 900
+
+def _idle(settings: IngestSettings, seconds: int = HALF_AN_HOUR) -> int:
+    return int(seconds * settings.idle_interval_multiplier)
+
+
+def test_a_healthy_feed_that_published_is_visited_sooner(settings):
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=3)
+
+    assert interval == int(HALF_AN_HOUR * settings.busy_interval_multiplier)
 
 
 def test_a_quiet_feed_drifts_later(settings):
-    interval = next_interval(settings, current_seconds=1800, new_items=0)
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=0)
 
-    assert interval == 2700
+    assert interval == _idle(settings)
 
 
 def test_backoff_is_exponential_in_failures(settings):
@@ -39,15 +46,15 @@ def test_intervals_are_clamped_to_the_configured_bounds(settings):
 
 def test_feed_ttl_raises_the_floor(settings):
     """<ttl> asks to be polled less often, so it may only lengthen the wait."""
-    interval = next_interval(settings, current_seconds=1800, new_items=5, ttl_seconds=3600)
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=5, ttl_seconds=3600)
 
     assert interval == 3600
 
 
 def test_feed_ttl_never_shortens_the_wait(settings):
-    interval = next_interval(settings, current_seconds=1800, new_items=0, ttl_seconds=60)
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=0, ttl_seconds=60)
 
-    assert interval == 2700
+    assert interval == _idle(settings)
 
 
 def test_a_ttl_beyond_our_ceiling_is_still_honoured(settings):
@@ -59,16 +66,17 @@ def test_a_ttl_beyond_our_ceiling_is_still_honoured(settings):
 
 def test_ttl_can_be_ignored_by_configuration():
     settings = IngestSettings(honour_feed_ttl=False)
+    asked = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=0, ttl_seconds=99999)
 
-    assert next_interval(settings, current_seconds=1800, new_items=0, ttl_seconds=99999) == 2700
+    assert asked == _idle(settings)
 
 
 def test_next_poll_at_is_now_plus_the_interval(settings):
     now = datetime.datetime(2026, 8, 3, tzinfo=datetime.UTC)
 
     assert next_poll_at(
-        now, settings, current_seconds=1800, new_items=0
-    ) == now + datetime.timedelta(seconds=2700)
+        now, settings, current_seconds=HALF_AN_HOUR, new_items=0
+    ) == now + datetime.timedelta(seconds=_idle(settings))
 
 
 def test_a_retry_after_beyond_our_ceiling_is_capped(settings):

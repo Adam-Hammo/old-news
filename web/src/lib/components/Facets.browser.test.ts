@@ -150,3 +150,30 @@ test('every group keeps its heading and scrolls its own list', async () => {
 	}
 	expect(lists[0].scrollHeight).toBeGreaterThan(lists[0].clientHeight);
 });
+
+// The strip runs in the rail's order, so each group has to keep its name or there is no
+// telling where one ends and the next starts.
+test('on a phone the groups keep their order and their names', async () => {
+	await page.viewport(430, 800);
+	const screen = await show();
+
+	const container = screen.container as HTMLElement;
+	const headings = [...container.querySelectorAll('h2')];
+	expect(headings.map((h) => h.textContent!.trim().split(/\s+/)[0])).toEqual([
+		'When',
+		'Publication',
+		'You',
+	]);
+	for (const heading of headings) {
+		expect(getComputedStyle(heading).display).not.toBe('none');
+	}
+	// A row each, stacked in that order: one row for all three put `You` five thousand
+	// pixels along, behind every publication there is.
+	const sections = [...container.querySelectorAll('section')].map((s) =>
+		s.getBoundingClientRect(),
+	);
+	expect(sections[0].top).toBeLessThan(sections[1].top);
+	expect(sections[1].top).toBeLessThan(sections[2].top);
+	// Every one of them starts at the same margin, so none is off to the side.
+	expect(new Set(sections.map((s) => Math.round(s.left))).size).toBe(1);
+});
