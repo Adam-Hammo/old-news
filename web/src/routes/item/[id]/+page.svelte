@@ -8,11 +8,11 @@
 
 	let { data }: PageProps = $props();
 
-	// Back to the list the article was opened from, shelf and all — and named as it, or
+	// Back to the list the article was opened from, filters and all — and named as it, or
 	// a reader in the archive is offered a river they were not in.
 	const back = $derived(links.list(data.view));
 	const whence = $derived(
-		data.view.q ? 'Results' : links.archived(data.view) ? 'Shelf' : 'River',
+		data.view.q ? 'Results' : links.archived(data.view) ? 'Archive' : 'River',
 	);
 
 	$effect(() => {

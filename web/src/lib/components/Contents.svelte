@@ -29,11 +29,6 @@
 
 <article>
 	<h1>The Archive</h1>
-	<p class="say">
-		Everything ever held &mdash; {counted.format(held.items)} pieces across {held.feeds.length} publications,
-		including what has aged out of the river. Search it, or pick a shelf. Nothing here is one long
-		list.
-	</p>
 
 	<SearchBox />
 
@@ -107,20 +102,12 @@
 	}
 
 	h1 {
-		margin: 0;
+		margin: 0 0 20px;
 		font-family: var(--display);
 		font-size: clamp(28px, 1.2rem + 2cqi, 40px);
 		font-weight: 900;
 		line-height: 1;
 		letter-spacing: -0.022em;
-	}
-
-	.say {
-		margin: 10px 0 26px;
-		font-size: 15px;
-		line-height: 1.5;
-		color: var(--ink-soft);
-		text-wrap: pretty;
 	}
 
 	h2 {

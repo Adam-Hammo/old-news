@@ -23,13 +23,7 @@ function held(over: Partial<Contents> = {}): Contents {
 
 const show = (over: Partial<Contents> = {}) => render(ContentsView, { held: held(over) });
 
-test('the contents says how much is held rather than making you scroll to find out', async () => {
-	const screen = await show({ items: 4760 });
-
-	await expect.element(screen.getByText(/4,760 pieces/)).toBeVisible();
-});
-
-test('a publication is a shelf you can open', async () => {
+test('a publication is a run you can open', async () => {
 	const screen = await show();
 
 	await expect

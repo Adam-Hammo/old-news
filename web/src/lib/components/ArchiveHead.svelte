@@ -24,7 +24,7 @@
 </script>
 
 <nav>
-	<a href={links.contents()} class="back">&larr;&nbsp; Contents</a>
+	<a href={links.contents()} class="back">&larr;&nbsp; Archive</a>
 	{#if view.q}
 		<!-- The name slot is the field itself, so narrowing a search does not mean going back. -->
 		<div class="again"><SearchBox terms={view.q} /></div>
@@ -73,7 +73,7 @@
 		}
 	}
 
-	/* The shelf's own name, which is the one thing on this line that is not a control. */
+	/* What is being shown, which is the one thing on this line that is not a control. */
 	.named {
 		flex: 1;
 		min-width: 0;

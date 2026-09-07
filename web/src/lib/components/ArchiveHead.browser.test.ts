@@ -27,11 +27,11 @@ test('a publication within a month says both', async () => {
 	);
 });
 
-test('the way back is to the contents, not to the river', async () => {
+test('the way back is to the archive, not to the river', async () => {
 	const screen = await show({ feed: 'f1' }, 'Construction Physics');
 
 	await expect
-		.element(screen.getByRole('link', { name: /Contents/ }))
+		.element(screen.getByRole('link', { name: /Archive/ }))
 		.toHaveAttribute('href', '/archive');
 });
 
