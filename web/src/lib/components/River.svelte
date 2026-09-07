@@ -207,15 +207,20 @@
 		color: var(--ink-faint);
 	}
 
-	/* The author is the only part allowed to give way. The outlet is where it came from,
-	   and a row that cut that would be lying. */
+	/* The author gives way a hundred times more readily than the outlet, which is where
+	   the thing came from. Both still ellipse: some publications are named at a length no
+	   phone has room for, and running off the paper is not a truer answer than a cut one. */
 	.by .author {
+		flex: 0 100 auto;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
 	.by b {
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		color: var(--ink);
 		font-weight: 700;
 	}

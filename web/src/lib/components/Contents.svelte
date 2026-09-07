@@ -195,10 +195,11 @@
 		color: var(--ink-faint);
 	}
 
-	/* Right-aligned on a fixed width so the counts form a column rather than a ragged edge. */
+	/* Right-aligned on a floor rather than a fixed width, so the counts form a column and
+	   the archive passing ten thousand does not put one through the margin. */
 	.tally {
 		flex: none;
-		width: 4.5ch;
+		min-width: 4.5ch;
 		text-align: right;
 		font-size: 12px;
 		font-variant-numeric: tabular-nums;

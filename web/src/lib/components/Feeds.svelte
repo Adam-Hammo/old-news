@@ -341,7 +341,8 @@
 	}
 
 	li .row {
-		flex: 0 1 20rem;
+		flex: 1 1 20rem;
+		min-width: 0;
 	}
 
 	/* Their own line: on a phone the section box and the Drop button already fill one. */

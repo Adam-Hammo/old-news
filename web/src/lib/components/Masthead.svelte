@@ -48,11 +48,14 @@
 		background: var(--paper);
 	}
 
+	/* Wraps, because the dateline is one unbreakable run and a narrow phone has no room
+	   for it beside the nameplate. Two lines beat a masthead that runs off the paper. */
 	.line {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: baseline;
 		justify-content: space-between;
-		gap: 1rem;
+		gap: 0 1rem;
 	}
 
 	/* Beside the nameplate rather than replacing it: the archive is a view, not a
@@ -103,6 +106,7 @@
 	}
 
 	.polled {
+		margin-left: auto;
 		font-size: 9.5px;
 		font-weight: 600;
 		letter-spacing: 0.13em;
