@@ -115,11 +115,15 @@ async def held(
     if asked.ranked:
         return await search.deep(session, narrowed, asked, after=after, limit=limit)
 
-    ordered = entries.newest(narrowed)
+    # By publish date, which is what the rail's months are counted on: the two disagreeing
+    # is how a 2019 essay comes to sit at the top of a list under a heading saying 2026.
+    ordered = entries.ordered(narrowed, entries.Order.PUBLISHED)
     if after:
-        ordered = ordered.where(entries.before(*cursor.decode(after)))
+        ordered = ordered.where(entries.before(entries.Order.PUBLISHED, *cursor.decode(after)))
     return search.Found(
-        listing=await entries.page(session, ordered, entries.bounded(limit)),
+        listing=await entries.page(
+            session, ordered, entries.bounded(limit), entries.Order.PUBLISHED
+        ),
         total=await session.scalar(select(func.count()).select_from(narrowed.subquery("narrowed")))
         or 0,
     )

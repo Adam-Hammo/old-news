@@ -239,3 +239,33 @@ async def test_the_shape_counts_only_what_the_words_reached(clean: None, feed, s
     shape = await ui.shape(asked=ui.parse("density"))
 
     assert _named(shape.publications) == {"essays.example.com": 1}
+
+
+# The rail counts months on the publisher's date, so the list has to be in that order too:
+# the two disagreeing is how a 2019 essay sits at the top of a list headed 2026.
+async def test_the_list_is_newest_by_publish_date_not_by_when_we_saw_it(clean: None, feed, story):
+    feed_id = await feed("essays.example.com")
+    backfill = NOW - datetime.timedelta(days=2)
+    await story(feed_id, "Written in 2019", first_seen_at=backfill, published_at=NOW - 2200 * DAY)
+    await story(feed_id, "Written last week", first_seen_at=backfill, published_at=NOW - 7 * DAY)
+
+    assert await _titles() == ["Written last week", "Written in 2019"]
+
+
+async def test_and_it_pages_on_that_order_without_serving_a_row_twice(clean: None, feed, story):
+    feed_id = await feed("essays.example.com")
+    seen = NOW - datetime.timedelta(days=1)
+    for month in range(1, 13):
+        published = datetime.datetime(2026, month, 1, tzinfo=datetime.UTC)
+        await story(feed_id, f"Month {month}", first_seen_at=seen, published_at=published)
+
+    served: list[str] = []
+    after = ""
+    while True:
+        page = (await _found("", after=after, limit=5)).listing
+        served += [entry.title for entry in page.entries]
+        if not page.cursor:
+            break
+        after = page.cursor
+
+    assert served == [f"Month {month}" for month in range(12, 0, -1)]

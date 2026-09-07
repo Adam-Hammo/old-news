@@ -58,15 +58,18 @@ async def river(
     limit: int = entries.DEFAULT_LIMIT,
 ) -> entries.Listing:
     """A page of the river, newest first by when we first saw it, then by the publisher's date."""
-    query = entries.newest(
-        entries.listed(settings).where(Subscription.active.is_(True), unexpired(Item.first_seen_at))
+    query = entries.ordered(
+        entries.listed(settings).where(
+            Subscription.active.is_(True), unexpired(Item.first_seen_at)
+        ),
+        entries.Order.SEEN,
     )
     if section:
         query = query.where(Subscription.category == section)
     if after:
-        query = query.where(entries.before(*cursor.decode(after)))
+        query = query.where(entries.before(entries.Order.SEEN, *cursor.decode(after)))
 
-    return await entries.page(session, query, entries.bounded(limit))
+    return await entries.page(session, query, entries.bounded(limit), entries.Order.SEEN)
 
 
 # What the article screen asks for a picture by. The reader's own prefix, not the
