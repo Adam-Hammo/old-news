@@ -16,6 +16,10 @@ WORD = re.compile(r"\w+")
 
 OPERATORS = frozenset({"from", "by", "after", "before", "is"})
 
+# The two a minus means something for. `-after:` is not a period and `-is:read` is
+# `is:unread`, so neither is worth a second spelling.
+NEGATABLE = frozenset({"from", "by"})
+
 # What `is:` takes. Read is a tap on a headline; finished is the bottom of the article.
 STATES = ("read", "unread", "finished", "unfinished")
 
@@ -37,13 +41,24 @@ class Term:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+# The Guardian is 56% of the archive, so excluding a publication is the most useful
+# exclusion there is.
+class Named:
+    """One name asked for, or asked against."""
+
+    value: str
+    excluded: bool = False
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class Query:
     """One search, parsed. Every field is what survived, so no caller re-reads the text."""
 
     terms: tuple[Term, ...] = ()
-    # Matched loosely against a publication's title: a feed id is not a thing anybody types.
-    publications: tuple[str, ...] = ()
-    authors: tuple[str, ...] = ()
+    # Matched loosely against a publication's title or address: a feed id is not a thing
+    # anybody types.
+    publications: tuple[Named, ...] = ()
+    authors: tuple[Named, ...] = ()
     # `after:` includes its date and `before:` does not, so the pair reads as one period —
     # `after:2026-08 before:2026-09` is August and nothing either side of it.
     since: datetime.date | None = None
@@ -95,8 +110,8 @@ def _split(token: str) -> tuple[bool, str, str, bool]:
 def parse(text: str) -> Query:
     """Take a search apart. Only an operator we recognise and cannot read is an error."""
     terms: list[Term] = []
-    publications: list[str] = []
-    authors: list[str] = []
+    publications: list[Named] = []
+    authors: list[Named] = []
     states: list[str] = []
     since: datetime.date | None = None
     until: datetime.date | None = None
@@ -118,10 +133,12 @@ def parse(text: str) -> Query:
 
         if not value:
             raise BadQuery(f"{key}: wants something after it")
+        if negated and key not in NEGATABLE:
+            raise BadQuery(f"-{key}: only {' and '.join(sorted(NEGATABLE))} take a minus")
         if key == "from":
-            publications.append(value)
+            publications.append(Named(value=value, excluded=negated))
         elif key == "by":
-            authors.append(value)
+            authors.append(Named(value=value, excluded=negated))
         elif key == "is":
             states.append(_state(value))
         elif key == "after":

@@ -46,8 +46,9 @@
 		},
 	]);
 
+	// Whole term or nothing: `from:ReutersHealth` used to light up the Reuters row too.
 	function already(term: string): boolean {
-		return view.q.includes(term);
+		return view.q.split(/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/).includes(term);
 	}
 
 	function shown(rows: { items: number }[]): boolean {

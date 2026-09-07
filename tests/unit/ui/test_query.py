@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from old_news.ui.query import BadQuery, Query, Term, parse
+from old_news.ui.query import BadQuery, Named, Query, Term, parse
 
 
 def words(query: Query) -> list[tuple[str, ...]]:
@@ -57,17 +57,35 @@ def test_a_one_word_quote_is_just_that_word():
 
 
 def test_a_publication_is_named_not_identified():
-    assert parse("from:pluralistic").publications == ("pluralistic",)
+    assert parse("from:pluralistic").publications == (Named(value="pluralistic"),)
+
+
+# The Guardian is 56% of the archive, so excluding a publication is the most useful
+# exclusion there is — and it used to parse as asking for it.
+def test_a_publication_can_be_excluded():
+    assert parse("-from:guardian").publications == (Named(value="guardian", excluded=True),)
+
+
+def test_an_author_can_be_too():
+    assert parse("-by:doctorow").authors == (Named(value="doctorow", excluded=True),)
+
+
+# `-after:` is not a period and `-is:read` is `is:unread`, so neither is worth a second
+# spelling — and silently meaning the opposite is what this grammar exists to stop.
+@pytest.mark.parametrize("typed", ["-is:read", "-after:2026-08", "-before:2026-09"])
+def test_a_minus_on_anything_else_says_so_rather_than_inverting(typed: str):
+    with pytest.raises(BadQuery, match="minus"):
+        parse(typed)
 
 
 def test_a_name_with_a_space_in_it_survives_the_split():
     assert parse('from:"Kagi News" enshittification') == Query(
-        terms=(Term(words=("enshittification",)),), publications=("Kagi News",)
+        terms=(Term(words=("enshittification",)),), publications=(Named(value="Kagi News"),)
     )
 
 
 def test_an_author_is_a_field_no_menu_could_hold():
-    assert parse("by:doctorow").authors == ("doctorow",)
+    assert parse("by:doctorow").authors == (Named(value="doctorow"),)
 
 
 @pytest.mark.parametrize(
@@ -148,8 +166,8 @@ def test_everything_at_once():
             Term(words=("reverse", "centaurs")),
             Term(words=("google",), excluded=True),
         ),
-        publications=("pluralistic",),
-        authors=("doctorow",),
+        publications=(Named(value="pluralistic"),),
+        authors=(Named(value="doctorow"),),
         since=datetime.date(2026, 8, 1),
         states=("unread",),
     )

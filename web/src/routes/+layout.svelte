@@ -51,7 +51,7 @@
 	});
 
 	async function refresh() {
-		if (asking || !data.list) return;
+		if (asking || data.archive || !data.list) return;
 		asking = true;
 		// The view it was asked for. A refetch takes up to `TIMEOUT`, and a tap in that
 		// window has already changed the screen — landing the river's rows under a query's
@@ -69,8 +69,10 @@
 		}
 	}
 
-	// Never under a scrolled list: the pages after the first are refetched from the top,
-	// so a refresh there would take the reader's place away to say nothing new.
+	// The river only, and never under a scrolled list: the pages after the first are
+	// refetched from the top, so a refresh there would take the reader's place away to say
+	// nothing new. The archive is not polled and has no `column` to ask, so it is left out
+	// rather than guarded — a refetch there would drop every page appended to it.
 	$effect(() => whenStale(() => Date.now() - loaded >= STALE && !column?.scrollTop, refresh));
 
 	// A navigation that lands on an article and leaves the list on screen is the fault
@@ -89,7 +91,7 @@
 	});
 </script>
 
-<div class="sheet">
+<div class="sheet" class:reading>
 	<Masthead
 		view={data.view}
 		updated={list?.updated ?? data.shape?.updated ?? null}
@@ -138,12 +140,13 @@
 	}
 
 	/* The masthead's rule is the gauge on an article, so a second one down the edge says
-	   the same thing twice and takes a strip of the column to do it. */
-	.sheet :global(.reading-pane) {
+	   the same thing twice. Only on an article: the rule does not move for settings, and a
+	   scroller with neither a bar nor a gauge says nothing at all. */
+	.sheet.reading :global(.reading-pane) {
 		scrollbar-width: none;
 	}
 
-	.sheet :global(.reading-pane::-webkit-scrollbar) {
+	.sheet.reading :global(.reading-pane::-webkit-scrollbar) {
 		display: none;
 	}
 

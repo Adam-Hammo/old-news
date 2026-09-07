@@ -42,6 +42,11 @@ test('a name with a space in it is quoted so it survives the split', () => {
 	expect(links.from('Kagi News')).toBe('from:"Kagi News"');
 });
 
+// A quote cannot be spelt inside a quoted run, and it would close the one around the name.
+test('a quote in a name comes out rather than closing the run early', () => {
+	expect(links.from('Kagi News "Weekly"')).toBe('from:"Kagi News Weekly"');
+});
+
 test('a month is the pair of dates the grammar spells one with', () => {
 	expect(links.within('2026-06')).toBe('after:2026-06 before:2026-07');
 });

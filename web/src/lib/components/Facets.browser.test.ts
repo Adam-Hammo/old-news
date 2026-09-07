@@ -49,6 +49,31 @@ test('a line adds to whatever is already typed', async () => {
 		.toHaveAttribute('href', '/archive?q=enshittification%20is%3Aunread');
 });
 
+// `includes` marked the Reuters row for a query naming ReutersHealth.
+test('a longer name that starts the same does not mark the shorter one', async () => {
+	const screen = await show(
+		{ q: 'from:PluralisticWeekly' },
+		{
+			publications: [{ name: 'Pluralistic', items: 3 }],
+		},
+	);
+
+	await expect
+		.element(screen.getByRole('link', { name: /Pluralistic/ }))
+		.not.toHaveClass(/\bon\b/);
+});
+
+test('and a quoted name is still recognised whole', async () => {
+	const screen = await show(
+		{ q: 'from:"Kagi News"' },
+		{
+			publications: [{ name: 'Kagi News', items: 3 }],
+		},
+	);
+
+	await expect.element(screen.getByRole('link', { name: /Kagi News/ })).toHaveClass(/\bon\b/);
+});
+
 test('a term already in the query is marked as one you are standing in', async () => {
 	const screen = await show({ q: 'is:unread' });
 

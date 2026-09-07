@@ -11,7 +11,7 @@ from old_news import db
 from old_news.config import KindleSettings
 from old_news.db import Feed, Item, ItemVersion
 from old_news.ui import cursor, entries, search
-from old_news.ui.query import Query
+from old_news.ui.query import Named, Query
 
 MONTH = "YYYY-MM"
 UTC = "UTC"
@@ -63,9 +63,21 @@ def _instant(on: datetime.date, zone: str):
 LIKE_ESCAPE = str.maketrans({"%": r"\%", "_": r"\_", "\\": "\\\\"})
 
 
-def _loosely(column, names: tuple[str, ...]):
-    """Any of these names, matched the way somebody types a publication rather than files it."""
-    return or_(*(column.ilike(f"%{name.translate(LIKE_ESCAPE)}%", escape="\\") for name in names))
+def _like(columns, name: str):
+    """One name against any of the columns it could be typed as."""
+    pattern = f"%{name.translate(LIKE_ESCAPE)}%"
+    return or_(*(column.ilike(pattern, escape="\\") for column in columns))
+
+
+def _loosely(query: Select, columns, names: tuple[Named, ...]) -> Select:
+    """Any of the names asked for, and none of the ones asked against."""
+    wanted = [name.value for name in names if not name.excluded]
+    against = [name.value for name in names if name.excluded]
+    if wanted:
+        query = query.where(or_(*(_like(columns, name) for name in wanted)))
+    for name in against:
+        query = query.where(~_like(columns, name))
+    return query
 
 
 STATES = {
@@ -80,10 +92,10 @@ STATES = {
 # any were typed or not.
 def _narrowed(query: Select, asked: Query, zone: str) -> Select:
     """Everything the reader asked for that is not words."""
-    if asked.publications:
-        query = query.where(_loosely(Feed.title, asked.publications))
-    if asked.authors:
-        query = query.where(_loosely(ItemVersion.author, asked.authors))
+    # Title or address: an untitled feed is named by its address on the rail, so that is
+    # what gets typed back at us.
+    query = _loosely(query, (Feed.title, Feed.url), asked.publications)
+    query = _loosely(query, (ItemVersion.author,), asked.authors)
     # On the publisher's date where there is one: a feed's first poll backfills a whole
     # back catalogue under today, and `after:2019` has to still reach a 2019 piece.
     if asked.since is not None:
@@ -152,7 +164,10 @@ def _reached(query: Select, asked: Query, zone: str) -> Select:
 def _grouped(asked: Query, zone: str, by):
     """One dimension's counts over everything the rest of the query reached."""
     counted = _reached(entries.held(by.label("name"), func.count().label("items")), asked, zone)
-    return counted.group_by("name").having(by.is_not(None)).order_by(func.count().desc())
+    # A blank name is a row nobody can click: `from:` with nothing after it is a bad query.
+    return (
+        counted.group_by("name").having(func.coalesce(by, "") != "").order_by(func.count().desc())
+    )
 
 
 def _monthly(zone: str):
@@ -178,7 +193,8 @@ def _states(asked: Query, zone: str):
 async def shape(session: AsyncSession, *, asked: Query, zone: str = UTC) -> Shape:
     """The rail: what is in what the query reached, and what switching one part would give."""
     where = await _zoned(session, zone)
-    publications = await session.execute(_grouped(_but(asked, "publications"), where, Feed.title))
+    named = func.coalesce(func.nullif(Feed.title, ""), Feed.url)
+    publications = await session.execute(_grouped(_but(asked, "publications"), where, named))
     months = await session.execute(_grouped(_but(asked, "months"), where, _monthly(where)))
     states = (await session.execute(_states(_but(asked, "states"), where))).mappings().one()
 

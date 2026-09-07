@@ -40,9 +40,12 @@ export function search(terms: string): string {
 	return list({ ...EVERYTHING, q: terms });
 }
 
-/** A name with a space in it has to survive the split, and quoting is what does that. */
+/** A name with a space in it has to survive the split, and quoting is what does that.
+ *  A quote of its own cannot be spelt inside one, so it comes out — the match is a
+ *  substring either way, so the shorter name still finds the thing. */
 function named(value: string): string {
-	return /\s/.test(value) ? `"${value}"` : value;
+	const plain = value.replaceAll('"', '').trim();
+	return /\s/.test(plain) ? `"${plain}"` : plain;
 }
 
 /** One term added to whatever is already typed, which is what clicking the rail does. */

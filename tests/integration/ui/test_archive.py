@@ -3,9 +3,11 @@
 import datetime
 
 import pytest
+from sqlalchemy import update
 
-from old_news import ui
+from old_news import db, ui
 from old_news.config import KindleSettings
+from old_news.db import Feed
 
 NOW = datetime.datetime.now(datetime.UTC)
 DAY = datetime.timedelta(days=1)
@@ -27,6 +29,12 @@ def _month(month: str) -> str:
     """A month as the grammar spells one: its first day, up to the next month's."""
     year, ordinal = (int(part) for part in month.split("-"))
     return f"after:{month} before:{year + ordinal // 12}-{ordinal % 12 + 1:02d}"
+
+
+@db.transactional
+async def _untitle(session, feed_id) -> None:
+    """A feed whose publisher never named it, which `feeds.title` holds as empty."""
+    await session.execute(update(Feed).where(Feed.id == feed_id).values(title=""))
 
 
 def _named(counts) -> dict[str, int]:
@@ -269,3 +277,28 @@ async def test_and_it_pages_on_that_order_without_serving_a_row_twice(clean: Non
         after = page.cursor
 
     assert served == [f"Month {month}" for month in range(12, 0, -1)]
+
+
+async def test_a_publication_can_be_excluded(clean: None, feed, story):
+    await story(await feed("wire.example.com"), "A bulletin")
+    await story(await feed("essays.example.com"), "An essay")
+
+    assert await _titles("-from:wire.example.com") == ["An essay"]
+
+
+# The rail names an untitled feed by its address, so that is what gets typed back at us.
+async def test_a_publication_can_be_named_by_its_address(clean: None, feed, story):
+    await story(await feed("wire.example.com"), "A bulletin")
+
+    assert await _titles("from:wire.example.com/feed.xml") == ["A bulletin"]
+
+
+# A blank row on the rail links to `from:` with nothing after it, which is a bad request.
+async def test_an_untitled_feed_is_never_a_blank_row_on_the_rail(clean: None, feed, story):
+    feed_id = await feed("untitled.example.com")
+    await _untitle(feed_id)
+    await story(feed_id, "A piece")
+
+    names = [count.name for count in (await ui.shape(asked=ui.parse(""))).publications]
+
+    assert names == ["https://untitled.example.com/feed.xml"]
