@@ -25,6 +25,7 @@
 		{ value: '2592000', label: '1 month' },
 	];
 
+	let sift = $state('');
 	let url = $state('');
 	let category = $state('');
 	let busy = $state(false);
@@ -38,10 +39,22 @@
 		[...new Set([...sections, ...feeds.map((f) => f.category)])].filter(Boolean).sort(),
 	);
 
+	// Title, address and section all at once: on a phone you know one of the three and
+	// not which. A section that matches keeps the whole section, which is the point.
+	const shown = $derived.by(() => {
+		const wanted = sift.trim().toLowerCase();
+		if (!wanted) return feeds;
+		return feeds.filter((feed) =>
+			[feed.title, feed.url, feed.category].some((part) =>
+				part.toLowerCase().includes(wanted),
+			),
+		);
+	});
+
 	// Filed the way the river slices it, so a long list shows where a section begins and
 	// ends. Unfiled last: it is the absence of a section rather than one more of them.
 	const filed = $derived(
-		Object.entries(Object.groupBy(feeds, (feed) => feed.category)).sort(([a], [b]) =>
+		Object.entries(Object.groupBy(shown, (feed) => feed.category)).sort(([a], [b]) =>
 			a === '' ? 1 : b === '' ? -1 : a.localeCompare(b),
 		),
 	);
@@ -115,6 +128,16 @@
 	{#if feeds.length === 0}
 		<p class="none label">Nothing followed yet.</p>
 	{:else}
+		<input
+			bind:value={sift}
+			class="sift"
+			type="search"
+			placeholder="Filter"
+			aria-label="Filter the feeds"
+		/>
+		{#if shown.length === 0}
+			<p class="none label">Nothing matched.</p>
+		{/if}
 		{#each filed as [name, group] (name)}
 			<h3>{name || 'Unfiled'}</h3>
 			<ul>
@@ -283,6 +306,13 @@
 
 	.none {
 		padding: 1.4rem 0;
+	}
+
+	.sift {
+		width: 100%;
+		margin-top: 22px;
+		/* Safari draws its own, and it sits badly against a square field. */
+		appearance: none;
 	}
 
 	h3 {

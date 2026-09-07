@@ -12,6 +12,9 @@ export type Volume = components['schemas']['Volume'];
 export type Article = components['schemas']['Article'];
 export type Report = components['schemas']['Report'];
 export type Following = components['schemas']['Following'];
+export type Polling = components['schemas']['Polling'];
+export type Publisher = components['schemas']['Publisher'];
+export type Section = components['schemas']['Section'];
 
 // A prefix, not a host. `tailscale serve --set-path=/api` puts Litestar behind it in the
 // deployment and the dev proxy does the same, so nothing here knows where the API lives.
@@ -90,6 +93,18 @@ export function following(fetcher: Fetcher): Promise<Following[]> {
 	return get<Following[]>(fetcher, '/subscriptions/');
 }
 
+export function polling(fetcher: Fetcher): Promise<Polling[]> {
+	return get<Polling[]>(fetcher, '/status/polling/');
+}
+
+export function publishers(fetcher: Fetcher): Promise<Publisher[]> {
+	return get<Publisher[]>(fetcher, '/status/publishers/');
+}
+
+export function configured(fetcher: Fetcher): Promise<Section[]> {
+	return get<Section[]>(fetcher, '/status/config/');
+}
+
 /** The API's own words on the way out: it knows why, and the screen only has to say it. */
 async function send(path: string, method: string, body?: unknown): Promise<string> {
 	let response: Response;
@@ -116,7 +131,7 @@ export function follow(url: string, category: string): Promise<string> {
 
 export type Filing = components['schemas']['Filing'];
 
-/** The whole filing every time: a partial one cannot say "never expires". */
+/** The whole filing every time: a partial one cannot say what it left alone. */
 export function file(id: string, filing: Filing): Promise<string> {
 	return send(`/subscriptions/${id}/`, 'PATCH', filing);
 }

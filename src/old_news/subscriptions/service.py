@@ -4,11 +4,11 @@ import datetime
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import ColumnElement, Integer, cast, func, select
+from sqlalchemy import ColumnElement, Integer, cast, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
-from old_news.db import Feed, Subscription
+from old_news.db import Feed, FeedPoll, Subscription
 from old_news.fetch import Fetcher, fetchable
 from old_news.politeness import resolve
 from old_news.subscriptions import discover, opml
@@ -36,6 +36,26 @@ class Following:
     # named lengths rather than a number.
     expires_after_seconds: int
     last_success_at: datetime.datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class Polling:
+    """One feed's poll health. Everything here is read off the log, so nothing disagrees."""
+
+    id: uuid.UUID
+    title: str
+    url: str
+    category: str
+    last_polled_at: datetime.datetime | None
+    last_success_at: datetime.datetime | None
+    next_poll_at: datetime.datetime
+    consecutive_failures: int
+    # The publisher answered 410. Backing off will not bring it back.
+    gone: bool
+    # The last visit, as it went. Empty where a feed has never been polled at all.
+    outcome: str
+    status: int
+    error: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +130,48 @@ async def import_opml(data: bytes, fetcher: Fetcher) -> ImportResult:
             added += 1
 
     return ImportResult(added, present, tuple(failed), tuple(unfetchable))
+
+
+def _latest_poll():
+    """The last visit to each feed, as a lateral so one query answers for every feed."""
+    return (
+        select(
+            func.coalesce(FeedPoll.outcome, "").label("outcome"),
+            func.coalesce(FeedPoll.status, 0).label("status"),
+            func.coalesce(FeedPoll.error, "").label("error"),
+        )
+        .where(FeedPoll.feed_id == Feed.id)
+        .order_by(FeedPoll.polled_at.desc())
+        .limit(1)
+        .lateral()
+    )
+
+
+@db.transactional
+async def polling(session: AsyncSession) -> tuple[Polling, ...]:
+    """How the polling is going, feed by feed. The worst first: that is what it is for."""
+    last = _latest_poll()
+    rows = await session.execute(
+        select(
+            Feed.id,
+            Feed.title,
+            Feed.url,
+            Subscription.category,
+            Feed.last_polled_at,
+            Feed.last_success_at,
+            Feed.next_poll_at,
+            Feed.consecutive_failures.label("consecutive_failures"),
+            Feed.gone.label("gone"),
+            func.coalesce(last.c.outcome, "").label("outcome"),
+            func.coalesce(last.c.status, 0).label("status"),
+            func.coalesce(last.c.error, "").label("error"),
+        )
+        .join(Subscription, Subscription.feed_id == Feed.id)
+        .outerjoin(last, true())
+        .where(Subscription.active.is_(True))
+        .order_by(Feed.consecutive_failures.desc(), Feed.title)
+    )
+    return tuple(Polling(**row) for row in rows.mappings())
 
 
 async def _following(session: AsyncSession, where: ColumnElement[bool]) -> Subscription | None:

@@ -2,14 +2,25 @@
 // that get it wrong are always the same two — a number nobody sized the column for, and a
 // run of text that cannot break. So each of these is rendered at the narrowest phone
 // there is, with the longest thing it will ever be handed.
-import type { Contents, Entry, Following, Listing } from '#lib/api/client.ts';
+import type {
+	Contents,
+	Entry,
+	Following,
+	Listing,
+	Polling as Poll,
+	Publisher,
+	Section,
+} from '#lib/api/client.ts';
 import { NOWHERE, type View } from '#lib/links.ts';
 import { expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import ArchiveHead from './ArchiveHead.svelte';
+import Config from './Config.svelte';
 import ContentsView from './Contents.svelte';
 import Feeds from './Feeds.svelte';
 import Masthead from './Masthead.svelte';
+import Polling from './Polling.svelte';
+import Publishers from './Publishers.svelte';
 import River from './River.svelte';
 import SectionStrip from './SectionStrip.svelte';
 
@@ -140,6 +151,67 @@ test('the section strip, which scrolls rather than wrapping', async () => {
 		],
 		current: '',
 	});
+
+	expect(through(container)).toEqual([]);
+});
+
+test("a feed in trouble, with the publisher's own words for why", async () => {
+	const feed: Poll = {
+		id: 'aaaaaaaa-0000-4000-8000-000000000001',
+		title: LONG_NAME,
+		url: 'https://example.com/feed.xml',
+		category: 'Investigations and Long Form',
+		last_polled_at: new Date().toISOString(),
+		last_success_at: null,
+		next_poll_at: new Date().toISOString(),
+		consecutive_failures: BIG,
+		gone: false,
+		outcome: 'failed',
+		status: 503,
+		error:
+			'httpx.ConnectError: [Errno -2] Name or service not known ' +
+			'while requesting https://example.com/a/very/long/path/nobody/can/break.xml',
+	};
+
+	const container = await narrow(Polling, { feeds: [feed] });
+
+	expect(through(container)).toEqual([]);
+});
+
+test('a publisher, with every fact it can carry at once', async () => {
+	const host: Publisher = {
+		name: 'a-very-long-publisher-hostname-that-nobody-would-register.example.com',
+		feeds: BIG,
+		requires_www: true,
+		crawl_delay_seconds: 120,
+		robots_status: 503,
+		robots_fetched_at: new Date().toISOString(),
+		robots_expires_at: new Date().toISOString(),
+		capture_failures: BIG,
+	};
+
+	const container = await narrow(Publishers, { hosts: [host] });
+
+	expect(through(container)).toEqual([]);
+});
+
+// A user agent is one word as far as the browser is concerned, and it is the longest
+// setting there is.
+test('the config, with a setting whose value cannot break', async () => {
+	const config: Section[] = [
+		{
+			name: 'http',
+			settings: [
+				{
+					name: 'user_agent',
+					value: 'old-news/0.1 (+https://github.com/Adam-Hammo/old-news)',
+				},
+				{ name: 'max_body_bytes', value: String(16 * 1024 * 1024) },
+			],
+		},
+	];
+
+	const container = await narrow(Config, { config });
 
 	expect(through(container)).toEqual([]);
 });

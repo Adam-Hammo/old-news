@@ -113,6 +113,9 @@ ignore_names = [
   "timestamp",
   # SQLAlchemy calls a hybrid's expression half through its descriptor, never by name.
   "_*_expression",
+  # Built from a SQL row by `**mapping` and read by Litestar to build the schema, so
+  # neither end of the field names it.
+  "robots_*",
   # Enum members reach Postgres through `db.base.one_of`, which iterates the class, and
   # through the seed SQL in a migration. Never named individually from Python.
   "OBSERVED",

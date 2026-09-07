@@ -225,6 +225,57 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/status/polling': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every feed we follow, and how its polling is going. */
+		get: operations['StatusPollingPolling'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/status/publishers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every host we visit, and how politely. */
+		get: operations['StatusPublishersPublishers'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/status/config': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every effective setting, with the credentials left out. */
+		get: operations['StatusConfigConfig'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/subscriptions': {
 		parameters: {
 			query?: never;
@@ -358,6 +409,34 @@ export interface components {
 			/** Format: date-time */
 			read_at: string;
 		};
+		/** Polling */
+		Polling: {
+			/** Format: uuid */
+			id: string;
+			title: string;
+			url: string;
+			category: string;
+			last_polled_at: string | null;
+			last_success_at: string | null;
+			/** Format: date-time */
+			next_poll_at: string;
+			consecutive_failures: number;
+			gone: boolean;
+			outcome: string;
+			status: number;
+			error: string;
+		};
+		/** Publisher */
+		Publisher: {
+			name: string;
+			feeds: number;
+			requires_www: boolean;
+			crawl_delay_seconds: number | null;
+			robots_status: number;
+			robots_fetched_at: string | null;
+			robots_expires_at: string | null;
+			capture_failures: number;
+		};
 		/** Report */
 		Report: {
 			kind: string;
@@ -377,6 +456,16 @@ export interface components {
 			items: number;
 			/** Format: date-time */
 			latest: string;
+		};
+		/** Section */
+		Section: {
+			name: string;
+			settings: components['schemas']['Setting'][];
+		};
+		/** Setting */
+		Setting: {
+			name: string;
+			value: string;
 		};
 		/** Volume */
 		Volume: {
@@ -853,6 +942,66 @@ export interface operations {
 							  }
 							| unknown[];
 					};
+				};
+			};
+		};
+	};
+	StatusPollingPolling: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Polling'][];
+				};
+			};
+		};
+	};
+	StatusPublishersPublishers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Publisher'][];
+				};
+			};
+		};
+	};
+	StatusConfigConfig: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Section'][];
 				};
 			};
 		};
