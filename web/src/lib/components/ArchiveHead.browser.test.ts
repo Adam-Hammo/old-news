@@ -48,3 +48,42 @@ test('nothing reached says nought rather than nothing at all', async () => {
 
 	expect(screen.container.querySelector('.tally')!.textContent).toBe('0 pieces');
 });
+
+// Once the query is inside a year the rail lists that year's months, so the row you
+// drilled through is gone and only this can take it back off.
+test('what is applied is shown as words, each with a way off', async () => {
+	const screen = await show({ q: 'density after:2026 before:2027 is:unread' });
+
+	await expect
+		.element(screen.getByRole('link', { name: 'Stop narrowing by 2026' }))
+		.toHaveAttribute('href', '/archive?q=density%20is%3Aunread');
+	await expect
+		.element(screen.getByRole('link', { name: 'Stop narrowing by Never opened' }))
+		.toHaveAttribute('href', '/archive?q=density%20after%3A2026%20before%3A2027');
+});
+
+test('and taking the last one off is everything held again', async () => {
+	const screen = await show({ q: 'is:unread' });
+
+	await expect
+		.element(screen.getByRole('link', { name: 'Stop narrowing by Never opened' }))
+		.toHaveAttribute('href', '/archive');
+});
+
+test('nothing asked shows no strip at all', async () => {
+	const screen = await show({});
+
+	expect(screen.container.querySelector('.narrowed')).toBeNull();
+});
+
+// A publication and an author can be the same word. Two chips with one key is a duplicate
+// key, and Svelte takes the whole screen down for one — the way the river once did.
+test('a publication and an author of the same name are two chips, not a crash', async () => {
+	const screen = await show({ q: 'from:guardian by:guardian' });
+
+	const chips = screen.container.querySelectorAll('.narrowed a');
+	expect([...chips].map((chip) => chip.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+		'guardian×',
+		'by guardian×',
+	]);
+});

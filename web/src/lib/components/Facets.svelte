@@ -16,18 +16,8 @@
 	];
 
 	// The rail reports rather than remembers: what it draws is the shape of what the query
-	// reached, and clicking a line adds the term that would narrow it. Shortest group
-	// first, because on a phone these are one scrolling strip and forty-one publications
-	// ahead of three states would bury them.
+	// reached, and clicking a line adds the term that would narrow it.
 	const groups = $derived([
-		{
-			label: 'You',
-			rows: STATES.map(({ name, label }) => ({
-				label,
-				items: shape.states.find((count: Count) => count.name === name)?.items ?? 0,
-				term: `is:${name}`,
-			})),
-		},
 		{
 			label: 'When',
 			rows: shape.months.map((count: Count) => ({
@@ -44,30 +34,44 @@
 				term: links.from(count.name),
 			})),
 		},
+		{
+			label: 'You',
+			rows: STATES.map(({ name, label }) => ({
+				label,
+				items: shape.states.find((count: Count) => count.name === name)?.items ?? 0,
+				term: `is:${name}`,
+			})),
+		},
 	]);
-
-	// Whole term or nothing: `from:ReutersHealth` used to light up the Reuters row too.
-	function already(term: string): boolean {
-		return view.q.split(/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/).includes(term);
-	}
 
 	function shown(rows: { items: number }[]): boolean {
 		return rows.some((row) => row.items > 0);
 	}
 </script>
 
-<nav>
+<nav aria-label="What the query reached">
 	{#each groups as group (group.label)}
 		{#if shown(group.rows)}
 			<section>
-				<h2>{group.label}</h2>
+				<h2>
+					{group.label}
+					<i>{counted.format(group.rows.filter((row) => row.items > 0).length)}</i>
+				</h2>
 				<ul>
 					{#each group.rows as row (row.term)}
 						{#if row.items > 0}
+							{@const on = links.carries(view, row.term)}
 							<li>
-								<a href={links.and(view, row.term)} class:on={already(row.term)}>
+								<a
+									href={links.toggled(view, row.term)}
+									class:on
+									aria-label={on
+										? `Stop narrowing to ${row.label}`
+										: `Narrow to ${row.label}`}
+								>
 									<b>{row.label}</b>
 									<span>{counted.format(row.items)}</span>
+									{#if on}<em aria-hidden="true">×</em>{/if}
 								</a>
 							</li>
 						{/if}
@@ -79,13 +83,22 @@
 </nav>
 
 <style>
-	/* Scrolls on its own: forty-one publications is longer than any screen, and the
-	   results beside it have their own scroll to keep. */
+	/* Each group takes the height it needs and no more than a third of the screen, so
+	   every heading is on it. Forty-one publications used to take the lot and push the
+	   third group off the bottom, and the rail scrolling as a whole did not help: what
+	   you wanted was the group you could not see. */
 	nav {
 		display: flex;
 		flex-direction: column;
-		gap: 18px;
-		padding: 12px var(--gutter) 3rem;
+		gap: 16px;
+		padding: 12px var(--gutter) 18px;
+	}
+
+	h2 i {
+		float: right;
+		font-style: normal;
+		font-weight: 400;
+		font-variant-numeric: tabular-nums;
 	}
 
 	h2 {
@@ -103,6 +116,9 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+		max-height: 30vh;
+		overflow-y: auto;
+		scrollbar-width: thin;
 	}
 
 	li a {
@@ -130,10 +146,22 @@
 		color: var(--ink-faint);
 	}
 
-	/* Already in the query. Still a link, because adding it twice is harmless and
-	   greying it out would hide where the number came from. */
+	/* Already in the query, so the click takes it off again. The count stays — it is what
+	   this line reaches on its own, which is a thing worth still being able to read. */
 	li a.on {
 		color: var(--ink);
+	}
+
+	li a.on span {
+		color: var(--ink);
+	}
+
+	li em {
+		flex: none;
+		font-style: normal;
+		font-weight: 700;
+		font-size: 12px;
+		line-height: 1;
 	}
 
 	li a.on b {
@@ -145,9 +173,17 @@
 		nav {
 			flex-direction: row;
 			gap: 0;
+			height: auto;
 			overflow-x: auto;
 			scrollbar-width: none;
 			padding: 8px var(--gutter);
+		}
+
+		/* The states are three chips and the publications are forty, so on one strip the
+		   short group goes first — the other way round from the rail, where a heading says
+		   which is which. */
+		section:last-child {
+			order: -1;
 		}
 
 		nav::-webkit-scrollbar {
@@ -161,6 +197,8 @@
 		ul {
 			display: flex;
 			gap: 6px;
+			max-height: none;
+			overflow-y: visible;
 		}
 
 		li a {
