@@ -17,6 +17,7 @@ from logfire.testing import CaptureLogfire, TestExporter
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
 from conftest import finished
+from old_news.config import TelemetrySettings
 from old_news.observability import telemetry
 from old_news.observability.telemetry import litestar_config, name_span_after_route
 
@@ -159,3 +160,21 @@ def test_create_app_installs_the_hook():
     """The middleware runs outside the router, so without this the span keeps the
     name it was born with and nothing fails."""
     assert "before_request=observability.name_span_after_route" in APP_MODULE.read_text()
+
+
+def test_keeping_everything_installs_no_sampler():
+    """Tail sampling buffers a trace until it ends. Buffering to keep all of it is
+    cost for nothing, which is what the default asks for."""
+    assert telemetry._sampling(TelemetrySettings(background_sample_rate=1.0)) is None
+
+
+def test_a_thinned_background_still_keeps_what_went_wrong_or_ran_long():
+    options = telemetry._sampling(
+        TelemetrySettings(background_sample_rate=0.2, slow_after_seconds=9.0)
+    )
+
+    assert options is not None
+    # Head stays open: the decision is made when the trace ends, on what it turned out
+    # to be. A head sampler would throw the errors away with everything else.
+    assert options.head == 1.0
+    assert options.tail is not None

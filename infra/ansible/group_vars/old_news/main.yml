@@ -29,8 +29,14 @@ telemetry_enabled: true
 # hostmetrics is what answers the keepbusy question now.
 telemetry_system_metrics: false
 
-# One span per query: the biggest single lever on telemetry volume.
-telemetry_instrument_database: true
+# One span per query: the biggest single lever on telemetry volume, which is why it is
+# off. Turn it on while chasing a slow query and turn it off again.
+telemetry_instrument_database: false
+
+# What share of the traces that went neither wrong nor slow is kept. The box's work is
+# a picture fetched, encoded and filed, several thousand times a day, and none of those
+# traces is ever read. Counters are metrics and are never sampled.
+telemetry_background_sample_rate: 0.2
 
 otel_endpoint: https://logfire-eu.pydantic.dev
 
