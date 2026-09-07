@@ -1,24 +1,31 @@
-"""The archive over HTTP: a contents page, and one query that reaches whatever it reaches."""
+"""The archive over HTTP: one query, and the shape of what it reached."""
 
 import datetime
 
 import pytest
 
-from old_news.db import Tier
-
 JUNE = datetime.datetime(2026, 6, 15, tzinfo=datetime.UTC)
 
 
-async def test_the_contents_counts_by_publication_and_month(served, feed, story):
-    await story(await feed("essays.example.com", tier=Tier.KINDLE), "An essay", first_seen_at=JUNE)
+async def test_the_rail_counts_by_publication_and_month(served, feed, story):
+    await story(await feed("essays.example.com"), "An essay", first_seen_at=JUNE)
 
-    body = (await (await served()).get("/archive")).json()
+    body = (await (await served()).get("/archive/facets")).json()
 
-    assert body["items"] == 1
-    assert body["months"] == [{"month": "2026-06", "items": 1}]
-    assert [(run["title"], run["tier"], run["items"]) for run in body["feeds"]] == [
-        ("essays.example.com", Tier.KINDLE, 1)
-    ]
+    assert body["publications"] == [{"name": "essays.example.com", "items": 1}]
+    assert body["months"] == [{"name": "2026-06", "items": 1}]
+    assert {count["name"]: count["items"] for count in body["states"]}["unread"] == 1
+
+
+# What the rail draws is the shape of what the query reached, not of the whole archive.
+async def test_the_rail_counts_only_what_the_query_reached(served, feed, story):
+    await story(await feed("wire.example.com"), "A bulletin", body="Nothing much.")
+    await story(await feed("essays.example.com"), "An essay", body="Housing density fell.")
+
+    params = {"q": "density"}
+    body = (await (await served()).get("/archive/facets", params=params)).json()
+
+    assert body["publications"] == [{"name": "essays.example.com", "items": 1}]
 
 
 async def test_a_publication_serialises_a_row_whole(served, feed, story):
@@ -87,7 +94,9 @@ async def test_a_quoted_run_has_to_be_adjacent(served, feed, story):
 
 
 async def test_an_unusable_zone_is_a_bad_request(client):
-    assert (await client.get("/archive", params={"zone": "Mars/Olympus"})).status_code == 400
+    params = {"zone": "Mars/Olympus"}
+
+    assert (await client.get("/archive/facets", params=params)).status_code == 400
 
 
 async def test_a_forged_cursor_is_a_bad_request(client):
@@ -113,7 +122,7 @@ async def test_a_forged_cursor_is_a_bad_request(client):
         pytest.param("/archive/items", {"q": "before:10000-01"}, id="past-the-last-month"),
         pytest.param("/archive/items", {"q": "after:banana"}, id="not-a-date"),
         pytest.param("/archive/items", {"q": "is:interesting"}, id="not-a-state"),
-        pytest.param("/archive", {"zone": "Asia/Calcutta"}, id="a-zone-only-python-knows"),
+        pytest.param("/archive/facets", {"zone": "Asia/Calcutta"}, id="a-zone-only-python-knows"),
         pytest.param(
             "/archive/items",
             {"q": "after:2026-06", "zone": "Asia/Calcutta"},

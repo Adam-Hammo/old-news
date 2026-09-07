@@ -10,23 +10,28 @@ from old_news.config import get_settings
 ZONE = Parameter(default="UTC", description="An IANA zone; months and dates are read in it.")
 
 
-@get("/archive", summary="What the archive holds, by publication and by month.")
-async def contents(zone: str = ZONE) -> ui.Contents:
+QUERY = Parameter(
+    default="",
+    description=(
+        "Words, and the operators `from:` `by:` `after:` `before:` `is:`. A quoted run is "
+        "adjacent, a leading minus excludes. Empty is everything held."
+    ),
+)
+
+
+@get("/archive/facets", summary="What is in what the query reached, dimension by dimension.")
+async def facets(q: str = QUERY, zone: str = ZONE) -> ui.Shape:
     try:
-        return await ui.contents(zone=zone)
+        return await ui.shape(asked=ui.parse(q), zone=zone)
+    except ui.BadQuery as exc:
+        raise ClientException(detail=f"unusable search: {exc}") from exc
     except ui.BadZone as exc:
         raise ClientException(detail=f"unusable zone: {exc}") from exc
 
 
 @get("/archive/items", summary="Everything held that the query reaches, and how much did.")
 async def held(
-    q: str = Parameter(
-        default="",
-        description=(
-            "Words, and the operators `from:` `by:` `after:` `before:` `is:`. "
-            "A quoted run is adjacent, a leading minus excludes. Empty is everything held."
-        ),
-    ),
+    q: str = QUERY,
     after: str = Parameter(default="", description="The cursor a previous page ended on."),
     limit: int = Parameter(default=ui.DEFAULT_LIMIT, ge=1, le=ui.MAX_LIMIT),
     zone: str = ZONE,
@@ -44,4 +49,4 @@ async def held(
 
 
 def archive_router(path: str = "/") -> Router:
-    return Router(path=path, route_handlers=[contents, held], tags=["archive"])
+    return Router(path=path, route_handlers=[facets, held], tags=["archive"])

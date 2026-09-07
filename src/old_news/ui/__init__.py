@@ -1,4 +1,4 @@
-from old_news.ui.archive import BadZone, Contents, Run, Volume, contents, held
+from old_news.ui.archive import BadZone, Count, Shape, held, shape
 from old_news.ui.cursor import BadCursor
 from old_news.ui.entries import DEFAULT_LIMIT, MAX_LIMIT, Entry, Listing
 from old_news.ui.query import BadQuery, Query, Term, parse
@@ -23,16 +23,14 @@ __all__ = [
     "BadCursor",
     "BadQuery",
     "BadZone",
-    "Contents",
+    "Count",
     "Entry",
     "Found",
     "Listing",
     "Query",
-    "Run",
+    "Shape",
     "Term",
-    "Volume",
     "article",
-    "contents",
     "held",
     "image",
     "mark_finished",
@@ -40,4 +38,5 @@ __all__ = [
     "parse",
     "river",
     "sections",
+    "shape",
 ]

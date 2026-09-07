@@ -9,7 +9,9 @@
 </script>
 
 <nav>
-	<a href={links.contents()} class="back">&larr;&nbsp; Archive</a>
+	{#if view.q}
+		<a href={links.archive()} class="back">&larr;&nbsp; Everything</a>
+	{/if}
 	<!-- The field itself, carrying the query: narrowing is editing what is there rather
 	     than going back for a fresh box. -->
 	<div class="again"><SearchBox terms={view.q} /></div>

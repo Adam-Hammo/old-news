@@ -6,15 +6,14 @@ import type { components } from './schema';
 export type Entry = components['schemas']['Entry'];
 export type Listing = components['schemas']['Listing'];
 export type Found = components['schemas']['Found'];
-export type Contents = components['schemas']['Contents'];
-export type Run = components['schemas']['Run'];
-export type Volume = components['schemas']['Volume'];
 export type Article = components['schemas']['Article'];
 export type Report = components['schemas']['Report'];
 export type Following = components['schemas']['Following'];
 export type Polling = components['schemas']['Polling'];
 export type Publisher = components['schemas']['Publisher'];
 export type Section = components['schemas']['Section'];
+export type Shape = components['schemas']['Shape'];
+export type Count = components['schemas']['Count'];
 
 // A prefix, not a host. `tailscale serve --set-path=/api` puts Litestar behind it in the
 // deployment and the dev proxy does the same, so nothing here knows where the API lives.
@@ -61,8 +60,9 @@ async function get<T>(fetcher: Fetcher, path: string, query: Query = {}): Promis
 /** Months are grouped where the reader is, so the shelf a date lands on is the right one. */
 export const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-export function contents(fetcher: Fetcher): Promise<Contents> {
-	return get<Contents>(fetcher, '/archive/', { zone: ZONE });
+/** What is in what the query reached, which is what the rail draws. */
+export function facets(fetcher: Fetcher, view: View): Promise<Shape> {
+	return get<Shape>(fetcher, '/archive/facets/', { q: view.q, zone: ZONE });
 }
 
 /** A list, and how much matched where anything counted it. Null is nobody counting. */

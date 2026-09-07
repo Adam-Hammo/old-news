@@ -276,14 +276,14 @@ test('the foot of the river is the door to the archive', async () => {
 
 // The archive has an end, which is the whole reason it is not the river.
 test('the archive says where it stops rather than offering another door', async () => {
-	const screen = await show([entry()], { view: { q: 'from:pluralistic' } });
+	const screen = await show([entry()], { view: { archive: true, q: 'from:pluralistic' } });
 
 	await expect.element(screen.getByText('That is everything held here.')).toBeVisible();
 	expect(screen.container.querySelectorAll('.end a')).toHaveLength(0);
 });
 
 test('an empty result says so in its own words', async () => {
-	const screen = await show([], { view: { q: 'from:nobody' } });
+	const screen = await show([], { view: { archive: true, q: 'from:nobody' } });
 
 	await expect.element(screen.getByText('Nothing matched.')).toBeVisible();
 });
@@ -297,18 +297,18 @@ test('a page still loading offers no door', async () => {
 
 test('the query travels with a row link, so coming back lands where you left', async () => {
 	const screen = await show([entry({ id: 'abc' })], {
-		view: { q: 'after:2026-06 before:2026-07' },
+		view: { archive: true, q: 'after:2026-06 before:2026-07' },
 	});
 
 	await expect
 		.element(screen.getByRole('link', ROW))
-		.toHaveAttribute('href', '/item/abc?q=after%3A2026-06%20before%3A2026-07');
+		.toHaveAttribute('href', '/archive/item/abc?q=after%3A2026-06%20before%3A2026-07');
 });
 
 // Only a search row has one, and it is what makes a result recognisable without opening it.
 test('a search row carries the fragment that says why it matched', async () => {
 	const screen = await show([entry({ snippet: 'the \u0002density\u0003 of it' })], {
-		view: { q: 'density' },
+		view: { archive: true, q: 'density' },
 	});
 
 	const found = screen.container.querySelector('.found')!;
@@ -318,7 +318,9 @@ test('a search row carries the fragment that says why it matched', async () => {
 
 // A publisher's prose, so markup in it is shown rather than run.
 test('markup in a fragment is text', async () => {
-	const screen = await show([entry({ snippet: 'a <b>bold</b> claim' })], { view: { q: 'bold' } });
+	const screen = await show([entry({ snippet: 'a <b>bold</b> claim' })], {
+		view: { archive: true, q: 'bold' },
+	});
 
 	const found = screen.container.querySelector('.found')!;
 	expect(found.querySelector('b')).toBeNull();
@@ -365,7 +367,7 @@ test('a page that lands after the view changed is not appended to the new one', 
 });
 
 test('a search that matched nothing says so in its own words', async () => {
-	const screen = await show([], { view: { q: 'wombat' } });
+	const screen = await show([], { view: { archive: true, q: 'wombat' } });
 
 	await expect.element(screen.getByText('Nothing matched.')).toBeVisible();
 });

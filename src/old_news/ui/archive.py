@@ -2,7 +2,6 @@
 
 import dataclasses
 import datetime
-import uuid
 
 from sqlalchemy import Select, cast, func, literal, or_, select, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -10,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
 from old_news.config import KindleSettings
-from old_news.db import Feed, Item, ItemVersion, Subscription
+from old_news.db import Feed, Item, ItemVersion
 from old_news.ui import cursor, entries, search
 from old_news.ui.query import Query
 
@@ -28,33 +27,22 @@ class BadZone(ValueError):
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Volume:
-    """One bound volume, and how much is in it."""
+class Count:
+    """One value of one dimension, and how much of the result it accounts for."""
 
-    month: str
+    name: str
     items: int
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Run:
-    """One publication's whole run. `dropped` is a feed no longer polled, not one lost."""
+# Every dimension is counted with each filter but its own, so the one already picked is
+# still a choice you can see.
+class Shape:
+    """What a query reached, one dimension at a time."""
 
-    feed_id: uuid.UUID
-    title: str
-    url: str
-    tier: str
-    dropped: bool
-    items: int
-    latest: datetime.datetime
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Contents:
-    """What the archive holds, on two shelves. Both counts are of the same rows."""
-
-    items: int
-    months: tuple[Volume, ...]
-    feeds: tuple[Run, ...]
+    publications: tuple[Count, ...]
+    months: tuple[Count, ...]
+    states: tuple[Count, ...]
     # The masthead is on this screen too, and it asks the same question everywhere.
     updated: datetime.datetime | None
 
@@ -63,40 +51,6 @@ async def _zoned(session: AsyncSession, zone: str) -> str:
     if not await session.scalar(KNOWN_ZONE, {"zone": zone}):
         raise BadZone(zone)
     return zone
-
-
-@db.transactional
-async def contents(session: AsyncSession, *, zone: str = UTC) -> Contents:
-    """The contents page. Months are grouped in the reader's own zone, or they read wrong."""
-    local = func.timezone(await _zoned(session, zone), Item.first_seen_at)
-    volumes = await session.execute(
-        entries.held(
-            func.to_char(func.date_trunc("month", local), MONTH).label("month"),
-            func.count().label("items"),
-        )
-        .group_by("month")
-        .order_by(func.min(Item.first_seen_at).desc())
-    )
-    runs = await session.execute(
-        entries.held(
-            Feed.id.label("feed_id"),
-            Feed.title.label("title"),
-            Feed.url.label("url"),
-            func.coalesce(Subscription.tier, "").label("tier"),
-            func.coalesce(Subscription.active, False).is_(False).label("dropped"),
-            func.count().label("items"),
-            func.max(Item.first_seen_at).label("latest"),
-        )
-        .group_by(Feed.id, Feed.title, Feed.url, Subscription.tier, Subscription.active)
-        .order_by(func.count().desc())
-    )
-    months = tuple(Volume(**row) for row in volumes.mappings())
-    return Contents(
-        items=sum(volume.items for volume in months),
-        months=months,
-        feeds=tuple(Run(**row) for row in runs.mappings()),
-        updated=await session.scalar(entries.last_poll()),
-    )
 
 
 # Postgres does the conversion, by the same copy of tzdata that labels the months.
@@ -168,4 +122,65 @@ async def held(
         listing=await entries.page(session, ordered, entries.bounded(limit)),
         total=await session.scalar(select(func.count()).select_from(narrowed.subquery("narrowed")))
         or 0,
+    )
+
+
+# Dropping one dimension is what keeps a facet switchable: with its own filter applied it
+# would only ever count the one value already chosen.
+def _but(asked: Query, dimension: str) -> Query:
+    dropped: dict[str, dict] = {
+        "publications": {"publications": ()},
+        "months": {"since": None, "until": None},
+        "states": {"states": ()},
+    }
+    return dataclasses.replace(asked, **dropped[dimension])
+
+
+# `_narrowed` leaves the words out, because on the reading path the ranking join applies
+# them. Counting has no ranking, so the rail has to apply them itself or it reports the
+# whole archive against a result of forty-five.
+def _reached(query: Select, asked: Query, zone: str) -> Select:
+    """Everything the query reached, words and all."""
+    narrowed = _narrowed(query, asked, zone)
+    return narrowed.where(search.reaching(asked.wanted)) if asked.wanted else narrowed
+
+
+def _grouped(asked: Query, zone: str, by):
+    """One dimension's counts over everything the rest of the query reached."""
+    counted = _reached(entries.held(by.label("name"), func.count().label("items")), asked, zone)
+    return counted.group_by("name").having(by.is_not(None)).order_by(func.count().desc())
+
+
+def _monthly(zone: str):
+    return func.to_char(func.date_trunc("month", func.timezone(zone, entries.dated())), MONTH)
+
+
+def _states(asked: Query, zone: str):
+    """All four at once: they are four readings of two columns, not four groups."""
+    counted = {
+        "read": Item.read.is_(True),
+        "unread": Item.read.is_(False),
+        "finished": Item.finished_at.is_not(None),
+        "unfinished": Item.finished_at.is_(None),
+    }
+    return _reached(
+        entries.held(*(func.count().filter(where).label(name) for name, where in counted.items())),
+        asked,
+        zone,
+    )
+
+
+@db.transactional
+async def shape(session: AsyncSession, *, asked: Query, zone: str = UTC) -> Shape:
+    """The rail: what is in what the query reached, and what switching one part would give."""
+    where = await _zoned(session, zone)
+    publications = await session.execute(_grouped(_but(asked, "publications"), where, Feed.title))
+    months = await session.execute(_grouped(_but(asked, "months"), where, _monthly(where)))
+    states = (await session.execute(_states(_but(asked, "states"), where))).mappings().one()
+
+    return Shape(
+        publications=tuple(Count(**row) for row in publications.mappings()),
+        months=tuple(Count(**row) for row in months.mappings()),
+        states=tuple(Count(name=name, items=items) for name, items in states.items()),
+        updated=await session.scalar(entries.last_poll()),
     )

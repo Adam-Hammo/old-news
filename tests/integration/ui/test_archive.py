@@ -1,4 +1,4 @@
-"""The contents page, and the one query path off it."""
+"""The one query path, and the shape of what it reached."""
 
 import datetime
 
@@ -6,7 +6,6 @@ import pytest
 
 from old_news import ui
 from old_news.config import KindleSettings
-from old_news.db import Tier
 
 NOW = datetime.datetime.now(datetime.UTC)
 DAY = datetime.timedelta(days=1)
@@ -30,12 +29,17 @@ def _month(month: str) -> str:
     return f"after:{month} before:{year + ordinal // 12}-{ordinal % 12 + 1:02d}"
 
 
-async def test_the_contents_counts_what_the_archive_holds(clean: None, feed, story):
-    feed_id = await feed("wire.example.com", expires_after=DAY)
-    await story(feed_id, "Today")
-    await story(feed_id, "Last year", first_seen_at=NOW - 365 * DAY)
+def _named(counts) -> dict[str, int]:
+    return {count.name: count.items for count in counts}
 
-    assert (await ui.contents()).items == 2
+
+async def test_the_shape_counts_by_publication(clean: None, feed, story):
+    await story(await feed("wire.example.com"), "A bulletin")
+    await story(await feed("essays.example.com"), "An essay")
+
+    shape = await ui.shape(asked=ui.parse(""))
+
+    assert _named(shape.publications) == {"wire.example.com": 1, "essays.example.com": 1}
 
 
 async def test_a_publication_is_named_rather_than_identified(clean: None, feed, story):
@@ -52,17 +56,31 @@ async def test_a_dropped_feeds_run_is_still_held(clean: None, feed, story):
     feed_id = await feed("gone.example.com", active=False)
     await story(feed_id, "From before")
 
-    run = next(row for row in (await ui.contents()).feeds if row.feed_id == feed_id)
-
-    assert (run.dropped, run.items) == (True, 1)
     assert await _titles("from:gone.example.com") == ["From before"]
+    assert _named((await ui.shape(asked=ui.parse(""))).publications) == {"gone.example.com": 1}
 
 
-async def test_a_run_carries_the_tier_it_is_filed_at(clean: None, feed, story):
-    feed_id = await feed("essays.example.com", tier=Tier.KINDLE)
-    await story(feed_id, "An essay")
+# With its own filter applied a facet would only ever count the value already chosen,
+# and switching publication would mean clearing the query first.
+async def test_a_dimension_is_counted_without_its_own_filter(clean: None, feed, story):
+    await story(await feed("wire.example.com"), "A bulletin")
+    await story(await feed("essays.example.com"), "An essay")
 
-    assert (await ui.contents()).feeds[0].tier == Tier.KINDLE
+    shape = await ui.shape(asked=ui.parse("from:essays.example.com"))
+
+    assert _named(shape.publications) == {"wire.example.com": 1, "essays.example.com": 1}
+
+
+async def test_but_the_other_dimensions_still_narrow_it(clean: None, feed, story):
+    wire = await feed("wire.example.com")
+    essays = await feed("essays.example.com")
+    june = datetime.datetime(2026, 6, 15, tzinfo=datetime.UTC)
+    await story(wire, "A bulletin in June", first_seen_at=june)
+    await story(essays, "An essay in July", first_seen_at=june + 30 * DAY)
+
+    shape = await ui.shape(asked=ui.parse(f"from:essays.example.com {_month('2026-06')}"))
+
+    assert _named(shape.publications) == {"wire.example.com": 1}
 
 
 async def test_a_month_is_a_pair_of_dates(clean: None, feed, story):
@@ -77,7 +95,7 @@ async def test_a_month_is_a_pair_of_dates(clean: None, feed, story):
     assert await _titles(_month("2026-06")) == ["In June"]
 
 
-async def test_the_months_shelf_lists_what_is_in_each(clean: None, feed, story):
+async def test_the_shape_lists_what_is_in_each_month(clean: None, feed, story):
     feed_id = await feed("wire.example.com")
     await story(
         feed_id, "In June", first_seen_at=datetime.datetime(2026, 6, 15, tzinfo=datetime.UTC)
@@ -86,9 +104,12 @@ async def test_the_months_shelf_lists_what_is_in_each(clean: None, feed, story):
         feed_id, "In July", first_seen_at=datetime.datetime(2026, 7, 15, tzinfo=datetime.UTC)
     )
 
-    months = (await ui.contents()).months
+    months = (await ui.shape(asked=ui.parse(""))).months
 
-    assert [(volume.month, volume.items) for volume in months] == [("2026-07", 1), ("2026-06", 1)]
+    assert sorted((count.name, count.items) for count in months) == [
+        ("2026-06", 1),
+        ("2026-07", 1),
+    ]
 
 
 async def test_a_month_is_grouped_in_the_readers_own_zone(clean: None, feed, story):
@@ -98,7 +119,9 @@ async def test_a_month_is_grouped_in_the_readers_own_zone(clean: None, feed, sto
         feed_id, "Late July", first_seen_at=datetime.datetime(2026, 7, 31, 22, tzinfo=datetime.UTC)
     )
 
-    assert (await ui.contents(zone=SYDNEY)).months[0].month == "2026-08"
+    assert [count.name for count in (await ui.shape(asked=ui.parse(""), zone=SYDNEY)).months] == [
+        "2026-08"
+    ]
     assert await _titles(_month("2026-08"), zone=SYDNEY) == ["Late July"]
     assert await _titles(_month("2026-07"), zone=SYDNEY) == []
 
@@ -150,6 +173,17 @@ async def test_what_has_aged_out_of_the_river_is_still_held(clean: None, feed, s
     assert [entry.title for entry in (await ui.river(KINDLE)).entries] == []
 
 
+async def test_the_shape_counts_the_states_too(clean: None, feed, story):
+    feed_id = await feed("essays.example.com")
+    read = await story(feed_id, "Opened", body="Some text.")
+    await story(feed_id, "Untouched", body="Some text.")
+    await ui.mark_opened(read)
+
+    states = _named((await ui.shape(asked=ui.parse(""))).states)
+
+    assert (states["read"], states["unread"], states["finished"]) == (1, 1, 0)
+
+
 async def test_the_state_flags_are_the_ones_already_on_the_row(clean: None, feed, story):
     feed_id = await feed("essays.example.com")
     read = await story(feed_id, "Opened", body="Some text.")
@@ -172,7 +206,7 @@ async def test_the_state_flags_are_the_ones_already_on_the_row(clean: None, feed
 )
 async def test_a_zone_postgres_does_not_know_is_refused(clean: None, zone):
     with pytest.raises(ui.BadZone):
-        await ui.contents(zone=zone)
+        await ui.shape(asked=ui.parse(""), zone=zone)
     with pytest.raises(ui.BadZone):
         await _titles(_month("2026-06"), zone=zone)
 
@@ -188,6 +222,20 @@ async def test_the_month_a_row_is_counted_under_is_the_month_it_is_served_on(
         at = datetime.datetime(2026, month, 1, 6, 30, tzinfo=datetime.UTC)
         await story(feed_id, f"Month {month}", first_seen_at=at)
 
-    for volume in (await ui.contents(zone=zone)).months:
-        shelved = await _titles(_month(volume.month), zone=zone)
-        assert len(shelved) == volume.items, f"{zone} {volume.month}"
+    for count in (await ui.shape(asked=ui.parse(""), zone=zone)).months:
+        served = await _titles(_month(count.name), zone=zone, limit=100)
+        assert len(served) == count.items, f"{zone} {count.name}"
+
+
+# The rail once reported the whole archive against a result of forty-five, because the
+# words are applied by the ranking join and counting has no join to apply them with.
+async def test_the_shape_counts_only_what_the_words_reached(clean: None, feed, story):
+    wire = await feed("wire.example.com")
+    essays = await feed("essays.example.com")
+    await story(wire, "A bulletin", body="Nothing about housing at all.")
+    await story(wire, "Another bulletin", body="Still nothing.")
+    await story(essays, "An essay", body="Housing density fell.")
+
+    shape = await ui.shape(asked=ui.parse("density"))
+
+    assert _named(shape.publications) == {"essays.example.com": 1}

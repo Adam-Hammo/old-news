@@ -4,15 +4,15 @@
  */
 
 export interface paths {
-	'/archive': {
+	'/archive/facets': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		/** What the archive holds, by publication and by month. */
-		get: operations['ArchiveContents'];
+		/** What is in what the query reached, dimension by dimension. */
+		get: operations['ArchiveFacetsFacets'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -320,12 +320,10 @@ export interface components {
 			lead: string;
 			lead_alt: string;
 		};
-		/** Contents */
-		Contents: {
+		/** Count */
+		Count: {
+			name: string;
 			items: number;
-			months: components['schemas']['Volume'][];
-			feeds: components['schemas']['Run'][];
-			updated: string | null;
 		};
 		/** Entry */
 		Entry: {
@@ -426,18 +424,6 @@ export interface components {
 			display: string;
 			since_visible: number;
 		};
-		/** Run */
-		Run: {
-			/** Format: uuid */
-			feed_id: string;
-			title: string;
-			url: string;
-			tier: string;
-			dropped: boolean;
-			items: number;
-			/** Format: date-time */
-			latest: string;
-		};
 		/** Section */
 		Section: {
 			name: string;
@@ -448,10 +434,12 @@ export interface components {
 			name: string;
 			value: string;
 		};
-		/** Volume */
-		Volume: {
-			month: string;
-			items: number;
+		/** Shape */
+		Shape: {
+			publications: components['schemas']['Count'][];
+			months: components['schemas']['Count'][];
+			states: components['schemas']['Count'][];
+			updated: string | null;
 		};
 	};
 	responses: never;
@@ -462,9 +450,11 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-	ArchiveContents: {
+	ArchiveFacetsFacets: {
 		parameters: {
 			query?: {
+				/** @description Words, and the operators `from:` `by:` `after:` `before:` `is:`. A quoted run is adjacent, a leading minus excludes. Empty is everything held. */
+				q?: string;
 				/** @description An IANA zone; months and dates are read in it. */
 				zone?: string;
 			};
@@ -480,7 +470,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['Contents'];
+					'application/json': components['schemas']['Shape'];
 				};
 			};
 			/** @description Bad request syntax or unsupported method */

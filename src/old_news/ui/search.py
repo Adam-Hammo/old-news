@@ -94,6 +94,18 @@ def without(terms: Sequence[Term]) -> ColumnElement[bool]:
     return Item.id.not_in(titled.union(bodied))
 
 
+# Membership only: the rail counts what a query found and has no order to put it in.
+def reaching(terms: Sequence[Term]) -> ColumnElement[bool]:
+    """Items every one of these terms reaches, by headline or by reading."""
+    titled = select(ItemVersion.item_id).where(
+        ItemVersion.is_head, _reaches(ItemVersion.id, "title", terms)
+    )
+    bodied = _bodies(ItemVersion.item_id).where(
+        ItemVersion.is_head, _reaches(Extraction.id, "body", terms)
+    )
+    return Item.id.in_(titled.union(bodied))
+
+
 def _hits(terms: Sequence[Term]):
     """Every item the terms reach, by headline and by reading, as one set of ids."""
     # Head versions only: a liveblog rewrites its headline, and matching the one it

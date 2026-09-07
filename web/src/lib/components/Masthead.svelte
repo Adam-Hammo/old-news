@@ -5,10 +5,9 @@
 
 	let {
 		view = links.NOWHERE,
-		inside = false,
 		updated = null,
 		through = 1,
-	}: { view?: View; inside?: boolean; updated?: string | null; through?: number } = $props();
+	}: { view?: View; updated?: string | null; through?: number } = $props();
 
 	const polled = $derived(stamp(updated));
 	const dated = today();
@@ -16,7 +15,7 @@
 	// Anywhere in the archive, the nameplate says so and the crossing goes back to the
 	// river. The foot of the river carries a door too, but reaching it means paging to
 	// the end of the list.
-	const archive = $derived(inside || links.archived(view));
+	const archive = $derived(links.archived(view));
 </script>
 
 <header>
@@ -30,7 +29,7 @@
 				>{polled ? `Updated ${polled}` : 'Not polled yet'}</span
 			>
 			<span class="sep"></span><a
-				href={archive ? links.list(links.NOWHERE) : links.contents()}
+				href={archive ? links.list(links.NOWHERE) : links.archive()}
 				class="linked">{archive ? 'River' : 'Archive'}</a
 			>
 			<span class="sep"></span><a href="/settings" class="linked">Settings</a>

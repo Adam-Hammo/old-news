@@ -6,10 +6,16 @@
 	import * as links from '#lib/links.ts';
 	import type { View } from '#lib/links.ts';
 	import { opened } from '#lib/opened.ts';
+	import { stamp } from '#lib/format.ts';
 	import { marked } from '#lib/snippet.ts';
 	import { whenVisible } from '#lib/visible.ts';
 
-	let { page, view, selected }: { page: Listing; view: View; selected: string } = $props();
+	let {
+		page,
+		view,
+		selected,
+		dense = false,
+	}: { page: Listing; view: View; selected: string; dense?: boolean } = $props();
 
 	// One discriminator now: in the archive is exactly "there is a query".
 	const archived = $derived(links.archived(view));
@@ -79,7 +85,7 @@
 	const opening = $derived(navigating.to?.params?.id ?? '');
 </script>
 
-<ol>
+<ol class:dense>
 	{#each entries as entry (entry.id)}
 		{@const kindle = mark(entry)}
 		<li>
@@ -102,6 +108,9 @@
 						>
 					{/if}
 				</p>
+				{#if dense && entry.published_at}
+					<span class="when">{stamp(entry.published_at)}</span>
+				{/if}
 				<!-- Rendered as text, never as markup: the fragment is a publisher's prose. -->
 				{#if entry.snippet}
 					<p class="found">
@@ -126,7 +135,7 @@
 {:else}
 	<!-- The end of the river is where the door has to be, or ageing out loses things. -->
 	<p class="note label end">
-		<a href={links.contents()}>Older stories are in the archive &nbsp;&rarr;</a>
+		<a href={links.archive()}>Older stories are in the archive &nbsp;&rarr;</a>
 	</p>
 {/if}
 
@@ -272,5 +281,48 @@
 
 	.note {
 		padding: 1.4rem var(--gutter);
+	}
+
+	/* The archive is a tool rather than a paper: the headline, who ran it and when line up
+	   in columns so a hundred rows can be read down rather than through. */
+	.dense .row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 2px 14px;
+		align-items: baseline;
+		padding: 8px var(--gutter) 9px;
+	}
+
+	.dense .row > * {
+		max-width: none;
+	}
+
+	.dense h2 {
+		font-size: 15.5px;
+		line-height: 1.2;
+	}
+
+	.dense .by {
+		grid-column: 1;
+		margin-top: 0;
+	}
+
+	.dense .when {
+		grid-row: 1;
+		grid-column: 2;
+		flex: none;
+		font-size: 9.5px;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--ink-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.dense .found {
+		grid-column: 1 / -1;
+		-webkit-line-clamp: 1;
+		line-clamp: 1;
+		margin-top: 2px;
 	}
 </style>

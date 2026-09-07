@@ -3,20 +3,20 @@
 // run of text that cannot break. So each of these is rendered at the narrowest phone
 // there is, with the longest thing it will ever be handed.
 import type {
-	Contents,
 	Entry,
 	Following,
 	Listing,
 	Polling as Poll,
 	Publisher,
 	Section,
+	Shape,
 } from '#lib/api/client.ts';
 import { NOWHERE, type View } from '#lib/links.ts';
 import { expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import ArchiveHead from './ArchiveHead.svelte';
 import Config from './Config.svelte';
-import ContentsView from './Contents.svelte';
+import Facets from './Facets.svelte';
 import Feeds from './Feeds.svelte';
 import Masthead from './Masthead.svelte';
 import Polling from './Polling.svelte';
@@ -63,37 +63,40 @@ async function narrow<T>(component: T, props: Record<string, unknown>) {
 const view = (over: Partial<View> = {}): View => ({ ...NOWHERE, ...over });
 
 test('the masthead, with the longest dateline it has and the archive beside it', async () => {
-	const container = await narrow(Masthead, { view: view({ q: 'from:x' }), updated: null });
+	const container = await narrow(Masthead, {
+		view: view({ archive: true, q: 'from:x' }),
+		updated: null,
+	});
 
 	expect(through(container)).toEqual([]);
 });
 
-test('the archive, with a six-figure count against a name that will not fit', async () => {
-	const held: Contents = {
-		items: BIG,
-		months: [{ month: '2026-09', items: BIG }],
-		feeds: [
-			{
-				feed_id: 'f1',
-				title: LONG_NAME,
-				url: 'https://example.com/feed',
-				tier: 'kindle',
-				dropped: false,
-				items: BIG,
-				latest: new Date().toISOString(),
-			},
+test('the rail, with a publication name no column has room for', async () => {
+	const shape: Shape = {
+		publications: [
+			{ name: LONG_NAME, items: BIG },
+			{ name: 'ABC News', items: 4 },
+		],
+		months: [{ name: '2026-09', items: BIG }],
+		states: [
+			{ name: 'unread', items: BIG },
+			{ name: 'read', items: 3 },
+			{ name: 'finished', items: 1 },
 		],
 		updated: null,
 	};
 
-	const container = await narrow(ContentsView, { held });
+	const container = await narrow(Facets, { shape, view: view({ archive: true }) });
 
 	expect(through(container)).toEqual([]);
 });
 
 test('the archive header, with a query too long for the field and a six-figure count', async () => {
 	const container = await narrow(ArchiveHead, {
-		view: view({ q: `from:"${LONG_NAME}" after:2026-08 before:2026-09 is:unread` }),
+		view: view({
+			archive: true,
+			q: `from:"${LONG_NAME}" after:2026-08 before:2026-09 is:unread`,
+		}),
 		total: BIG,
 	});
 
