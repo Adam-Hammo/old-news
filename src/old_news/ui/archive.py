@@ -3,7 +3,7 @@
 import dataclasses
 import datetime
 
-from sqlalchemy import Select, cast, func, literal, or_, select, text
+from sqlalchemy import Select, cast, desc, func, literal, or_, select, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -146,7 +146,6 @@ async def held(
 def _but(asked: Query, dimension: str) -> Query:
     dropped: dict[str, dict] = {
         "publications": {"publications": ()},
-        "months": {"since": None, "until": None},
         "states": {"states": ()},
     }
     return dataclasses.replace(asked, **dropped[dimension])
@@ -161,17 +160,41 @@ def _reached(query: Select, asked: Query, zone: str) -> Select:
     return narrowed.where(search.reaching(asked.wanted)) if asked.wanted else narrowed
 
 
-def _grouped(asked: Query, zone: str, by):
+def _grouped(asked: Query, zone: str, by, *, order):
     """One dimension's counts over everything the rest of the query reached."""
     counted = _reached(entries.held(by.label("name"), func.count().label("items")), asked, zone)
     # A blank name is a row nobody can click: `from:` with nothing after it is a bad query.
+    return counted.group_by("name").having(func.coalesce(by, "") != "").order_by(order)
+
+
+YEAR = "YYYY"
+
+
+# Fifty months in a column is not a date facet. Years until the query is inside one, then
+# that year's months — the same click that narrows is what drills in, so there is no
+# expand-and-collapse to build or to explain.
+def _dates(asked: Query) -> tuple[Query, bool]:
+    """The query a date facet counts against, and whether it counts in months."""
+    bounded = asked.since is not None and asked.until is not None
+    if not (bounded and asked.until.year - asked.since.year <= 1):
+        # Years, over the whole span: switching year has to still be a choice you can see.
+        return dataclasses.replace(asked, since=None, until=None), False
+    # Months of the year already chosen. Widened to that year rather than dropped, or the
+    # facet lists every month the archive has ever held and the drill goes nowhere.
+    year = asked.since.year
     return (
-        counted.group_by("name").having(func.coalesce(by, "") != "").order_by(func.count().desc())
+        dataclasses.replace(
+            asked, since=datetime.date(year, 1, 1), until=datetime.date(year + 1, 1, 1)
+        ),
+        True,
     )
 
 
-def _monthly(zone: str):
-    return func.to_char(func.date_trunc("month", func.timezone(zone, entries.dated())), MONTH)
+def _period(zone: str, monthly: bool):
+    local = func.timezone(zone, entries.dated())
+    return func.to_char(
+        func.date_trunc("month" if monthly else "year", local), MONTH if monthly else YEAR
+    )
 
 
 def _states(asked: Query, zone: str):
@@ -194,8 +217,17 @@ async def shape(session: AsyncSession, *, asked: Query, zone: str = UTC) -> Shap
     """The rail: what is in what the query reached, and what switching one part would give."""
     where = await _zoned(session, zone)
     named = func.coalesce(func.nullif(Feed.title, ""), Feed.url)
-    publications = await session.execute(_grouped(_but(asked, "publications"), where, named))
-    months = await session.execute(_grouped(_but(asked, "months"), where, _monthly(where)))
+    publications = await session.execute(
+        # Biggest first: which publications an archive is mostly made of is the answer.
+        _grouped(_but(asked, "publications"), where, named, order=desc("items"))
+    )
+    dated, monthly = _dates(asked)
+    months = await session.execute(
+        # Newest first. A period is a place on a line and reading them by size is no
+        # ordering at all — `YYYY` and `YYYY-MM` both sort as text exactly as they sort
+        # as dates.
+        _grouped(dated, where, _period(where, monthly), order=desc("name"))
+    )
     states = (await session.execute(_states(_but(asked, "states"), where))).mappings().one()
 
     return Shape(

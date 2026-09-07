@@ -7,14 +7,24 @@ import pytest
 JUNE = datetime.datetime(2026, 6, 15, tzinfo=datetime.UTC)
 
 
-async def test_the_rail_counts_by_publication_and_month(served, feed, story):
+async def test_the_rail_counts_by_publication_and_year(served, feed, story):
     await story(await feed("essays.example.com"), "An essay", first_seen_at=JUNE)
 
     body = (await (await served()).get("/archive/facets")).json()
 
     assert body["publications"] == [{"name": "essays.example.com", "items": 1}]
-    assert body["months"] == [{"name": "2026-06", "items": 1}]
+    # Years, until the query is inside one. Fifty months in a column is not a date facet.
+    assert body["months"] == [{"name": "2026", "items": 1}]
     assert {count["name"]: count["items"] for count in body["states"]}["unread"] == 1
+
+
+async def test_and_inside_a_year_it_counts_that_years_months(served, feed, story):
+    await story(await feed("essays.example.com"), "An essay", first_seen_at=JUNE)
+
+    params = {"q": "after:2026 before:2027"}
+    body = (await (await served()).get("/archive/facets", params=params)).json()
+
+    assert body["months"] == [{"name": "2026-06", "items": 1}]
 
 
 # What the rail draws is the shape of what the query reached, not of the whole archive.

@@ -6,6 +6,7 @@
 	let { view, total = null }: { view: View; total?: number | null } = $props();
 
 	const counted = new Intl.NumberFormat();
+	const narrowing = $derived(links.applied(view));
 </script>
 
 <nav>
@@ -17,6 +18,18 @@
 	<div class="again"><SearchBox terms={view.q} /></div>
 	<span class="tally">{counted.format(total ?? 0)} {total === 1 ? 'piece' : 'pieces'}</span>
 </nav>
+{#if narrowing.length}
+	<!-- What is applied, as words. The rail cannot carry this: once the query is inside a
+	     year the rail lists that year's months, so the row you drilled through is gone. -->
+	<p class="narrowed">
+		<span class="label">Narrowed by</span>
+		{#each narrowing as one (one.label)}
+			<a href={links.search(one.without)} aria-label="Stop narrowing by {one.label}">
+				{one.label}<em aria-hidden="true">×</em>
+			</a>
+		{/each}
+	</p>
+{/if}
 <div class="edge"></div>
 
 <style>
@@ -56,6 +69,40 @@
 		flex: none;
 		color: var(--ink-faint);
 		font-variant-numeric: tabular-nums;
+	}
+
+	.narrowed {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		align-items: center;
+		margin: 0;
+		padding: 0 var(--gutter) 9px;
+		background: var(--paper);
+	}
+
+	.narrowed .label {
+		margin-right: 2px;
+	}
+
+	.narrowed a {
+		display: inline-flex;
+		gap: 7px;
+		align-items: baseline;
+		padding: 4px 8px;
+		font-size: 10.5px;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--paper);
+		background: var(--ink);
+	}
+
+	.narrowed em {
+		font-style: normal;
+		font-weight: 400;
+		font-size: 12px;
+		line-height: 1;
 	}
 
 	.edge {

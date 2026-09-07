@@ -25,6 +25,11 @@ async def _titles(typed: str = "", **kwargs) -> list[str]:
     return [entry.title for entry in (await _found(typed, **kwargs)).listing.entries]
 
 
+def _year(year: int) -> str:
+    """A year as the grammar spells one, which is what drills the date facet into months."""
+    return f"after:{year} before:{year + 1}"
+
+
 def _month(month: str) -> str:
     """A month as the grammar spells one: its first day, up to the next month's."""
     year, ordinal = (int(part) for part in month.split("-"))
@@ -103,6 +108,33 @@ async def test_a_month_is_a_pair_of_dates(clean: None, feed, story):
     assert await _titles(_month("2026-06")) == ["In June"]
 
 
+# A month is a place on a line. Reading them biggest first is no ordering at all — and
+# it is what the rail did, so fifty months came back shuffled.
+async def test_the_months_come_back_newest_first_however_big_they_are(clean: None, feed, story):
+    feed_id = await feed("wire.example.com")
+    for month, pieces in ((6, 3), (7, 1), (8, 2)):
+        at = datetime.datetime(2026, month, 15, tzinfo=datetime.UTC)
+        for piece in range(pieces):
+            await story(feed_id, f"{month}-{piece}", first_seen_at=at)
+
+    months = (await ui.shape(asked=ui.parse(_year(2026)))).months
+
+    assert [count.name for count in months] == ["2026-08", "2026-07", "2026-06"]
+
+
+# Which publications an archive is mostly made of is the answer that dimension has.
+async def test_the_publications_come_back_biggest_first(clean: None, feed, story):
+    small = await feed("small.example.com")
+    big = await feed("big.example.com")
+    await story(small, "One")
+    for piece in range(3):
+        await story(big, f"Of three {piece}")
+
+    publications = (await ui.shape(asked=ui.parse(""))).publications
+
+    assert [count.name for count in publications] == ["big.example.com", "small.example.com"]
+
+
 async def test_the_shape_lists_what_is_in_each_month(clean: None, feed, story):
     feed_id = await feed("wire.example.com")
     await story(
@@ -112,7 +144,7 @@ async def test_the_shape_lists_what_is_in_each_month(clean: None, feed, story):
         feed_id, "In July", first_seen_at=datetime.datetime(2026, 7, 15, tzinfo=datetime.UTC)
     )
 
-    months = (await ui.shape(asked=ui.parse(""))).months
+    months = (await ui.shape(asked=ui.parse(_year(2026)))).months
 
     assert sorted((count.name, count.items) for count in months) == [
         ("2026-06", 1),
@@ -127,7 +159,8 @@ async def test_a_month_is_grouped_in_the_readers_own_zone(clean: None, feed, sto
         feed_id, "Late July", first_seen_at=datetime.datetime(2026, 7, 31, 22, tzinfo=datetime.UTC)
     )
 
-    assert [count.name for count in (await ui.shape(asked=ui.parse(""), zone=SYDNEY)).months] == [
+    inside = ui.parse(_year(2026))
+    assert [count.name for count in (await ui.shape(asked=inside, zone=SYDNEY)).months] == [
         "2026-08"
     ]
     assert await _titles(_month("2026-08"), zone=SYDNEY) == ["Late July"]
@@ -230,7 +263,8 @@ async def test_the_month_a_row_is_counted_under_is_the_month_it_is_served_on(
         at = datetime.datetime(2026, month, 1, 6, 30, tzinfo=datetime.UTC)
         await story(feed_id, f"Month {month}", first_seen_at=at)
 
-    for count in (await ui.shape(asked=ui.parse(""), zone=zone)).months:
+    inside = ui.parse(_year(2026))
+    for count in (await ui.shape(asked=inside, zone=zone)).months:
         served = await _titles(_month(count.name), zone=zone, limit=100)
         assert len(served) == count.items, f"{zone} {count.name}"
 
@@ -302,3 +336,43 @@ async def test_an_untitled_feed_is_never_a_blank_row_on_the_rail(clean: None, fe
     names = [count.name for count in (await ui.shape(asked=ui.parse(""))).publications]
 
     assert names == ["https://untitled.example.com/feed.xml"]
+
+
+# Fifty months in a column is not a date facet. Years, then that year's months.
+async def test_the_date_facet_counts_years_until_the_query_is_inside_one(clean: None, feed, story):
+    feed_id = await feed("wire.example.com")
+    for year in (2024, 2025, 2026):
+        at = datetime.datetime(year, 6, 15, tzinfo=datetime.UTC)
+        await story(feed_id, f"In {year}", first_seen_at=at)
+
+    years = (await ui.shape(asked=ui.parse(""))).months
+
+    assert [count.name for count in years] == ["2026", "2025", "2024"]
+
+
+# Widened to the year rather than dropped: dropping it listed every month the archive has
+# ever held, so the drill went nowhere.
+async def test_and_inside_one_it_counts_that_year_and_no_other(clean: None, feed, story):
+    feed_id = await feed("wire.example.com")
+    for at in (
+        datetime.datetime(2025, 11, 1, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 3, 1, tzinfo=datetime.UTC),
+        datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC),
+    ):
+        await story(feed_id, at.isoformat(), first_seen_at=at)
+
+    months = (await ui.shape(asked=ui.parse(_year(2026)))).months
+
+    assert [count.name for count in months] == ["2026-09", "2026-03"]
+
+
+# So that switching month inside a year is still a choice you can see.
+async def test_and_a_month_already_chosen_still_shows_its_neighbours(clean: None, feed, story):
+    feed_id = await feed("wire.example.com")
+    for month in (3, 9):
+        at = datetime.datetime(2026, month, 1, tzinfo=datetime.UTC)
+        await story(feed_id, f"Month {month}", first_seen_at=at)
+
+    months = (await ui.shape(asked=ui.parse(_month("2026-09")))).months
+
+    assert [count.name for count in months] == ["2026-09", "2026-03"]
