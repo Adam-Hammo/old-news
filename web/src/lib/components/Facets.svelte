@@ -177,13 +177,15 @@
 			padding: 7px 0;
 		}
 
+		/* The gutter is on what is inside, not on the scroller: `position: sticky` resolves
+		   against the padding box, so a padded row slid its heading out to the screen edge
+		   as soon as it was scrolled. */
 		section {
 			display: flex;
 			align-items: center;
 			gap: 8px;
 			overflow-x: auto;
 			scrollbar-width: none;
-			padding: 0 var(--gutter);
 		}
 
 		section::-webkit-scrollbar {
@@ -196,7 +198,7 @@
 			left: 0;
 			z-index: 1;
 			margin: 0;
-			padding: 0 6px 0 0;
+			padding: 0 8px 0 var(--gutter);
 			border-bottom: 0;
 			white-space: nowrap;
 			background: var(--paper);
@@ -213,6 +215,7 @@
 			gap: 6px;
 			max-height: none;
 			overflow-y: visible;
+			padding-right: var(--gutter);
 		}
 
 		li a {

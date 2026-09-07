@@ -10,8 +10,11 @@ class IngestSettings(BaseModel):
     min_interval_seconds: int = 5 * 60
     max_interval_seconds: int = 6 * 60 * 60
 
-    # Failure backoff: interval * (factor ** consecutive_failures), capped at max.
+    # Failure backoff: interval * (factor ** consecutive_failures), on its own ceiling.
+    # How long a quiet feed may go unseen and how long a publisher gets to be down are
+    # different questions, and sharing one number meant polling faster gave up sooner.
     backoff_factor: float = 2.0
+    max_backoff_seconds: int = 24 * 60 * 60
     max_consecutive_failures: int = 10
 
     # A feed that publishes gets polled sooner, one that never does drifts later. The

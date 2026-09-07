@@ -6,8 +6,10 @@
 # empty database, and `restic check` verifies the repository rather than its
 # contents. Size over time is what catches a backup quietly emptying out.
 #
-# raw-data is also the Backblaze bill — it is what the bucket stores after restic's
-# own dedup and compression, which no B2-side metric would tell us any better.
+# raw-data is what the snapshots still reference, after restic's own dedup and
+# compression. It was the Backblaze bill when every night pruned; now that the repack is
+# weekly it is the floor under it, and the gap is whatever Sunday has yet to sweep up.
+# Still the number worth watching: a backup quietly emptying out shows here first.
 set -uo pipefail
 
 # Every exit here is 0: telemetry must never be the reason a good backup is

@@ -223,12 +223,13 @@ async def test_a_long_retry_after_overrides_the_backoff_policy(feed, fetcher, se
 
 
 async def test_a_dated_retry_after_falls_back_to_the_maximum(feed, fetcher, settings):
-    """The header may be an HTTP date; backing right off is the safe reading."""
+    """The header may be an HTTP date; backing right off is the safe reading. Off the
+    fault ceiling, not the healthy one: a server saying no is a fault to wait out."""
     STATE.update(status=503, retry_after="Wed, 21 Oct 2026 07:28:00 GMT")
 
     wait = await _wait_after_poll(feed, fetcher, settings)
 
-    assert wait == settings.ingest.max_interval_seconds
+    assert wait == settings.ingest.max_backoff_seconds
 
 
 async def test_a_rate_limit_with_no_retry_after_uses_the_backoff_policy(feed, fetcher, settings):

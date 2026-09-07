@@ -6,19 +6,28 @@ from old_news.config import IngestSettings
 from old_news.politeness import backoff
 
 
-def policy(settings: IngestSettings) -> backoff.Policy:
-    """A feed's retry bounds, in the shared shape."""
+def _bounds(settings: IngestSettings, ceiling: int) -> backoff.Policy:
     return backoff.Policy(
         minimum_seconds=settings.min_interval_seconds,
-        maximum_seconds=settings.max_interval_seconds,
+        maximum_seconds=ceiling,
         factor=settings.backoff_factor,
         max_failures=settings.max_consecutive_failures,
     )
 
 
+def policy(settings: IngestSettings) -> backoff.Policy:
+    """A healthy feed's bounds: how long a quiet one may go unseen."""
+    return _bounds(settings, settings.max_interval_seconds)
+
+
+def waiting_out(settings: IngestSettings) -> backoff.Policy:
+    """A feed that is not answering: how long a publisher gets to be down."""
+    return _bounds(settings, settings.max_backoff_seconds)
+
+
 def clamp_interval(seconds: float, settings: IngestSettings) -> int:
-    """Any wait, held inside the configured bounds. `Retry-After` needs it too."""
-    return backoff.clamp(seconds, policy(settings))
+    """A wait somebody else asked for, held inside the bounds we wait out a fault within."""
+    return backoff.clamp(seconds, waiting_out(settings))
 
 
 def next_interval(
@@ -30,12 +39,14 @@ def next_interval(
     ttl_seconds: int | None = None,
 ) -> int:
     """How long to wait before the next poll. A feed that published is visited sooner."""
-    bounds = policy(settings)
     if failures > 0:
         clamped = backoff.interval(
-            bounds, failures=failures, base_seconds=settings.default_interval_seconds
+            waiting_out(settings),
+            failures=failures,
+            base_seconds=settings.default_interval_seconds,
         )
     else:
+        bounds = policy(settings)
         base = current_seconds or settings.default_interval_seconds
         multiplier = (
             settings.busy_interval_multiplier if new_items else settings.idle_interval_multiplier

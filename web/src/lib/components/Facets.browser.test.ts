@@ -155,7 +155,13 @@ test('every group keeps its heading and scrolls its own list', async () => {
 // telling where one ends and the next starts.
 test('on a phone the groups keep their order and their names', async () => {
 	await page.viewport(430, 800);
-	const screen = await show();
+	// Enough publications that the row genuinely scrolls, or the sticky check below is
+	// asking a question about a row that never moves.
+	const publications = Array.from({ length: 30 }, (_, at) => ({
+		name: `Publication number ${at}`,
+		items: 30 - at,
+	}));
+	const screen = await show({}, { publications });
 
 	const container = screen.container as HTMLElement;
 	const headings = [...container.querySelectorAll('h2')];
@@ -169,11 +175,27 @@ test('on a phone the groups keep their order and their names', async () => {
 	}
 	// A row each, stacked in that order: one row for all three put `You` five thousand
 	// pixels along, behind every publication there is.
-	const sections = [...container.querySelectorAll('section')].map((s) =>
-		s.getBoundingClientRect(),
-	);
-	expect(sections[0].top).toBeLessThan(sections[1].top);
-	expect(sections[1].top).toBeLessThan(sections[2].top);
-	// Every one of them starts at the same margin, so none is off to the side.
-	expect(new Set(sections.map((s) => Math.round(s.left))).size).toBe(1);
+	const rows = [...container.querySelectorAll('section')];
+	const tops = rows.map((row) => row.getBoundingClientRect().top);
+	expect(tops[0]).toBeLessThan(tops[1]);
+	expect(tops[1]).toBeLessThan(tops[2]);
+
+	// The headings, not the rows: a row spans the screen either way, so measuring one says
+	// nothing about the margin the labels line up on.
+	// Where the label's text lands, not where its box does: the gutter is the heading's
+	// own padding, so it sticks to the edge and the words still sit on the margin.
+	const margin = (at: number) =>
+		Math.round(
+			headings[at].getBoundingClientRect().left +
+				parseFloat(getComputedStyle(headings[at]).paddingLeft),
+		);
+	expect(new Set([margin(0), margin(1), margin(2)])).toEqual(new Set([margin(0)]));
+	expect(margin(0)).toBeGreaterThan(0);
+
+	// And it stays there once the row has been scrolled along, which is what sticky is for.
+	const before = margin(1);
+	rows[1].scrollLeft = 400;
+	await new Promise((painted) => requestAnimationFrame(painted));
+	expect(rows[1].scrollLeft).toBeGreaterThan(0);
+	expect(margin(1)).toBe(before);
 });
