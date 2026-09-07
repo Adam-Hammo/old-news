@@ -13,32 +13,50 @@
 
 	const archived = $derived(links.archived(view));
 	const empty = $derived(
-		view.q ? 'Nothing matched.' : archived ? 'Nothing on this shelf.' : 'Nothing here yet.',
+		view.q ? 'Nothing matched.' : archived ? 'Nothing held here.' : 'Nothing here yet.',
 	);
 
-	// Pages fetched after the first, which the layout's load knows nothing about.
-	let extra = $state<Entry[]>([]);
-	let cursor = $state('');
+	// Pages fetched after the first, tagged with what they were fetched behind. Reconciled
+	// in a `$derived` rather than cleared in an `$effect`: an effect runs after the render
+	// that would already have drawn a refetched first page beside rows it now repeats, and
+	// one duplicate key takes the whole screen down.
+	let appended = $state.raw<{
+		of: View | null;
+		behind: string;
+		entries: Entry[];
+		cursor: string;
+	}>({
+		of: null,
+		behind: '',
+		entries: [],
+		cursor: '',
+	});
 	let loading = $state(false);
 	let failed = $state(false);
 
-	$effect(() => {
-		// Reading `page.cursor` is what subscribes this, so a new first page — a section
-		// change, or an invalidation — replaces whatever had been appended to the old one.
-		extra = [];
-		cursor = page.cursor;
-		failed = false;
-	});
-
-	const entries = $derived([...page.entries, ...extra]);
+	// Both by identity, which is what the tag is raw for: `$state` hands back a proxy of
+	// the view rather than the view. Two views can end their first page on the same row,
+	// so the cursor alone does not say these rows belong under the one on screen.
+	const beyond = $derived(
+		appended.of === view && appended.behind === page.cursor ? appended : null,
+	);
+	const entries = $derived([...page.entries, ...(beyond?.entries ?? [])]);
+	const cursor = $derived(beyond ? beyond.cursor : page.cursor);
 
 	async function more() {
-		if (!cursor || loading) return;
+		const of = view;
+		const behind = page.cursor;
+		const at = cursor;
+		if (!at || loading) return;
 		loading = true;
 		try {
-			const next = (await api.listing(fetch, view, cursor)).listing;
-			extra = [...extra, ...next.entries];
-			cursor = next.cursor;
+			const next = (await api.listing(fetch, of, at)).listing;
+			appended = {
+				of,
+				behind,
+				entries: [...(beyond?.entries ?? []), ...next.entries],
+				cursor: next.cursor,
+			};
 			failed = false;
 		} catch {
 			failed = true;
@@ -105,7 +123,7 @@
 {:else if cursor}
 	<div use:whenVisible={more} class="note label more">{loading ? 'Loading…' : ''}</div>
 {:else if archived}
-	<p class="note label end">That is the whole shelf.</p>
+	<p class="note label end">That is everything held here.</p>
 {:else}
 	<!-- The end of the river is where the door has to be, or ageing out loses things. -->
 	<p class="note label end">

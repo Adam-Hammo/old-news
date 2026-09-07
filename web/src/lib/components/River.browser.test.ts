@@ -279,18 +279,18 @@ test('the foot of the river is the door to the archive', async () => {
 		.toHaveAttribute('href', '/archive');
 });
 
-// A shelf has an end, which is the whole reason it is a shelf and not the river.
-test('a shelf says where it stops rather than offering another door', async () => {
+// The archive has an end, which is the whole reason it is not the river.
+test('the archive says where it stops rather than offering another door', async () => {
 	const screen = await show([entry()], { view: { feed: 'f1' } });
 
-	await expect.element(screen.getByText('That is the whole shelf.')).toBeVisible();
+	await expect.element(screen.getByText('That is everything held here.')).toBeVisible();
 	expect(screen.container.querySelectorAll('.end a')).toHaveLength(0);
 });
 
-test('an empty shelf says so in its own words', async () => {
+test('an empty run says so in its own words', async () => {
 	const screen = await show([], { view: { month: '2026-06' } });
 
-	await expect.element(screen.getByText('Nothing on this shelf.')).toBeVisible();
+	await expect.element(screen.getByText('Nothing held here.')).toBeVisible();
 });
 
 // Not the end of the list, so not where the door belongs.
@@ -300,7 +300,7 @@ test('a page still loading offers no door', async () => {
 	expect(screen.container.querySelectorAll('.end')).toHaveLength(0);
 });
 
-test('the shelf travels with a row link, so coming back stays on the shelf', async () => {
+test('the archive keys travel with a row link, so coming back lands where you left', async () => {
 	const screen = await show([entry({ id: 'abc' })], {
 		view: { month: '2026-06', tier: 'archive' },
 	});
@@ -334,6 +334,39 @@ test('a river row carries no fragment', async () => {
 	const screen = await show([entry()]);
 
 	expect(screen.container.querySelector('.found')).toBeNull();
+});
+
+// A refetched first page can repeat a row already appended under it: an item ageing out
+// of the river moves the boundary up. Rendering both is a duplicate key, and Svelte takes
+// the whole screen down for one.
+test('a refreshed first page that repeats an appended row does not take the screen down', async () => {
+	const later = entry({ id: 'bbb', title: 'Later that week' });
+	next.answer = () => Promise.resolve(result([later]));
+
+	const screen = await show([entry()], {}, 'page-2');
+	await expect.element(screen.getByText('Later that week')).toBeVisible();
+
+	// The row above it aged out, so the first page now ends where the second one started.
+	await screen.rerender({ page: page([later], 'page-2-again') });
+
+	await expect.poll(() => screen.container.querySelectorAll('li').length).toBe(1);
+});
+
+// Two views can end their first page on the same row, so the cursor alone does not say
+// these rows belong under the list that is on screen now.
+test('a page that lands after the view changed is not appended to the new one', async () => {
+	let land: (answer: unknown) => void = () => {};
+	next.answer = () => new Promise((resolve) => (land = resolve));
+
+	const screen = await show([entry()], {}, 'page-2');
+	await expect.poll(() => next.asked).toEqual(['page-2']);
+
+	await screen.rerender({ view: { ...NOWHERE, section: 'Essays' } });
+	land(result([entry({ id: 'bbb', title: 'Later that week' })]));
+	// Settled, not polled: polling for a row that must not arrive passes before it would.
+	await new Promise((settled) => setTimeout(settled, 50));
+
+	expect(screen.container.querySelectorAll('li')).toHaveLength(1);
 });
 
 test('a search that matched nothing says so in its own words', async () => {
