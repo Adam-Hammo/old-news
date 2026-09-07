@@ -2,16 +2,16 @@
 
 import dataclasses
 import datetime
-import uuid
 
-from sqlalchemy import Select, cast, func, literal, select, text
+from sqlalchemy import Select, cast, func, literal, or_, select, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db
 from old_news.config import KindleSettings
-from old_news.db import Feed, Item, Subscription, Tier, at_least
-from old_news.ui import cursor, entries
+from old_news.db import Feed, Item, ItemVersion
+from old_news.ui import cursor, entries, search
+from old_news.ui.query import Named, Query
 
 MONTH = "YYYY-MM"
 UTC = "UTC"
@@ -22,129 +22,185 @@ UTC = "UTC"
 KNOWN_ZONE = text("select exists (select 1 from pg_timezone_names where name = :zone)")
 
 
-class BadShelf(ValueError):
-    """Asked for a shelf the archive cannot have: an unknown month, tier or timezone."""
+class BadZone(ValueError):
+    """A timezone Postgres does not know, which is the one thing it decides here."""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Volume:
-    """One bound volume, and how much is in it."""
+class Count:
+    """One value of one dimension, and how much of the result it accounts for."""
 
-    month: str
+    name: str
     items: int
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class Run:
-    """One publication's whole run. `dropped` is a feed no longer polled, not one lost."""
+# Every dimension is counted with each filter but its own, so the one already picked is
+# still a choice you can see.
+class Shape:
+    """What a query reached, one dimension at a time."""
 
-    feed_id: uuid.UUID
-    title: str
-    url: str
-    tier: str
-    dropped: bool
-    items: int
-    latest: datetime.datetime
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Contents:
-    """What the archive holds, on two shelves. Both counts are of the same rows."""
-
-    items: int
-    months: tuple[Volume, ...]
-    feeds: tuple[Run, ...]
+    publications: tuple[Count, ...]
+    months: tuple[Count, ...]
+    states: tuple[Count, ...]
     # The masthead is on this screen too, and it asks the same question everywhere.
     updated: datetime.datetime | None
 
 
 async def _zoned(session: AsyncSession, zone: str) -> str:
     if not await session.scalar(KNOWN_ZONE, {"zone": zone}):
-        raise BadShelf(zone)
+        raise BadZone(zone)
     return zone
 
 
-def _tiered(query: Select, tier: str) -> Select:
-    if not tier:
-        return query
-    try:
-        return query.where(at_least(Tier(tier)))
-    except ValueError as exc:
-        raise BadShelf(tier) from exc
+# Postgres does the conversion, by the same copy of tzdata that labels the months.
+def _instant(on: datetime.date, zone: str):
+    """Midnight where the reader is."""
+    return func.timezone(zone, cast(literal(on.isoformat()), TIMESTAMP))
 
 
-def _edges(month: str, zone: str):
-    """A month's two instants, so the shelf is a range scan on the river index's own column."""
-    # Naive arithmetic, then one conversion, by the same tzdata that labels the months.
-    year, _, ordinal = month.partition("-")
-    try:
-        start = datetime.date(int(year), int(ordinal), 1)
-        following = (start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
-    except (ValueError, OverflowError) as exc:
-        raise BadShelf(month) from exc
-    at = (cast(literal(edge.isoformat()), TIMESTAMP) for edge in (start, following))
-    return tuple(func.timezone(zone, naive) for naive in at)
+# `%` and `_` in a name are the reader's characters, not the pattern's.
+LIKE_ESCAPE = str.maketrans({"%": r"\%", "_": r"\_", "\\": "\\\\"})
+
+
+def _like(columns, name: str):
+    """One name against any of the columns it could be typed as."""
+    pattern = f"%{name.translate(LIKE_ESCAPE)}%"
+    return or_(*(column.ilike(pattern, escape="\\") for column in columns))
+
+
+def _loosely(query: Select, columns, names: tuple[Named, ...]) -> Select:
+    """Any of the names asked for, and none of the ones asked against."""
+    wanted = [name.value for name in names if not name.excluded]
+    against = [name.value for name in names if name.excluded]
+    if wanted:
+        query = query.where(or_(*(_like(columns, name) for name in wanted)))
+    for name in against:
+        query = query.where(~_like(columns, name))
+    return query
+
+
+STATES = {
+    "read": lambda: Item.read.is_(True),
+    "unread": lambda: Item.read.is_(False),
+    "finished": lambda: Item.finished_at.is_not(None),
+    "unfinished": lambda: Item.finished_at.is_(None),
+}
+
+
+# The words decide the order and only the order, so every one of these applies whether
+# any were typed or not.
+def _narrowed(query: Select, asked: Query, zone: str) -> Select:
+    """Everything the reader asked for that is not words."""
+    # Title or address: an untitled feed is named by its address on the rail, so that is
+    # what gets typed back at us.
+    query = _loosely(query, (Feed.title, Feed.url), asked.publications)
+    query = _loosely(query, (ItemVersion.author,), asked.authors)
+    # On the publisher's date where there is one: a feed's first poll backfills a whole
+    # back catalogue under today, and `after:2019` has to still reach a 2019 piece.
+    if asked.since is not None:
+        query = query.where(entries.dated() >= _instant(asked.since, zone))
+    if asked.until is not None:
+        query = query.where(entries.dated() < _instant(asked.until, zone))
+    for state in asked.states:
+        query = query.where(STATES[state]())
+    if excluded := tuple(term for term in asked.terms if term.excluded):
+        query = query.where(search.without(excluded))
+    return query
 
 
 @db.transactional
-async def contents(session: AsyncSession, *, zone: str = UTC) -> Contents:
-    """The contents page. Months are grouped in the reader's own zone, or they read wrong."""
-    local = func.timezone(await _zoned(session, zone), Item.first_seen_at)
-    volumes = await session.execute(
-        entries.held(
-            func.to_char(func.date_trunc("month", local), MONTH).label("month"),
-            func.count().label("items"),
-        )
-        .group_by("month")
-        .order_by(func.min(Item.first_seen_at).desc())
-    )
-    runs = await session.execute(
-        entries.held(
-            Feed.id.label("feed_id"),
-            Feed.title.label("title"),
-            Feed.url.label("url"),
-            func.coalesce(Subscription.tier, "").label("tier"),
-            func.coalesce(Subscription.active, False).is_(False).label("dropped"),
-            func.count().label("items"),
-            func.max(Item.first_seen_at).label("latest"),
-        )
-        .group_by(Feed.id, Feed.title, Feed.url, Subscription.tier, Subscription.active)
-        .order_by(func.count().desc())
-    )
-    months = tuple(Volume(**row) for row in volumes.mappings())
-    return Contents(
-        items=sum(volume.items for volume in months),
-        months=months,
-        feeds=tuple(Run(**row) for row in runs.mappings()),
-        updated=await session.scalar(entries.last_poll()),
-    )
-
-
-@db.transactional
-async def shelf(
+async def held(
     session: AsyncSession,
     settings: KindleSettings,
     *,
-    feed: uuid.UUID | None = None,
-    month: str = "",
-    tier: str = "",
+    asked: Query,
     after: str = "",
     limit: int = entries.DEFAULT_LIMIT,
     zone: str = UTC,
-) -> entries.Listing:
-    """One shelf: a publication's run, a month, or both. Never everything — that is the point."""
-    if feed is None and not month:
-        raise BadShelf("a shelf is a publication or a month")
+) -> search.Found:
+    # One path in. The only thing the words decide is the order, and with none of them
+    # there is no relevance to sort on, so the archive falls back to its own cursor.
+    """Everything the archive holds that the query reaches."""
+    narrowed = _narrowed(entries.listed(settings), asked, await _zoned(session, zone))
 
-    query = _tiered(entries.newest(entries.listed(settings)), tier)
-    named = ""
-    if feed is not None:
-        query = query.where(Item.feed_id == feed)
-        named = await session.scalar(select(Feed.title).where(Feed.id == feed)) or ""
-    if month:
-        since, until = _edges(month, await _zoned(session, zone))
-        query = query.where(Item.first_seen_at >= since, Item.first_seen_at < until)
+    if asked.ranked:
+        return await search.deep(session, narrowed, asked, after=after, limit=limit)
+
+    # By publish date, which is what the rail's months are counted on: the two disagreeing
+    # is how a 2019 essay comes to sit at the top of a list under a heading saying 2026.
+    ordered = entries.ordered(narrowed, entries.Order.PUBLISHED)
     if after:
-        query = query.where(entries.before(*cursor.decode(after)))
+        ordered = ordered.where(entries.before(entries.Order.PUBLISHED, *cursor.decode(after)))
+    return search.Found(
+        listing=await entries.page(
+            session, ordered, entries.bounded(limit), entries.Order.PUBLISHED
+        ),
+        total=await session.scalar(select(func.count()).select_from(narrowed.subquery("narrowed")))
+        or 0,
+    )
 
-    return await entries.page(session, query, entries.bounded(limit), shelf=named)
+
+# Dropping one dimension is what keeps a facet switchable: with its own filter applied it
+# would only ever count the one value already chosen.
+def _but(asked: Query, dimension: str) -> Query:
+    dropped: dict[str, dict] = {
+        "publications": {"publications": ()},
+        "months": {"since": None, "until": None},
+        "states": {"states": ()},
+    }
+    return dataclasses.replace(asked, **dropped[dimension])
+
+
+# `_narrowed` leaves the words out, because on the reading path the ranking join applies
+# them. Counting has no ranking, so the rail has to apply them itself or it reports the
+# whole archive against a result of forty-five.
+def _reached(query: Select, asked: Query, zone: str) -> Select:
+    """Everything the query reached, words and all."""
+    narrowed = _narrowed(query, asked, zone)
+    return narrowed.where(search.reaching(asked.wanted)) if asked.wanted else narrowed
+
+
+def _grouped(asked: Query, zone: str, by):
+    """One dimension's counts over everything the rest of the query reached."""
+    counted = _reached(entries.held(by.label("name"), func.count().label("items")), asked, zone)
+    # A blank name is a row nobody can click: `from:` with nothing after it is a bad query.
+    return (
+        counted.group_by("name").having(func.coalesce(by, "") != "").order_by(func.count().desc())
+    )
+
+
+def _monthly(zone: str):
+    return func.to_char(func.date_trunc("month", func.timezone(zone, entries.dated())), MONTH)
+
+
+def _states(asked: Query, zone: str):
+    """All four at once: they are four readings of two columns, not four groups."""
+    counted = {
+        "read": Item.read.is_(True),
+        "unread": Item.read.is_(False),
+        "finished": Item.finished_at.is_not(None),
+        "unfinished": Item.finished_at.is_(None),
+    }
+    return _reached(
+        entries.held(*(func.count().filter(where).label(name) for name, where in counted.items())),
+        asked,
+        zone,
+    )
+
+
+@db.transactional
+async def shape(session: AsyncSession, *, asked: Query, zone: str = UTC) -> Shape:
+    """The rail: what is in what the query reached, and what switching one part would give."""
+    where = await _zoned(session, zone)
+    named = func.coalesce(func.nullif(Feed.title, ""), Feed.url)
+    publications = await session.execute(_grouped(_but(asked, "publications"), where, named))
+    months = await session.execute(_grouped(_but(asked, "months"), where, _monthly(where)))
+    states = (await session.execute(_states(_but(asked, "states"), where))).mappings().one()
+
+    return Shape(
+        publications=tuple(Count(**row) for row in publications.mappings()),
+        months=tuple(Count(**row) for row in months.mappings()),
+        states=tuple(Count(name=name, items=items) for name, items in states.items()),
+        updated=await session.scalar(entries.last_poll()),
+    )

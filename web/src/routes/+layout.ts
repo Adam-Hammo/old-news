@@ -1,5 +1,5 @@
 import * as api from '#lib/api/client.ts';
-import { NOWHERE, type View } from '#lib/links.ts';
+import { EVERYTHING, NOWHERE, type View } from '#lib/links.ts';
 import type { LayoutLoad } from './$types';
 
 // The API is same-origin from the browser and nowhere else. Rendering on the server would
@@ -7,26 +7,43 @@ import type { LayoutLoad } from './$types';
 // shell is served and the data is fetched from where the prefix actually resolves.
 export const ssr = false;
 
-// The contents page is the whole screen. Every other route has a list beside it.
-const CONTENTS = '/archive';
+// Two screens, and the path is what says which. The archive is not a slice of the river:
+// it has its own list, its own filters and no sections at all.
+const ARCHIVE = '/archive';
 
-// The list is loaded here rather than by its own route: on a wide screen the article
-// renders beside it, so the list cannot belong to the page the article replaces.
+// Both lists load here rather than in their own route: on a wide screen the article
+// renders over or beside one, so the list cannot belong to the page the article replaces.
 export const load: LayoutLoad = async ({ fetch, url }) => {
-	const view: View = {
-		section: url.searchParams.get('section') ?? '',
-		feed: url.searchParams.get('feed') ?? '',
-		month: url.searchParams.get('month') ?? '',
-		tier: url.searchParams.get('tier') ?? '',
-		q: url.searchParams.get('q') ?? '',
-	};
+	const archive = url.pathname.startsWith(ARCHIVE);
+	const view: View = archive
+		? { ...EVERYTHING, q: url.searchParams.get('q') ?? '' }
+		: { ...NOWHERE, section: url.searchParams.get('section') ?? '' };
 	// When, so the reading UI knows how old what it is showing has got.
 	const at = Date.now();
 
-	if (url.pathname === CONTENTS) {
-		const contents = await api.contents(fetch);
-		return { view: NOWHERE, sections: [], list: null, total: null, contents, at };
+	if (archive) {
+		const [result, shape] = await Promise.all([
+			api.listing(fetch, view),
+			api.facets(fetch, view),
+		]);
+		return {
+			archive,
+			view,
+			sections: [],
+			list: result.listing,
+			total: result.total,
+			shape,
+			at,
+		};
 	}
 	const [sections, result] = await Promise.all([api.sections(fetch), api.listing(fetch, view)]);
-	return { view, sections, list: result.listing, total: result.total, contents: null, at };
+	return {
+		archive,
+		view,
+		sections,
+		list: result.listing,
+		total: result.total,
+		shape: null,
+		at,
+	};
 };

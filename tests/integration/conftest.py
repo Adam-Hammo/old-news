@@ -191,10 +191,13 @@ async def _filed(
     expires_after: datetime.timedelta | None,
     tier: Tier,
 ) -> None:
+    # A window of None is the default one, not no window at all: there is no longer such
+    # a thing, and the column will not take it.
+    values: dict[str, object] = {"tier": tier}
+    if expires_after is not None:
+        values["expires_after"] = expires_after
     await session.execute(
-        update(Subscription)
-        .where(Subscription.feed_id == feed_id)
-        .values(expires_after=expires_after, tier=tier)
+        update(Subscription).where(Subscription.feed_id == feed_id).values(**values)
     )
 
 

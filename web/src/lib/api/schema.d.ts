@@ -4,32 +4,15 @@
  */
 
 export interface paths {
-	'/archive': {
+	'/archive/facets': {
 		parameters: {
 			query?: never;
 			header?: never;
 			path?: never;
 			cookie?: never;
 		};
-		/** What the archive holds, shelved by publication and by month. */
-		get: operations['ArchiveContents'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/archive/search': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** What the terms reach, best first, across every reading held. */
-		get: operations['ArchiveSearchSearch'];
+		/** What is in what the query reached, dimension by dimension. */
+		get: operations['ArchiveFacetsFacets'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -45,8 +28,8 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/** One shelf of the archive: a publication, a month, or both. */
-		get: operations['ArchiveItemsShelf'];
+		/** Everything held that the query reaches, and how much did. */
+		get: operations['ArchiveItemsHeld'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -225,6 +208,57 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/status/polling': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every feed we follow, and how its polling is going. */
+		get: operations['StatusPollingPolling'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/status/publishers': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every host we visit, and how politely. */
+		get: operations['StatusPublishersPublishers'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/status/config': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every effective setting, with the credentials left out. */
+		get: operations['StatusConfigConfig'];
+		put?: never;
+		post?: never;
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/subscriptions': {
 		parameters: {
 			query?: never;
@@ -286,12 +320,10 @@ export interface components {
 			lead: string;
 			lead_alt: string;
 		};
-		/** Contents */
-		Contents: {
+		/** Count */
+		Count: {
+			name: string;
 			items: number;
-			months: components['schemas']['Volume'][];
-			feeds: components['schemas']['Run'][];
-			updated: string | null;
 		};
 		/** Entry */
 		Entry: {
@@ -313,9 +345,9 @@ export interface components {
 		/** Filing */
 		Filing: {
 			category: string;
+			expires_after_seconds: number;
 			/** @default wire */
 			tier: string;
-			expires_after_seconds?: number | null;
 		};
 		/** Finished */
 		Finished: {
@@ -331,7 +363,7 @@ export interface components {
 			site_url: string;
 			category: string;
 			tier: string;
-			expires_after_seconds: number | null;
+			expires_after_seconds: number;
 			last_success_at: string | null;
 		};
 		/** Found */
@@ -344,8 +376,6 @@ export interface components {
 			entries: components['schemas']['Entry'][];
 			cursor: string;
 			updated: string | null;
-			/** @default  */
-			shelf: string;
 		};
 		/** NewFeed */
 		NewFeed: {
@@ -358,6 +388,34 @@ export interface components {
 			/** Format: date-time */
 			read_at: string;
 		};
+		/** Polling */
+		Polling: {
+			/** Format: uuid */
+			id: string;
+			title: string;
+			url: string;
+			category: string;
+			last_polled_at: string | null;
+			last_success_at: string | null;
+			/** Format: date-time */
+			next_poll_at: string;
+			consecutive_failures: number;
+			gone: boolean;
+			outcome: string;
+			status: number;
+			error: string;
+		};
+		/** Publisher */
+		Publisher: {
+			name: string;
+			feeds: number;
+			requires_www: boolean;
+			crawl_delay_seconds: number | null;
+			robots_status: number;
+			robots_fetched_at: string | null;
+			robots_expires_at: string | null;
+			capture_failures: number;
+		};
 		/** Report */
 		Report: {
 			kind: string;
@@ -366,22 +424,22 @@ export interface components {
 			display: string;
 			since_visible: number;
 		};
-		/** Run */
-		Run: {
-			/** Format: uuid */
-			feed_id: string;
-			title: string;
-			url: string;
-			tier: string;
-			dropped: boolean;
-			items: number;
-			/** Format: date-time */
-			latest: string;
+		/** Section */
+		Section: {
+			name: string;
+			settings: components['schemas']['Setting'][];
 		};
-		/** Volume */
-		Volume: {
-			month: string;
-			items: number;
+		/** Setting */
+		Setting: {
+			name: string;
+			value: string;
+		};
+		/** Shape */
+		Shape: {
+			publications: components['schemas']['Count'][];
+			months: components['schemas']['Count'][];
+			states: components['schemas']['Count'][];
+			updated: string | null;
 		};
 	};
 	responses: never;
@@ -392,10 +450,12 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-	ArchiveContents: {
+	ArchiveFacetsFacets: {
 		parameters: {
 			query?: {
-				/** @description An IANA zone; months are grouped in it. */
+				/** @description Words, and the operators `from:` `by:` `after:` `before:` `is:`. A quoted run is adjacent, a leading minus excludes. Empty is everything held. */
+				q?: string;
+				/** @description An IANA zone; months and dates are read in it. */
 				zone?: string;
 			};
 			header?: never;
@@ -410,7 +470,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['Contents'];
+					'application/json': components['schemas']['Shape'];
 				};
 			};
 			/** @description Bad request syntax or unsupported method */
@@ -433,14 +493,16 @@ export interface operations {
 			};
 		};
 	};
-	ArchiveSearchSearch: {
+	ArchiveItemsHeld: {
 		parameters: {
 			query?: {
-				/** @description Words, not query syntax. Every one is meant. */
+				/** @description Words, and the operators `from:` `by:` `after:` `before:` `is:`. A quoted run is adjacent, a leading minus excludes. Empty is everything held. */
 				q?: string;
 				/** @description The cursor a previous page ended on. */
 				after?: string;
 				limit?: number;
+				/** @description An IANA zone; months and dates are read in it. */
+				zone?: string;
 			};
 			header?: never;
 			path?: never;
@@ -455,56 +517,6 @@ export interface operations {
 				};
 				content: {
 					'application/json': components['schemas']['Found'];
-				};
-			};
-			/** @description Bad request syntax or unsupported method */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						status_code: number;
-						detail: string;
-						extra?:
-							| null
-							| {
-									[key: string]: unknown;
-							  }
-							| unknown[];
-					};
-				};
-			};
-		};
-	};
-	ArchiveItemsShelf: {
-		parameters: {
-			query?: {
-				/** @description A feed's whole run. */
-				feed?: string | null;
-				/** @description A month as YYYY-MM, in `zone`. */
-				month?: string;
-				/** @description Only feeds filed at this tier or above. */
-				tier?: string;
-				/** @description The cursor a previous page ended on. */
-				after?: string;
-				limit?: number;
-				/** @description An IANA zone; months are grouped in it. */
-				zone?: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Request fulfilled, document follows */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['Listing'];
 				};
 			};
 			/** @description Bad request syntax or unsupported method */
@@ -853,6 +865,66 @@ export interface operations {
 							  }
 							| unknown[];
 					};
+				};
+			};
+		};
+	};
+	StatusPollingPolling: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Polling'][];
+				};
+			};
+		};
+	};
+	StatusPublishersPublishers: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Publisher'][];
+				};
+			};
+		};
+	};
+	StatusConfigConfig: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Section'][];
 				};
 			};
 		};

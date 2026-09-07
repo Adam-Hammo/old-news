@@ -12,6 +12,7 @@ from old_news.api.routes import (
     health_router,
     reading_router,
     reports_router,
+    status_router,
     subscriptions_router,
 )
 from old_news.config import Settings, get_settings
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> Litestar:
         health_router(),
         reading_router(),
         reports_router(),
+        status_router(),
         subscriptions_router(),
     ]
     if settings.admin.enabled:

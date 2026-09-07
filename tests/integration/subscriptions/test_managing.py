@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from old_news.config import Settings
-from old_news.db import Tier
+from old_news.db import LONGEST_WINDOW, Tier
 from old_news.fetch import Fetcher
 from old_news.subscriptions.service import (
     NoFeedFound,
@@ -25,7 +25,7 @@ SITE_HTML = b"""<!doctype html><html><head>
 </head><body>A blog</body></html>"""
 
 
-async def _file(feed_id, *, category="", tier=Tier.WIRE, expires_after_seconds=None) -> bool:
+async def _file(feed_id, *, category="", tier=Tier.WIRE, expires_after_seconds=3600) -> bool:
     """`refile` takes the whole filing; most of these tests are only about the section."""
     return await refile(
         feed_id, category=category, tier=tier, expires_after_seconds=expires_after_seconds
@@ -145,7 +145,7 @@ async def test_something_that_is_not_a_pollable_address_is_refused(clean: None, 
 
 
 async def test_the_tier_and_the_window_are_set_together_with_the_section(clean: None):
-    """One call, because a partial filing cannot say "never expires" and "unchanged"."""
+    """One call, because a partial filing cannot tell what it left alone from what it set."""
     feed = await add(FEED, title="Example", category="Technology")
     assert feed is not None
 
@@ -159,15 +159,14 @@ async def test_the_tier_and_the_window_are_set_together_with_the_section(clean: 
     )
 
 
-async def test_a_window_can_be_taken_off_again(clean: None):
-    """Null is the feed nothing ages out of, which a number cannot express."""
+async def test_a_window_can_be_widened_again(clean: None):
     feed = await add(FEED)
     assert feed is not None
     await _file(feed.id, expires_after_seconds=3600)
 
-    await _file(feed.id, expires_after_seconds=None)
+    await _file(feed.id, expires_after_seconds=604800)
 
-    assert (await listing())[0].expires_after_seconds is None
+    assert (await listing())[0].expires_after_seconds == 604800
 
 
 async def test_a_listed_feed_carries_its_tier_and_window(clean: None):
@@ -176,4 +175,7 @@ async def test_a_listed_feed_carries_its_tier_and_window(clean: None):
 
     listed = (await listing())[0]
 
-    assert (listed.tier, listed.expires_after_seconds) == (Tier.WIRE, None)
+    assert (listed.tier, listed.expires_after_seconds) == (
+        Tier.WIRE,
+        int(LONGEST_WINDOW.total_seconds()),
+    )

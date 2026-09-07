@@ -83,7 +83,7 @@ async def test_the_wire_does_not(clean: None, feed, story):
 
 async def test_a_long_window_alone_is_not_enough(clean: None, feed, story):
     """The window says how long to show it; the tier says how much of it to hold."""
-    feed_id = await feed("wire.example.com", expires_after=180 * DAY)
+    feed_id = await feed("wire.example.com", expires_after=30 * DAY)
     item_id = await story(feed_id, "A dispatch", body="Text.")
     await _slot(item_id, "https://cdn.example.com/a.png", ImageRole.BODY)
 

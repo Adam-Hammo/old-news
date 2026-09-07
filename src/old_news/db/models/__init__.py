@@ -21,11 +21,18 @@ from old_news.db.models.item import Item, ItemVersion, item_reading
 from old_news.db.models.page import CAPTURE_POLICY, CaptureOutcome, PageCapture
 from old_news.db.models.poll import FeedPoll, PollOutcome
 from old_news.db.models.robots import RobotsPolicy
-from old_news.db.models.subscription import Subscription, Tier, at_least, unexpired
+from old_news.db.models.subscription import (
+    LONGEST_WINDOW,
+    Subscription,
+    Tier,
+    at_least,
+    unexpired,
+)
 from old_news.db.models.training import Dimension, RuleSource, TrainingRule
 
 __all__ = [
     "CAPTURE_POLICY",
+    "LONGEST_WINDOW",
     "READING_IDENTITY",
     "READING_KEY",
     "CaptureOutcome",

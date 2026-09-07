@@ -6,39 +6,62 @@
 	import * as links from '#lib/links.ts';
 	import type { View } from '#lib/links.ts';
 	import { opened } from '#lib/opened.ts';
+	import { stamp } from '#lib/format.ts';
 	import { marked } from '#lib/snippet.ts';
 	import { whenVisible } from '#lib/visible.ts';
 
-	let { page, view, selected }: { page: Listing; view: View; selected: string } = $props();
+	let {
+		page,
+		view,
+		selected,
+		dense = false,
+	}: { page: Listing; view: View; selected: string; dense?: boolean } = $props();
 
+	// One discriminator now: in the archive is exactly "there is a query".
 	const archived = $derived(links.archived(view));
-	const empty = $derived(
-		view.q ? 'Nothing matched.' : archived ? 'Nothing on this shelf.' : 'Nothing here yet.',
-	);
+	const empty = $derived(archived ? 'Nothing matched.' : 'Nothing here yet.');
 
-	// Pages fetched after the first, which the layout's load knows nothing about.
-	let extra = $state<Entry[]>([]);
-	let cursor = $state('');
+	// Pages fetched after the first, tagged with what they were fetched behind. Reconciled
+	// in a `$derived` rather than cleared in an `$effect`: an effect runs after the render
+	// that would already have drawn a refetched first page beside rows it now repeats, and
+	// one duplicate key takes the whole screen down.
+	let appended = $state.raw<{
+		of: View | null;
+		behind: string;
+		entries: Entry[];
+		cursor: string;
+	}>({
+		of: null,
+		behind: '',
+		entries: [],
+		cursor: '',
+	});
 	let loading = $state(false);
 	let failed = $state(false);
 
-	$effect(() => {
-		// Reading `page.cursor` is what subscribes this, so a new first page — a section
-		// change, or an invalidation — replaces whatever had been appended to the old one.
-		extra = [];
-		cursor = page.cursor;
-		failed = false;
-	});
-
-	const entries = $derived([...page.entries, ...extra]);
+	// Both by identity, which is what the tag is raw for: `$state` hands back a proxy of
+	// the view rather than the view. Two views can end their first page on the same row,
+	// so the cursor alone does not say these rows belong under the one on screen.
+	const beyond = $derived(
+		appended.of === view && appended.behind === page.cursor ? appended : null,
+	);
+	const entries = $derived([...page.entries, ...(beyond?.entries ?? [])]);
+	const cursor = $derived(beyond ? beyond.cursor : page.cursor);
 
 	async function more() {
-		if (!cursor || loading) return;
+		const of = view;
+		const behind = page.cursor;
+		const at = cursor;
+		if (!at || loading) return;
 		loading = true;
 		try {
-			const next = (await api.listing(fetch, view, cursor)).listing;
-			extra = [...extra, ...next.entries];
-			cursor = next.cursor;
+			const next = (await api.listing(fetch, of, at)).listing;
+			appended = {
+				of,
+				behind,
+				entries: [...(beyond?.entries ?? []), ...next.entries],
+				cursor: next.cursor,
+			};
 			failed = false;
 		} catch {
 			failed = true;
@@ -62,7 +85,7 @@
 	const opening = $derived(navigating.to?.params?.id ?? '');
 </script>
 
-<ol>
+<ol class:dense>
 	{#each entries as entry (entry.id)}
 		{@const kindle = mark(entry)}
 		<li>
@@ -85,6 +108,9 @@
 						>
 					{/if}
 				</p>
+				{#if dense && entry.published_at}
+					<span class="when">{stamp(entry.published_at)}</span>
+				{/if}
 				<!-- Rendered as text, never as markup: the fragment is a publisher's prose. -->
 				{#if entry.snippet}
 					<p class="found">
@@ -105,11 +131,11 @@
 {:else if cursor}
 	<div use:whenVisible={more} class="note label more">{loading ? 'Loading…' : ''}</div>
 {:else if archived}
-	<p class="note label end">That is the whole shelf.</p>
+	<p class="note label end">That is everything held here.</p>
 {:else}
 	<!-- The end of the river is where the door has to be, or ageing out loses things. -->
 	<p class="note label end">
-		<a href={links.contents()}>Older stories are in the archive &nbsp;&rarr;</a>
+		<a href={links.archive()}>Older stories are in the archive &nbsp;&rarr;</a>
 	</p>
 {/if}
 
@@ -189,15 +215,20 @@
 		color: var(--ink-faint);
 	}
 
-	/* The author is the only part allowed to give way. The outlet is where it came from,
-	   and a row that cut that would be lying. */
+	/* The author gives way a hundred times more readily than the outlet, which is where
+	   the thing came from. Both still ellipse: some publications are named at a length no
+	   phone has room for, and running off the paper is not a truer answer than a cut one. */
 	.by .author {
+		flex: 0 100 auto;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
 	.by b {
-		flex: none;
+		flex: 0 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 		color: var(--ink);
 		font-weight: 700;
 	}
@@ -250,5 +281,48 @@
 
 	.note {
 		padding: 1.4rem var(--gutter);
+	}
+
+	/* The archive is a tool rather than a paper: the headline, who ran it and when line up
+	   in columns so a hundred rows can be read down rather than through. */
+	.dense .row {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 2px 14px;
+		align-items: baseline;
+		padding: 8px var(--gutter) 9px;
+	}
+
+	.dense .row > * {
+		max-width: none;
+	}
+
+	.dense h2 {
+		font-size: 15.5px;
+		line-height: 1.2;
+	}
+
+	.dense .by {
+		grid-column: 1;
+		margin-top: 0;
+	}
+
+	.dense .when {
+		grid-row: 1;
+		grid-column: 2;
+		flex: none;
+		font-size: 9.5px;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+		color: var(--ink-faint);
+		font-variant-numeric: tabular-nums;
+	}
+
+	.dense .found {
+		grid-column: 1 / -1;
+		-webkit-line-clamp: 1;
+		line-clamp: 1;
+		margin-top: 2px;
 	}
 </style>

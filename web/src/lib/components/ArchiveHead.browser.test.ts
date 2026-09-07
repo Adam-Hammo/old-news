@@ -1,91 +1,50 @@
-import { NOWHERE, type View } from '#lib/links.ts';
+import { EVERYTHING, type View } from '#lib/links.ts';
 import { expect, test } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import ArchiveHead from './ArchiveHead.svelte';
 
-const show = (over: Partial<View>, shelf = '') =>
-	render(ArchiveHead, { view: { ...NOWHERE, ...over }, shelf });
+const show = (over: Partial<View>, total: number | null = null) =>
+	render(ArchiveHead, { view: { ...EVERYTHING, ...over }, total });
 
-// A publication's title is the one thing the URL cannot carry, so the archive sends it.
-test('a publication shelf is named by what the archive called it', async () => {
-	const screen = await show({ feed: 'f1' }, 'Construction Physics');
-
-	expect(screen.container.querySelector('.named')!.textContent).toBe('Construction Physics');
-});
-
-test('a month names itself, so nothing has to be fetched to label it', async () => {
-	const screen = await show({ month: '2026-06' });
-
-	expect(screen.container.querySelector('.named')!.textContent).toBe('June 2026');
-});
-
-test('a publication within a month says both', async () => {
-	const screen = await show({ feed: 'f1', month: '2026-06' }, 'Construction Physics');
-
-	expect(screen.container.querySelector('.named')!.textContent).toBe(
-		'Construction Physics, June 2026',
-	);
-});
-
-test('the way back is to the contents, not to the river', async () => {
-	const screen = await show({ feed: 'f1' }, 'Construction Physics');
+test('the way out of a query is back to everything held', async () => {
+	const screen = await show({ q: 'from:pluralistic' });
 
 	await expect
-		.element(screen.getByRole('link', { name: /Contents/ }))
+		.element(screen.getByRole('link', { name: /Everything/ }))
 		.toHaveAttribute('href', '/archive');
 });
 
-// A month is mostly wire; a publication is one tier already, so the sift would do nothing.
-test('a month offers to leave the wire off', async () => {
-	const screen = await show({ month: '2026-06' });
+// It would point at the screen you are standing on.
+test('and there is no way back when nothing has been asked', async () => {
+	const screen = await show({});
 
-	await expect
-		.element(screen.getByRole('link', { name: 'Without the wire' }))
-		.toHaveAttribute('href', '/?month=2026-06&tier=archive');
+	expect(screen.container.querySelector('.back')).toBeNull();
 });
 
-test('and offers it back once it is off', async () => {
-	const screen = await show({ month: '2026-06', tier: 'archive' });
-
-	await expect
-		.element(screen.getByRole('link', { name: 'With the wire' }))
-		.toHaveAttribute('href', '/?month=2026-06');
-});
-
-test('a publication shelf offers no sift, because it is one tier already', async () => {
-	const screen = await show({ feed: 'f1' }, 'Construction Physics');
-
-	expect(screen.container.querySelector('.sift')).toBeNull();
-});
-
-// A search is in the archive too, and the one thing a search needs that a shelf does not
-// is how much it turned up.
-test('a search carries the field it was typed into, so narrowing it is one keystroke', async () => {
-	const screen = await render(ArchiveHead, {
-		view: { ...NOWHERE, q: 'housing density' },
-		shelf: '',
-		total: 17,
-	});
+// The query is the only thing naming this list, so it has to be in the field you edit
+// rather than printed above one that is empty.
+test('the field carries the query, so narrowing it is one keystroke', async () => {
+	const screen = await show({ q: 'density from:pluralistic' }, 17);
 
 	await expect
 		.element(screen.getByRole('searchbox', { name: /Search the archive/ }))
-		.toHaveValue('housing density');
-	expect(screen.container.querySelector('.tally')!.textContent).toBe('17 matches');
+		.toHaveValue('density from:pluralistic');
 });
 
-test('and one match is not called matches', async () => {
-	const screen = await render(ArchiveHead, {
-		view: { ...NOWHERE, q: 'wombat' },
-		shelf: '',
-		total: 1,
-	});
+test('how much it reached is the one number the archive does carry', async () => {
+	const screen = await show({ q: 'density' }, 17);
 
-	expect(screen.container.querySelector('.tally')!.textContent).toBe('1 match');
+	expect(screen.container.querySelector('.tally')!.textContent).toBe('17 pieces');
 });
 
-// The river has no total by design and a shelf's is on the contents page already.
-test('a shelf shows no count at all', async () => {
-	const screen = await show({ feed: 'f1' }, 'Construction Physics');
+test('and one piece is not called pieces', async () => {
+	const screen = await show({ q: 'wombat' }, 1);
 
-	expect(screen.container.querySelector('.tally')).toBeNull();
+	expect(screen.container.querySelector('.tally')!.textContent).toBe('1 piece');
+});
+
+test('nothing reached says nought rather than nothing at all', async () => {
+	const screen = await show({ q: 'wombat' }, 0);
+
+	expect(screen.container.querySelector('.tally')!.textContent).toBe('0 pieces');
 });

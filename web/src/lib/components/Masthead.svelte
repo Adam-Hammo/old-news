@@ -5,9 +5,9 @@
 
 	let {
 		view = links.NOWHERE,
-		inside = false,
 		updated = null,
-	}: { view?: View; inside?: boolean; updated?: string | null } = $props();
+		through = 1,
+	}: { view?: View; updated?: string | null; through?: number } = $props();
 
 	const polled = $derived(stamp(updated));
 	const dated = today();
@@ -15,7 +15,7 @@
 	// Anywhere in the archive, the nameplate says so and the crossing goes back to the
 	// river. The foot of the river carries a door too, but reaching it means paging to
 	// the end of the list.
-	const archive = $derived(inside || links.archived(view));
+	const archive = $derived(links.archived(view));
 </script>
 
 <header>
@@ -29,14 +29,14 @@
 				>{polled ? `Updated ${polled}` : 'Not polled yet'}</span
 			>
 			<span class="sep"></span><a
-				href={archive ? links.list(links.NOWHERE) : links.contents()}
+				href={archive ? links.list(links.NOWHERE) : links.archive()}
 				class="linked">{archive ? 'River' : 'Archive'}</a
 			>
 			<span class="sep"></span><a href="/settings" class="linked">Settings</a>
 		</span>
 	</div>
 	<div class="hair"></div>
-	<div class="heavy"></div>
+	<div class="heavy" style="--through: {through * 100}%"></div>
 </header>
 
 <style>
@@ -47,11 +47,14 @@
 		background: var(--paper);
 	}
 
+	/* Wraps, because the dateline is one unbreakable run and a narrow phone has no room
+	   for it beside the nameplate. Two lines beat a masthead that runs off the paper. */
 	.line {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: baseline;
 		justify-content: space-between;
-		gap: 1rem;
+		gap: 0 1rem;
 	}
 
 	/* Beside the nameplate rather than replacing it: the archive is a view, not a
@@ -102,6 +105,7 @@
 	}
 
 	.polled {
+		margin-left: auto;
 		font-size: 9.5px;
 		font-weight: 600;
 		letter-spacing: 0.13em;
@@ -116,9 +120,17 @@
 		margin-top: 9px;
 	}
 
+	/* The rule doubles as the article's scrollbar: full weight behind where you have read
+	   to, greyed ahead of it — grey rather than the hairline, or the masthead loses the
+	   one piece of furniture it leans on at the moment an article opens. Everywhere else
+	   `through` is 1 and it is the plain rule. */
 	.heavy {
 		height: 3px;
-		background: var(--rule);
 		margin-top: 2px;
+		background: linear-gradient(
+			to right,
+			var(--rule) 0 var(--through),
+			var(--underline) var(--through) 100%
+		);
 	}
 </style>

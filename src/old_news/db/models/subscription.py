@@ -37,6 +37,10 @@ class Tier(enum.StrEnum):
 # enum and not to this is not comparable at all, which fails loudly.
 TIERS = (Tier.WIRE, Tier.ARCHIVE, Tier.KINDLE)
 
+# The longest window there is, and what a new feed gets. Nothing stays in the river
+# forever: keeping it is the archive's job, not the window's.
+LONGEST_WINDOW = datetime.timedelta(days=30)
+
 if TYPE_CHECKING:
     from old_news.db.models.feed import Feed
 
@@ -55,8 +59,10 @@ class Subscription(UUIDPrimaryKey, Base):
     added_at: Mapped[datetime.datetime] = mapped_column(Timestamptz, server_default=NOW)
 
     # An interval rather than seconds, so the cutoff is `now() - expires_after` and
-    # Postgres does the arithmetic. Null is a feed nothing ages out of.
-    expires_after: Mapped[datetime.timedelta | None] = mapped_column(Interval, nullable=True)
+    # Postgres does the arithmetic.
+    expires_after: Mapped[datetime.timedelta] = mapped_column(
+        Interval, server_default=text(f"interval '{LONGEST_WINDOW.days} days'")
+    )
 
     # `Mapped[str]`, not `Mapped[Tier]`: Postgres returns a string, which compares equal
     # to a StrEnum member but is not it.
@@ -79,7 +85,7 @@ def subscribed(feed_id) -> ColumnElement[bool]:
 
 def unexpired(seen) -> ColumnElement[bool]:
     """Whether a row this old is still inside its feed's window."""
-    return Subscription.expires_after.is_(None) | (seen >= func.now() - Subscription.expires_after)
+    return seen >= func.now() - Subscription.expires_after
 
 
 def at_least(tier: Tier) -> ColumnElement[bool]:

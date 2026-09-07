@@ -8,7 +8,7 @@ from litestar.exceptions import ClientException, HTTPException, NotFoundExceptio
 from litestar.params import FromPath
 
 from old_news import fetch
-from old_news.db import Tier
+from old_news.db import LONGEST_WINDOW, Tier
 from old_news.subscriptions import service
 
 
@@ -22,14 +22,15 @@ class NewFeed:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Filing:
-    """Every per-feed choice, sent whole: a partial one cannot say "never expires"."""
+    """Every per-feed choice, sent whole: a partial one cannot say what it left alone."""
 
     # Empty is unfiled, which the river still carries.
     category: str
+    # How long a row stays in the river, up to `LONGEST_WINDOW`. Past that the archive
+    # holds it, so there is no window that keeps a thing in the river forever.
+    expires_after_seconds: int
     # `wire`, `archive` or `kindle`. The levels nest, so kindle takes what archive does.
     tier: str = Tier.WIRE
-    # Null is a feed nothing ages out of.
-    expires_after_seconds: int | None = None
 
 
 @get("/subscriptions", summary="Every feed we follow, and how it is filed.")
@@ -54,6 +55,8 @@ async def follow(data: NewFeed) -> None:
 async def refile(feed_id: FromPath[uuid.UUID], data: Filing) -> None:
     if data.tier not in set(Tier):
         raise ClientException(detail=f"not a tier: {data.tier}")
+    if not 0 < data.expires_after_seconds <= LONGEST_WINDOW.total_seconds():
+        raise ClientException(detail=f"not a window: {data.expires_after_seconds}s")
 
     filed = await service.refile(
         feed_id,

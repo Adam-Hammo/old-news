@@ -26,6 +26,18 @@ _enabled = False
 _instrument_database = False
 
 
+def _sampling(settings: TelemetrySettings) -> logfire.SamplingOptions | None:
+    """Keep every trace that went wrong or ran long, and a share of the rest."""
+    # None rather than a sampler set to keep everything: tail sampling buffers a trace
+    # until it ends, and buffering in order to keep all of it is cost for nothing.
+    if settings.background_sample_rate >= 1.0:
+        return None
+    return logfire.SamplingOptions.level_or_duration(
+        duration_threshold=settings.slow_after_seconds,
+        background_rate=settings.background_sample_rate,
+    )
+
+
 def configure(settings: TelemetrySettings, *, environment: str, component: str) -> None:
     """Installs the global OTel provider. The rest of the app talks to OTel, not Logfire."""
     logging.basicConfig(
@@ -43,6 +55,7 @@ def configure(settings: TelemetrySettings, *, environment: str, component: str) 
         console=logfire.ConsoleOptions() if settings.console else False,
         send_to_logfire="if-token-present",
         scrubbing=logfire.ScrubbingOptions(extra_patterns=SENSITIVE_FIELDS),
+        sampling=_sampling(settings),
     )
 
     handler = logfire.LogfireLoggingHandler()
@@ -60,18 +73,18 @@ def configure(settings: TelemetrySettings, *, environment: str, component: str) 
         logfire.instrument_system_metrics()
 
 
-def instrument_engine(engine: Any) -> None:
-    """Called by `db.configure` with the engine it just built."""
-    if not _instrument_database:
-        return
-    logfire.instrument_sqlalchemy(engine=engine, skip_dep_check=True)
-
-
 def instrument_http_client(client: Any) -> None:
     """Called by `Fetcher` with the client it just built. This client only, and no bodies."""
     if not _enabled:
         return
     logfire.instrument_httpx(client)
+
+
+def instrument_engine(engine: Any) -> None:
+    """Called by `db.configure` with the engine it just built."""
+    if not _instrument_database:
+        return
+    logfire.instrument_sqlalchemy(engine=engine, skip_dep_check=True)
 
 
 @dataclass(frozen=True)

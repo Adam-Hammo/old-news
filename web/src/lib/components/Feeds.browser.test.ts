@@ -30,7 +30,7 @@ function feed(over: Partial<Following> = {}): Following {
 		site_url: '',
 		category: 'Edition',
 		tier: 'wire',
-		expires_after_seconds: null,
+		expires_after_seconds: 2592000,
 		last_success_at: null,
 		...over,
 	};
@@ -89,7 +89,7 @@ test('a feed is refiled by typing another section against it', async () => {
 		.poll(() => calls)
 		.toEqual([
 			'file aaaaaaaa-0000-4000-8000-000000000001 ' +
-				'{"category":"Science","tier":"wire","expires_after_seconds":null}',
+				'{"category":"Science","tier":"wire","expires_after_seconds":2592000}',
 		]);
 });
 
@@ -180,28 +180,30 @@ test('a tier is set from the feed it belongs to', async () => {
 test('a window is set the same way, and carries the tier with it', async () => {
 	const screen = await setup([feed({ tier: 'kindle', expires_after_seconds: 604800 })]);
 
-	await screen.getByLabelText('Window for Astral Codex Ten').selectOptions('3628800');
+	await screen.getByLabelText('Window for Astral Codex Ten').selectOptions('2592000');
 
 	await expect
 		.poll(() => calls)
 		.toEqual([
 			'file aaaaaaaa-0000-4000-8000-000000000001 ' +
-				'{"category":"Edition","tier":"kindle","expires_after_seconds":3628800}',
+				'{"category":"Edition","tier":"kindle","expires_after_seconds":2592000}',
 		]);
 });
 
-// Null is the feed nothing ages out of, which no number can express.
-test('never is a window too, and goes as null', async () => {
+// Keeping a thing is the archive's job, so the longest window is a month and there is
+// nothing past it to offer.
+test('no window on offer keeps a thing in the river forever', async () => {
 	const screen = await setup([feed({ expires_after_seconds: 604800 })]);
 
-	await screen.getByLabelText('Window for Astral Codex Ten').selectOptions('');
-
-	await expect
-		.poll(() => calls)
-		.toEqual([
-			'file aaaaaaaa-0000-4000-8000-000000000001 ' +
-				'{"category":"Edition","tier":"wire","expires_after_seconds":null}',
-		]);
+	const windows = screen.container.querySelectorAll('select[aria-label^="Window"] option');
+	expect([...windows].map((option) => (option as HTMLOptionElement).value)).toEqual([
+		'21600',
+		'86400',
+		'259200',
+		'604800',
+		'1209600',
+		'2592000',
+	]);
 });
 
 test('the controls show what the feed is already set to', async () => {
