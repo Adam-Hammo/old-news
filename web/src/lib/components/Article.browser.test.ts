@@ -219,3 +219,37 @@ test('the way back is named after the list it goes to', async () => {
 
 	await expect.element(screen.getByRole('link', { name: /Back to the results/i })).toBeVisible();
 });
+
+// A publisher's own address, printed. It is the one word in an article long enough to
+// widen the pane, and a pane that is wider than the window scrolls sideways.
+test('a bare address breaks rather than widening the column', async () => {
+	const screen = await show({
+		page_body:
+			'See https://www.example.com/2026/09/a-very-long-slug-that-nobody-would-ever-shorten-because-why-would-they.html',
+	});
+
+	// Narrower than a phone, so the address has nowhere to go but a second line.
+	(screen.container as HTMLElement).style.width = '320px';
+
+	const body = screen.container.querySelector('.body')!;
+	expect(body.scrollWidth).toBe(body.clientWidth);
+});
+
+// The EPA's technology table is three columns wide and the pane on a phone is 430px.
+// Reflowing it would be a lie about what the publisher printed, so it scrolls itself.
+test('a table scrolls inside itself rather than taking the pane with it', async () => {
+	const screen = await show({
+		page_body: [
+			'|  | **2000** | **2024** |',
+			'|---|---|---|',
+			'| Turbocharged | 1% | 45% |',
+			'| Direct fuel injection | 0% | 80% |',
+		].join('\n'),
+	});
+
+	const table = screen.container.querySelector('table')!;
+	expect(getComputedStyle(table).overflowX).toBe('auto');
+	expect(table.clientWidth).toBeLessThanOrEqual(
+		screen.container.querySelector('.body')!.clientWidth,
+	);
+});

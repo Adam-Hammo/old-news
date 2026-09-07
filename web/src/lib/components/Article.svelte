@@ -109,7 +109,7 @@
 					sheet?.close();
 				}}
 			>
-				<span>Mark as read</span><em>keeps it off the Kindle</em>
+				<span>Mark as read</span>
 			</button>
 		</li>
 		<li>
@@ -230,6 +230,9 @@
 
 	.body {
 		padding-top: 16px;
+		/* A publisher's own address, printed. Nothing else in the article is a word this
+		   long, and without this one of them widens the pane and takes the scroll with it. */
+		overflow-wrap: break-word;
 	}
 
 	.pending {
@@ -287,6 +290,32 @@
 	.body :global(hr) {
 		border: 0;
 		border-top: 1px solid var(--hair);
+	}
+
+	/* `display: block` is what makes the table its own scroller — the rows still lay out
+	   against each other, in the anonymous table box the tbody generates. A three-column
+	   table does not fit 430px and is not worth reflowing into one that does. */
+	.body :global(table) {
+		display: block;
+		width: 100%;
+		overflow-x: auto;
+		margin: 1.4em 0;
+		border-collapse: collapse;
+		font-size: 14px;
+		line-height: 1.35;
+	}
+
+	.body :global(th),
+	.body :global(td) {
+		padding: 6px 14px 6px 0;
+		text-align: left;
+		vertical-align: baseline;
+		border-bottom: 1px solid var(--hair);
+	}
+
+	.body :global(thead th) {
+		border-bottom: 1px solid var(--rule);
+		font-weight: 700;
 	}
 
 	.cap {
