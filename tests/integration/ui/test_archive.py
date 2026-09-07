@@ -376,3 +376,32 @@ async def test_and_a_month_already_chosen_still_shows_its_neighbours(clean: None
     months = (await ui.shape(asked=ui.parse(_month("2026-09")))).months
 
     assert [count.name for count in months] == ["2026-09", "2026-03"]
+
+
+# `before:` is exclusive, so what decides the level is the last day the query takes in.
+# A range from June to next June spans two years, and counting it in months left the
+# second year's months in the results and nowhere on the rail.
+async def test_a_range_across_two_years_is_counted_in_years(clean: None, feed, story):
+    feed_id = await feed("wire.example.com")
+    for at in (
+        datetime.datetime(2026, 8, 1, tzinfo=datetime.UTC),
+        datetime.datetime(2027, 2, 1, tzinfo=datetime.UTC),
+    ):
+        await story(feed_id, at.isoformat(), first_seen_at=at)
+
+    shape = await ui.shape(asked=ui.parse("after:2026-06 before:2027-06"))
+
+    # Counted in months it came back as August 2026 alone, so the February piece was in
+    # the results and nowhere on the rail.
+    assert [count.name for count in shape.months] == ["2027", "2026"]
+
+
+# A year bounded to its own last day is still one year.
+async def test_but_a_whole_year_is_still_counted_in_months(clean: None, feed, story):
+    feed_id = await feed("wire.example.com")
+    at = datetime.datetime(2026, 8, 1, tzinfo=datetime.UTC)
+    await story(feed_id, "In August", first_seen_at=at)
+
+    shape = await ui.shape(asked=ui.parse("after:2026 before:2027"))
+
+    assert [count.name for count in shape.months] == ["2026-08"]

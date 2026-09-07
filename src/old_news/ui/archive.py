@@ -175,8 +175,15 @@ YEAR = "YYYY"
 # expand-and-collapse to build or to explain.
 def _dates(asked: Query) -> tuple[Query, bool]:
     """The query a date facet counts against, and whether it counts in months."""
-    bounded = asked.since is not None and asked.until is not None
-    if not (bounded and asked.until.year - asked.since.year <= 1):
+    # `until` is exclusive, so what decides this is the last day the query takes in: a
+    # range from June to next June spans two years and has to be counted in them, or the
+    # months of the second one are in the results and nowhere on the rail.
+    inside = (
+        asked.since is not None
+        and asked.until is not None
+        and (asked.until - datetime.timedelta(days=1)).year == asked.since.year
+    )
+    if not inside:
         # Years, over the whole span: switching year has to still be a choice you can see.
         return dataclasses.replace(asked, since=None, until=None), False
     # Months of the year already chosen. Widened to that year rather than dropped, or the

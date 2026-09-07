@@ -48,12 +48,17 @@ function named(value: string): string {
 	return /\s/.test(plain) ? `"${plain}"` : plain;
 }
 
-/** The query as its terms, with a quoted run kept whole. */
+/** The query as its terms, with a quoted run kept whole and each one only once. Twice
+ *  is not a narrower query, and it used to be two chips wearing one name. */
 function terms(q: string): string[] {
-	return q
-		.trim()
-		.split(/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/)
-		.filter(Boolean);
+	return [
+		...new Set(
+			q
+				.trim()
+				.split(/\s+(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+				.filter(Boolean),
+		),
+	];
 }
 
 /** One narrowing already applied, and the query without it. */
@@ -69,23 +74,37 @@ const STATES: Record<string, string> = {
 	unfinished: 'Not read to the end',
 };
 
+function bare(value: string): string {
+	return value.replaceAll('"', '');
+}
+
 function reads(term: string): string {
 	const at = term.indexOf(':');
 	const key = term.slice(0, at);
-	const value = term.slice(at + 1).replaceAll('"', '');
+	const value = bare(term.slice(at + 1));
 	if (key === 'is') return STATES[value] ?? value;
-	return key.startsWith('-') ? `not ${value}` : value;
+	// `by` says so: a publication and an author can be the same word, and two chips
+	// wearing one name says nothing about either.
+	const named = key.endsWith('by') ? `by ${value}` : value;
+	return key.startsWith('-') ? `not ${named}` : named;
 }
 
-/** A date pair as the one period it is, or whichever half of it was given. */
+/** The period one step back. `before:` is exclusive, so this is what it includes up to. */
+function previous(name: string): string {
+	const [year, ordinal] = name.split('-').map(Number);
+	if (!ordinal) return String(year - 1);
+	return ordinal === 1 ? `${year - 1}-12` : `${year}-${String(ordinal - 1).padStart(2, '0')}`;
+}
+
+/** A date pair as the one period it is, or whichever half of it was given. Named for what
+ *  it includes, never for the bound: `before:2026-09` takes in August and not September. */
 function period(dates: string[]): string {
 	const since = dates.find((term) => term.startsWith('after:'))?.slice(6);
 	const until = dates.find((term) => term.startsWith('before:'))?.slice(7);
-	if (since && until && within(since) === `after:${since} before:${until}`) {
-		return volume(since);
-	}
-	if (since && until) return `${volume(since)} to ${volume(until)}`;
-	return since ? `${volume(since)} on` : `up to ${volume(until ?? '')}`;
+	const last = until ? volume(previous(until)) : '';
+	if (!since) return `up to ${last}`;
+	if (!until) return `${volume(since)} on`;
+	return volume(since) === last ? volume(since) : `${volume(since)} to ${last}`;
 }
 
 /** Every narrowing the query carries, as words, each with the query that drops it.
@@ -106,7 +125,7 @@ export function applied(view: View): Applied[] {
 		...named.map((term) => ({ label: reads(term), without: dropping([term]) })),
 		// The words come off together: half a phrase is not a search anybody typed.
 		...(words.length
-			? [{ label: `\u201c${words.join(' ')}\u201d`, without: dropping(words) }]
+			? [{ label: `\u201c${bare(words.join(' '))}\u201d`, without: dropping(words) }]
 			: []),
 	];
 }

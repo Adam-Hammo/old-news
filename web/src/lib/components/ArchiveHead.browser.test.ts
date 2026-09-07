@@ -75,3 +75,15 @@ test('nothing asked shows no strip at all', async () => {
 
 	expect(screen.container.querySelector('.narrowed')).toBeNull();
 });
+
+// A publication and an author can be the same word. Two chips with one key is a duplicate
+// key, and Svelte takes the whole screen down for one — the way the river once did.
+test('a publication and an author of the same name are two chips, not a crash', async () => {
+	const screen = await show({ q: 'from:guardian by:guardian' });
+
+	const chips = screen.container.querySelectorAll('.narrowed a');
+	expect([...chips].map((chip) => chip.textContent!.replace(/\s+/g, ' ').trim())).toEqual([
+		'guardian×',
+		'by guardian×',
+	]);
+});

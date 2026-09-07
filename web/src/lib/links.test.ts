@@ -131,14 +131,37 @@ test('a month pair reads as the month', () => {
 	expect(links.applied(held({ q: 'after:2026-08 before:2026-09' }))[0].label).toBe('August 2026');
 });
 
-test('half a range still reads as one', () => {
+// `before:` is exclusive, so a period is named for what it takes in, never for the bound.
+test('half a range still reads as one, and reads as what it includes', () => {
 	expect(links.applied(held({ q: 'after:2026-08' }))[0].label).toBe('August 2026 on');
-	expect(links.applied(held({ q: 'before:2026-09' }))[0].label).toBe('up to September 2026');
+	expect(links.applied(held({ q: 'before:2026-09' }))[0].label).toBe('up to August 2026');
+});
+
+test('and a range across periods names the last one it takes in', () => {
+	expect(links.applied(held({ q: 'after:2026-06 before:2026-08' }))[0].label).toBe(
+		'June 2026 to July 2026',
+	);
+	expect(links.applied(held({ q: 'after:2026 before:2028' }))[0].label).toBe('2026 to 2027');
 });
 
 test('a publication reads as its name and an exclusion says so', () => {
 	expect(links.applied(held({ q: 'from:"Kagi News"' }))[0].label).toBe('Kagi News');
 	expect(links.applied(held({ q: '-from:guardian' }))[0].label).toBe('not guardian');
+});
+
+// A publication and an author can be the same word, and two chips wearing one name says
+// nothing about either — and used to take the whole screen down on a duplicate key.
+test('an author says so, so it cannot be mistaken for a publication', () => {
+	const both = links.applied(held({ q: 'from:guardian by:guardian' }));
+
+	expect(both.map((one) => one.label)).toEqual(['guardian', 'by guardian']);
+	expect(new Set(both.map((one) => one.without)).size).toBe(2);
+});
+
+test('and the same term twice is one term', () => {
+	expect(links.applied(held({ q: 'from:guardian from:guardian' }))).toEqual([
+		{ label: 'guardian', without: '' },
+	]);
 });
 
 test('a state reads as the words the rail uses for it', () => {
@@ -195,4 +218,11 @@ test('but a second publication is an OR and stacks', () => {
 	const view = held({ q: 'from:abc' });
 
 	expect(links.toggled(view, 'from:sbs')).toBe('/archive?q=from%3Aabc%20from%3Asbs');
+});
+
+// The quotes are the grammar's, not the reader's: they were showing up inside the chip.
+test('a phrase reads without the quotes that made it one', () => {
+	expect(links.applied(held({ q: '"housing density"' }))[0].label).toBe(
+		'\u201chousing density\u201d',
+	);
 });

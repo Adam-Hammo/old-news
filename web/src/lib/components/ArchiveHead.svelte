@@ -23,7 +23,9 @@
 	     year the rail lists that year's months, so the row you drilled through is gone. -->
 	<p class="narrowed">
 		<span class="label">Narrowed by</span>
-		{#each narrowing as one (one.label)}
+		<!-- Keyed on what it drops, not on what it says: a publication and an author can be
+		     the same word, and two rows with one key takes the whole screen down. -->
+		{#each narrowing as one (one.without)}
 			<a href={links.search(one.without)} aria-label="Stop narrowing by {one.label}">
 				{one.label}<em aria-hidden="true">×</em>
 			</a>
