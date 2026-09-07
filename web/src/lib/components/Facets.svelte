@@ -169,28 +169,44 @@
 	}
 
 	@media (max-width: 61.99rem) {
-		/* No room for a rail, so the groups run across as one scrolling strip. */
+		/* No room for a rail, so each group is its own scrolling row — in the same order
+		   the rail has them, each keeping its name. One row for all three put `You` five
+		   thousand pixels along, behind every publication there is. */
 		nav {
-			flex-direction: row;
-			gap: 0;
-			height: auto;
+			gap: 4px;
+			padding: 7px 0;
+		}
+
+		/* The gutter is on what is inside, not on the scroller: `position: sticky` resolves
+		   against the padding box, so a padded row slid its heading out to the screen edge
+		   as soon as it was scrolled. */
+		section {
+			display: flex;
+			align-items: center;
+			gap: 8px;
 			overflow-x: auto;
 			scrollbar-width: none;
-			padding: 8px var(--gutter);
 		}
 
-		/* The states are three chips and the publications are forty, so on one strip the
-		   short group goes first — the other way round from the rail, where a heading says
-		   which is which. */
-		section:last-child {
-			order: -1;
-		}
-
-		nav::-webkit-scrollbar {
+		section::-webkit-scrollbar {
 			display: none;
 		}
 
+		/* Sticky, so the row still says what it is once it has been scrolled along. */
 		h2 {
+			position: sticky;
+			left: 0;
+			z-index: 1;
+			margin: 0;
+			padding: 0 8px 0 var(--gutter);
+			border-bottom: 0;
+			white-space: nowrap;
+			background: var(--paper);
+		}
+
+		/* How many values there are is a rail answer. On a strip it is one more number
+		   beside a row of them. */
+		h2 i {
 			display: none;
 		}
 
@@ -199,6 +215,7 @@
 			gap: 6px;
 			max-height: none;
 			overflow-y: visible;
+			padding-right: var(--gutter);
 		}
 
 		li a {

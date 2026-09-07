@@ -144,9 +144,7 @@ async def _record_disallowed(
         return
     _log(session, feed_id, PollOutcome.DISALLOWED, error="disallowed by robots.txt")
     feed.last_polled_at = now
-    feed.next_poll_at = now + datetime.timedelta(
-        seconds=schedule.clamp_interval(settings.max_interval_seconds, settings)
-    )
+    feed.next_poll_at = now + datetime.timedelta(seconds=settings.max_backoff_seconds)
 
 
 @db.transactional
@@ -206,7 +204,7 @@ def _retry_after(response: Response, settings: IngestSettings) -> int | None:
         return schedule.clamp_interval(int(raw), settings)
     except ValueError:
         # The header may be an HTTP date. Backing off by the maximum is fine.
-        return settings.max_interval_seconds
+        return settings.max_backoff_seconds
 
 
 async def poll_feed(feed_id: uuid.UUID, fetcher: Fetcher, settings: Settings) -> store.Applied:

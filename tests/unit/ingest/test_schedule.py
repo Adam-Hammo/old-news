@@ -13,16 +13,27 @@ def settings() -> IngestSettings:
     return IngestSettings()
 
 
-def test_a_healthy_feed_that_published_is_visited_sooner(settings):
-    interval = next_interval(settings, current_seconds=1800, new_items=3)
+HALF_AN_HOUR = 1800
 
-    assert interval == 900
+
+def _idle(settings: IngestSettings, seconds: int = HALF_AN_HOUR) -> int:
+    return int(seconds * settings.idle_interval_multiplier)
+
+
+def test_a_healthy_feed_that_published_is_visited_sooner(settings):
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=3)
+
+    # Sooner said out loud, because the line below is the implementation's own arithmetic
+    # and would stay true with the two multipliers swapped.
+    assert interval < HALF_AN_HOUR
+    assert interval == int(HALF_AN_HOUR * settings.busy_interval_multiplier)
 
 
 def test_a_quiet_feed_drifts_later(settings):
-    interval = next_interval(settings, current_seconds=1800, new_items=0)
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=0)
 
-    assert interval == 2700
+    assert interval > HALF_AN_HOUR
+    assert interval == _idle(settings)
 
 
 def test_backoff_is_exponential_in_failures(settings):
@@ -34,20 +45,35 @@ def test_backoff_is_exponential_in_failures(settings):
 
 def test_intervals_are_clamped_to_the_configured_bounds(settings):
     assert next_interval(settings, current_seconds=1, new_items=1) == settings.min_interval_seconds
-    assert next_interval(settings, failures=50) == settings.max_interval_seconds
+    assert next_interval(settings, current_seconds=10**9) == settings.max_interval_seconds
+
+
+# Two different questions: how long a quiet feed may go unseen, against how long a
+# publisher gets to be down. Sharing one number meant polling faster also gave up sooner,
+# and giving up is permanent — `due_polls` excludes a feed at the limit and nothing
+# resets the count but a poll that works.
+def test_a_fault_is_waited_out_on_its_own_ceiling(settings):
+    assert settings.max_backoff_seconds > settings.max_interval_seconds
+    assert next_interval(settings, failures=50) == settings.max_backoff_seconds
+
+
+def test_and_the_limit_is_days_of_outage_rather_than_hours(settings):
+    total = sum(next_interval(settings, failures=n) for n in range(1, 10 + 1))
+
+    assert total > 4 * 24 * 60 * 60
 
 
 def test_feed_ttl_raises_the_floor(settings):
     """<ttl> asks to be polled less often, so it may only lengthen the wait."""
-    interval = next_interval(settings, current_seconds=1800, new_items=5, ttl_seconds=3600)
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=5, ttl_seconds=3600)
 
     assert interval == 3600
 
 
 def test_feed_ttl_never_shortens_the_wait(settings):
-    interval = next_interval(settings, current_seconds=1800, new_items=0, ttl_seconds=60)
+    interval = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=0, ttl_seconds=60)
 
-    assert interval == 2700
+    assert interval == _idle(settings)
 
 
 def test_a_ttl_beyond_our_ceiling_is_still_honoured(settings):
@@ -59,20 +85,21 @@ def test_a_ttl_beyond_our_ceiling_is_still_honoured(settings):
 
 def test_ttl_can_be_ignored_by_configuration():
     settings = IngestSettings(honour_feed_ttl=False)
+    asked = next_interval(settings, current_seconds=HALF_AN_HOUR, new_items=0, ttl_seconds=99999)
 
-    assert next_interval(settings, current_seconds=1800, new_items=0, ttl_seconds=99999) == 2700
+    assert asked == _idle(settings)
 
 
 def test_next_poll_at_is_now_plus_the_interval(settings):
     now = datetime.datetime(2026, 8, 3, tzinfo=datetime.UTC)
 
     assert next_poll_at(
-        now, settings, current_seconds=1800, new_items=0
-    ) == now + datetime.timedelta(seconds=2700)
+        now, settings, current_seconds=HALF_AN_HOUR, new_items=0
+    ) == now + datetime.timedelta(seconds=_idle(settings))
 
 
 def test_a_retry_after_beyond_our_ceiling_is_capped(settings):
     """A server sending 999999999 would otherwise park the feed for decades."""
     response = Response(status=503, url="https://x", body=b"", headers={"Retry-After": "999999999"})
 
-    assert _retry_after(response, settings) == settings.max_interval_seconds
+    assert _retry_after(response, settings) == settings.max_backoff_seconds
