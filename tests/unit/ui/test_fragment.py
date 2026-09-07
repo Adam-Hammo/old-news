@@ -1,6 +1,7 @@
 """The fragment a search row carries: a window of the reading, with what matched marked."""
 
 from old_news.ui import search
+from old_news.ui.query import parse
 
 STREET = (
     "The street was widened in 1962 and the shops went with it. Housing density fell by a "
@@ -8,9 +9,14 @@ STREET = (
 )
 
 
+def found(body: str, typed: str) -> str:
+    """What the reader typed, parsed the way the route parses it, then marked."""
+    return search.fragment(body, parse(typed).wanted)
+
+
 def marked(body: str, terms: str) -> str:
     """The fragment with its markers made visible, so a test can say where they land."""
-    return search.fragment(body, terms).replace(search.OPEN, "[").replace(search.CLOSE, "]")
+    return found(body, terms).replace(search.OPEN, "[").replace(search.CLOSE, "]")
 
 
 def test_what_matched_is_marked():
@@ -46,7 +52,7 @@ def test_the_run_up_does_not_open_mid_word():
 
 
 def test_a_long_reading_is_cut_to_a_window():
-    fragment = search.fragment("Density. " + "word " * 400, "density")
+    fragment = found("Density. " + "word " * 400, "density")
 
     assert len(fragment) <= search.SNIPPET_CHARS + len(search.OPEN + search.CLOSE) + 1
     assert fragment.endswith("…")
@@ -55,16 +61,16 @@ def test_a_long_reading_is_cut_to_a_window():
 # The index reaches text `flatten` drops, and an unmarked opening paragraph explains
 # nothing about why the row is on screen.
 def test_a_term_only_in_a_stripped_url_offers_no_fragment():
-    assert search.fragment("Read it at https://airbnb.example.com/x for more.", "airbnb") == ""
+    assert found("Read it at https://airbnb.example.com/x for more.", "airbnb") == ""
 
 
 def test_a_headline_only_match_offers_no_fragment():
-    assert search.fragment(STREET, "wombat") == ""
+    assert found(STREET, "wombat") == ""
 
 
 def test_nothing_to_search_for_is_no_fragment():
-    assert search.fragment(STREET, "") == ""
-    assert search.fragment("", "density") == ""
+    assert found(STREET, "") == ""
+    assert found("", "density") == ""
 
 
 def test_the_fragment_is_prose_rather_than_the_markdown_it_is_stored_as():

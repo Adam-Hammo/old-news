@@ -15,9 +15,6 @@ const CONTENTS = '/archive';
 export const load: LayoutLoad = async ({ fetch, url }) => {
 	const view: View = {
 		section: url.searchParams.get('section') ?? '',
-		feed: url.searchParams.get('feed') ?? '',
-		month: url.searchParams.get('month') ?? '',
-		tier: url.searchParams.get('tier') ?? '',
 		q: url.searchParams.get('q') ?? '',
 	};
 	// When, so the reading UI knows how old what it is showing has got.

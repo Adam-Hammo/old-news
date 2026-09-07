@@ -1,7 +1,8 @@
-from old_news.ui.archive import BadShelf, Contents, Run, Volume, contents, shelf
+from old_news.ui.archive import BadZone, Contents, Run, Volume, contents, held
 from old_news.ui.cursor import BadCursor
 from old_news.ui.entries import DEFAULT_LIMIT, MAX_LIMIT, Entry, Listing
-from old_news.ui.search import CLOSE, MAX_DEPTH, OPEN, BadQuery, Found, look
+from old_news.ui.query import BadQuery, Query, Term, parse
+from old_news.ui.search import CLOSE, MAX_DEPTH, OPEN, Found
 from old_news.ui.service import (
     Article,
     article,
@@ -21,20 +22,22 @@ __all__ = [
     "Article",
     "BadCursor",
     "BadQuery",
-    "BadShelf",
+    "BadZone",
     "Contents",
     "Entry",
     "Found",
     "Listing",
+    "Query",
     "Run",
+    "Term",
     "Volume",
     "article",
     "contents",
+    "held",
     "image",
-    "look",
     "mark_finished",
     "mark_opened",
+    "parse",
     "river",
     "sections",
-    "shelf",
 ]

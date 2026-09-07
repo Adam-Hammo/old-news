@@ -1,4 +1,4 @@
-"""Keyword search: what the terms reach, what ranks first, and what a fragment reads like."""
+"""What the words reach, what ranks first, and what a fragment reads like."""
 
 import datetime
 
@@ -14,9 +14,12 @@ DENSITY = "The street was rebuilt for cars. Housing density fell, and the shops 
 BIRDS = "A haven for wildlife, mostly wrens and a great deal of unexplained noise."
 
 
-async def _titles(terms: str, **kwargs) -> list[str]:
-    found = await ui.look(KINDLE, terms=terms, **kwargs)
-    return [entry.title for entry in found.listing.entries]
+async def _found(typed: str, **kwargs) -> ui.Found:
+    return await ui.held(KINDLE, asked=ui.parse(typed), **kwargs)
+
+
+async def _titles(typed: str, **kwargs) -> list[str]:
+    return [entry.title for entry in (await _found(typed, **kwargs)).listing.entries]
 
 
 async def test_a_word_in_the_reading_finds_the_article(clean: None, feed, story):
@@ -59,7 +62,7 @@ async def test_the_count_is_of_everything_that_matched_not_of_the_page(clean: No
     for number in range(5):
         await story(feed_id, f"Street {number}", body=DENSITY)
 
-    found = await ui.look(KINDLE, terms="density", limit=2)
+    found = await _found("density", limit=2)
 
     assert (len(found.listing.entries), found.total) == (2, 5)
 
@@ -72,7 +75,7 @@ async def test_results_page_to_their_end(clean: None, feed, story):
     seen: list[str] = []
     cursor = ""
     while True:
-        found = await ui.look(KINDLE, terms="density", after=cursor, limit=2)
+        found = await _found("density", after=cursor, limit=2)
         seen += [entry.title for entry in found.listing.entries]
         if not found.listing.cursor:
             break
@@ -85,7 +88,7 @@ async def test_a_fragment_of_the_article_says_why_it_matched(clean: None, feed, 
     feed_id = await feed("essays.example.com")
     await story(feed_id, "A quiet street", body=DENSITY)
 
-    entry = (await ui.look(KINDLE, terms="density")).listing.entries[0]
+    entry = (await _found("density")).listing.entries[0]
 
     assert f"{ui.OPEN}density{ui.CLOSE}" in entry.snippet
 
@@ -100,7 +103,7 @@ async def test_a_fragment_is_prose_rather_than_the_markdown_it_is_stored_as(
         body="## Head\n\nThe [density](https://example.com/x) of Google&#x27;s streets fell.",
     )
 
-    entry = (await ui.look(KINDLE, terms="density")).listing.entries[0]
+    entry = (await _found("density")).listing.entries[0]
 
     assert "https://" not in entry.snippet
     assert "&#x27;" not in entry.snippet
@@ -128,7 +131,7 @@ async def test_a_row_still_says_what_the_book_has_done_with_it(clean: None, feed
     feed_id = await feed("essays.example.com", tier=Tier.KINDLE)
     await story(feed_id, "A quiet street", body=DENSITY)
 
-    entry = (await ui.look(KINDLE, terms="density")).listing.entries[0]
+    entry = (await _found("density")).listing.entries[0]
 
     assert (entry.sent, entry.queued) == (False, True)
 
@@ -151,7 +154,7 @@ async def test_a_headline_that_has_been_rewritten_is_not_what_search_matches(
     await supersede(item_id, "Who is calling the shots on trade")
 
     assert await _titles("tariff") == []
-    assert (await ui.look(KINDLE, terms="tariff")).total == 0
+    assert (await _found("tariff")).total == 0
     assert await _titles("shots") == ["Who is calling the shots on trade"]
 
 
@@ -176,10 +179,21 @@ async def test_a_body_score_does_not_order_the_headline_group(clean: None, feed,
     assert (await _titles("density"))[0] == "Density itself"
 
 
-@pytest.mark.parametrize("terms", ["", "   "])
-async def test_searching_for_nothing_is_refused(clean: None, terms):
-    with pytest.raises(ui.BadQuery):
-        await ui.look(KINDLE, terms=terms)
+# It used to be an error. Everything held is now a legitimate thing to ask for, and it is
+# what the archive opens on.
+@pytest.mark.parametrize("typed", ["", "   "])
+async def test_searching_for_nothing_is_everything_held(clean: None, feed, story, typed):
+    feed_id = await feed("essays.example.com")
+    await story(feed_id, "A quiet street", body=DENSITY)
+    await story(feed_id, "A loud garden", body=BIRDS)
+
+    found = await _found(typed)
+
+    assert found.total == 2
+    assert sorted(entry.title for entry in found.listing.entries) == [
+        "A loud garden",
+        "A quiet street",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -194,7 +208,7 @@ async def test_searching_for_nothing_is_refused(clean: None, terms):
 )
 async def test_a_page_that_is_not_a_number_is_refused(clean: None, after):
     with pytest.raises(ui.BadQuery):
-        await ui.look(KINDLE, terms="density", after=after)
+        await _found("density", after=after)
 
 
 async def test_paging_stops_rather_than_running_forever(clean: None, feed, story):
@@ -202,6 +216,6 @@ async def test_paging_stops_rather_than_running_forever(clean: None, feed, story
     feed_id = await feed("essays.example.com")
     await story(feed_id, "A quiet street", body=DENSITY)
 
-    found = await ui.look(KINDLE, terms="density", after=str(ui.MAX_DEPTH), limit=1)
+    found = await _found("density", after=str(ui.MAX_DEPTH), limit=1)
 
     assert found.listing.cursor == ""

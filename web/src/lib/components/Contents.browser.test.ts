@@ -28,15 +28,15 @@ test('a publication is a run you can open', async () => {
 
 	await expect
 		.element(screen.getByRole('link', { name: /Construction Physics/ }))
-		.toHaveAttribute('href', '/?feed=f1');
+		.toHaveAttribute('href', '/?q=from%3A%22Construction%20Physics%22');
 });
 
-test('a month is a shelf you can open, in words rather than in a date format', async () => {
+test('a month is a pair of dates you can open, labelled in words', async () => {
 	const screen = await show();
 
 	await expect
 		.element(screen.getByRole('link', { name: /June 2026/ }))
-		.toHaveAttribute('href', '/?month=2026-06');
+		.toHaveAttribute('href', '/?q=after%3A2026-06%20before%3A2026-07');
 });
 
 // The wire is over half the archive and none of the reason to walk it, so it is the one

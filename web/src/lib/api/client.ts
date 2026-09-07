@@ -68,16 +68,13 @@ export function contents(fetcher: Fetcher): Promise<Contents> {
 /** A list, and how much matched where anything counted it. Null is nobody counting. */
 export type Result = { listing: Listing; total: number | null };
 
-/** Whichever list the view describes: a slice of the river, a shelf, or a search. */
+/** Whichever list the view describes: a slice of the river, or whatever the query reaches. */
 export async function listing(fetcher: Fetcher, view: View, after = ''): Promise<Result> {
-	if (view.q) {
-		return get<Found>(fetcher, '/archive/search/', { q: view.q, after });
+	if (links.archived(view)) {
+		return get<Found>(fetcher, '/archive/items/', { q: view.q, after, zone: ZONE });
 	}
-	const { feed, month, tier } = view;
-	const listing = links.archived(view)
-		? await get<Listing>(fetcher, '/archive/items/', { feed, month, tier, after, zone: ZONE })
-		: await get<Listing>(fetcher, '/river/', { section: view.section, after });
-	// The river has no total by design, and a shelf's is already on the contents page.
+	// The river has no total by design: the roadmap ruled unread counts out.
+	const listing = await get<Listing>(fetcher, '/river/', { section: view.section, after });
 	return { listing, total: null };
 }
 

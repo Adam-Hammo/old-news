@@ -89,9 +89,19 @@ def test_after_and_before_bracket_exactly_one_month():
     assert (query.since, query.until) == (datetime.date(2026, 8, 1), datetime.date(2026, 9, 1))
 
 
-def test_a_date_that_is_not_one_says_so():
-    with pytest.raises(BadQuery, match="after:"):
-        parse("after:banana")
+@pytest.mark.parametrize(
+    "typed",
+    [
+        pytest.param("after:banana", id="not-a-date-at-all"),
+        pytest.param("after:2026-13", id="no-thirteenth-month"),
+        # The month after this one does not fit in a date, which used to be a 500.
+        pytest.param("before:10000-01", id="past-the-last-month-there-is"),
+        pytest.param("after:2026-", id="half-typed"),
+    ],
+)
+def test_a_date_that_is_not_one_says_so(typed: str):
+    with pytest.raises(BadQuery):
+        parse(typed)
 
 
 def test_a_state_that_is_not_one_says_so():

@@ -11,10 +11,9 @@
 
 	let { page, view, selected }: { page: Listing; view: View; selected: string } = $props();
 
+	// One discriminator now: in the archive is exactly "there is a query".
 	const archived = $derived(links.archived(view));
-	const empty = $derived(
-		view.q ? 'Nothing matched.' : archived ? 'Nothing held here.' : 'Nothing here yet.',
-	);
+	const empty = $derived(archived ? 'Nothing matched.' : 'Nothing here yet.');
 
 	// Pages fetched after the first, tagged with what they were fetched behind. Reconciled
 	// in a `$derived` rather than cleared in an `$effect`: an effect runs after the render

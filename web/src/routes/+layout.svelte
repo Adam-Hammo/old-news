@@ -114,7 +114,7 @@
 				<div class="pulled">
 					<p class="asking label">{note}</p>
 					{#if shelf}
-						<ArchiveHead view={data.view} shelf={list.shelf} {total} />
+						<ArchiveHead view={data.view} {total} />
 					{:else}
 						<SectionStrip sections={data.sections} current={data.view.section} />
 					{/if}

@@ -69,7 +69,7 @@ test('and from the contents page the masthead crosses back', async () => {
 
 // A shelf is in the archive as much as the contents page is, so it says so too.
 test('a shelf is named as the archive without being told', async () => {
-	const screen = await render(Masthead, { view: view({ feed: 'f1' }), updated: null });
+	const screen = await render(Masthead, { view: view({ q: 'from:pluralistic' }), updated: null });
 
 	expect(screen.container.querySelector('.mode')!.textContent).toBe('Archive');
 	await expect.element(screen.getByRole('link', { name: 'River' })).toHaveAttribute('href', '/');

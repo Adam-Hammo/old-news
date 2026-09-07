@@ -63,7 +63,7 @@ async function narrow<T>(component: T, props: Record<string, unknown>) {
 const view = (over: Partial<View> = {}): View => ({ ...NOWHERE, ...over });
 
 test('the masthead, with the longest dateline it has and the archive beside it', async () => {
-	const container = await narrow(Masthead, { view: view({ month: '2026-09' }), updated: null });
+	const container = await narrow(Masthead, { view: view({ q: 'from:x' }), updated: null });
 
 	expect(through(container)).toEqual([]);
 });
@@ -91,10 +91,9 @@ test('the archive, with a six-figure count against a name that will not fit', as
 	expect(through(container)).toEqual([]);
 });
 
-test('a shelf header, with a publication and a month named at once', async () => {
+test('the archive header, with a query too long for the field and a six-figure count', async () => {
 	const container = await narrow(ArchiveHead, {
-		view: view({ feed: 'f1', month: '2026-09' }),
-		shelf: LONG_NAME,
+		view: view({ q: `from:"${LONG_NAME}" after:2026-08 before:2026-09 is:unread` }),
 		total: BIG,
 	});
 
@@ -115,7 +114,7 @@ test('a river row, with a whole production credit for a byline', async () => {
 		queued: false,
 		snippet: '',
 	};
-	const page: Listing = { entries: [entry], cursor: '', updated: null, shelf: '' };
+	const page: Listing = { entries: [entry], cursor: '', updated: null };
 
 	const container = await narrow(River, { page, view: view(), selected: '' });
 

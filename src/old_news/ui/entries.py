@@ -45,9 +45,6 @@ class Listing:
     # What the masthead carries. It answers "is this working", which is the question a
     # reader actually has, rather than "how much have you missed".
     updated: datetime.datetime | None
-    # The publication a shelf is of, which is the one thing its URL cannot say. A month
-    # names itself and the river is not of anything, so both leave this empty.
-    shelf: str = ""
 
 
 def last_poll():
@@ -125,7 +122,7 @@ def before(seen: datetime.datetime, dated_at: datetime.datetime, item_id: uuid.U
     )
 
 
-async def page(session: AsyncSession, query: Select, limit: int, shelf: str = "") -> Listing:
+async def page(session: AsyncSession, query: Select, limit: int) -> Listing:
     """One page of an already-ordered query, over-fetched by a row to find the cursor."""
     rows = (await session.execute(query.limit(limit + 1))).mappings().all()
     entries = tuple(Entry(**row) for row in rows[:limit])
@@ -138,5 +135,4 @@ async def page(session: AsyncSession, query: Select, limit: int, shelf: str = ""
             else ""
         ),
         updated=await session.scalar(last_poll()),
-        shelf=shelf,
     )

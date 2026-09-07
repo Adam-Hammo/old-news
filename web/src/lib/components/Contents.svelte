@@ -85,7 +85,7 @@
 	<ul class="feeds">
 		{#each group.toSorted((a, b) => a.title.localeCompare(b.title)) as run (run.feed_id)}
 			<li>
-				<a href={links.feed(run.feed_id)}>
+				<a href={links.publication(run.title || run.url)}>
 					<b>{run.title || run.url}</b>
 					<span class="when">{stamp(run.latest)}</span>
 					<span class="tally">{counted.format(run.items)}</span>

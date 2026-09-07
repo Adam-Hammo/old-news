@@ -11,25 +11,8 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/** What the archive holds, shelved by publication and by month. */
+		/** What the archive holds, by publication and by month. */
 		get: operations['ArchiveContents'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/archive/search': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** What the terms reach, best first, across every reading held. */
-		get: operations['ArchiveSearchSearch'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -45,8 +28,8 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/** One shelf of the archive: a publication, a month, or both. */
-		get: operations['ArchiveItemsShelf'];
+		/** Everything held that the query reaches, and how much did. */
+		get: operations['ArchiveItemsHeld'];
 		put?: never;
 		post?: never;
 		delete?: never;
@@ -395,8 +378,6 @@ export interface components {
 			entries: components['schemas']['Entry'][];
 			cursor: string;
 			updated: string | null;
-			/** @default  */
-			shelf: string;
 		};
 		/** NewFeed */
 		NewFeed: {
@@ -484,7 +465,7 @@ export interface operations {
 	ArchiveContents: {
 		parameters: {
 			query?: {
-				/** @description An IANA zone; months are grouped in it. */
+				/** @description An IANA zone; months and dates are read in it. */
 				zone?: string;
 			};
 			header?: never;
@@ -522,63 +503,15 @@ export interface operations {
 			};
 		};
 	};
-	ArchiveSearchSearch: {
+	ArchiveItemsHeld: {
 		parameters: {
 			query?: {
-				/** @description Words, not query syntax. Every one is meant. */
+				/** @description Words, and the operators `from:` `by:` `after:` `before:` `is:`. A quoted run is adjacent, a leading minus excludes. Empty is everything held. */
 				q?: string;
 				/** @description The cursor a previous page ended on. */
 				after?: string;
 				limit?: number;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description Request fulfilled, document follows */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['Found'];
-				};
-			};
-			/** @description Bad request syntax or unsupported method */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						status_code: number;
-						detail: string;
-						extra?:
-							| null
-							| {
-									[key: string]: unknown;
-							  }
-							| unknown[];
-					};
-				};
-			};
-		};
-	};
-	ArchiveItemsShelf: {
-		parameters: {
-			query?: {
-				/** @description A feed's whole run. */
-				feed?: string | null;
-				/** @description A month as YYYY-MM, in `zone`. */
-				month?: string;
-				/** @description Only feeds filed at this tier or above. */
-				tier?: string;
-				/** @description The cursor a previous page ended on. */
-				after?: string;
-				limit?: number;
-				/** @description An IANA zone; months are grouped in it. */
+				/** @description An IANA zone; months and dates are read in it. */
 				zone?: string;
 			};
 			header?: never;
@@ -593,7 +526,7 @@ export interface operations {
 					[name: string]: unknown;
 				};
 				content: {
-					'application/json': components['schemas']['Listing'];
+					'application/json': components['schemas']['Found'];
 				};
 			};
 			/** @description Bad request syntax or unsupported method */
