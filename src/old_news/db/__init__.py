@@ -1,6 +1,7 @@
 from old_news.db.base import Base
 from old_news.db.models import (
     CAPTURE_POLICY,
+    LONGEST_WINDOW,
     READING_IDENTITY,
     READING_KEY,
     CaptureOutcome,
@@ -38,6 +39,7 @@ from old_news.db.session import configure, dispose, engine, session, transaction
 
 __all__ = [
     "CAPTURE_POLICY",
+    "LONGEST_WINDOW",
     "READING_IDENTITY",
     "READING_KEY",
     "Base",

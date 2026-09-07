@@ -14,16 +14,15 @@
 	];
 
 	// A handful of named lengths rather than a number: the difference between five days
-	// and six is not an opinion anybody has. Null is the feed nothing ages out of.
+	// and six is not an opinion anybody has. The last of them is the longest window there
+	// is — past it a thing is in the archive, which is what the archive is for.
 	const WINDOWS = [
 		{ value: '21600', label: '6 hours' },
 		{ value: '86400', label: '1 day' },
 		{ value: '259200', label: '3 days' },
 		{ value: '604800', label: '1 week' },
 		{ value: '1209600', label: '2 weeks' },
-		{ value: '3628800', label: '6 weeks' },
-		{ value: '15552000', label: '6 months' },
-		{ value: '', label: 'Never' },
+		{ value: '2592000', label: '1 month' },
 	];
 
 	let url = $state('');
@@ -55,7 +54,7 @@
 		busy = false;
 	}
 
-	/** The whole filing, with one field replaced. A partial PATCH cannot say "never". */
+	/** The whole filing, with one field replaced. A partial PATCH cannot say what it left alone. */
 	function filing(feed: Following, over: Partial<api.Filing> = {}): api.Filing {
 		return {
 			category: feed.category,
@@ -84,13 +83,6 @@
 
 <section>
 	<h2>Feeds</h2>
-	<p class="say">
-		Paste a feed, or the address of a site that has one &mdash; it will be found. Dropping a
-		feed stops the polling and keeps everything already read; it takes two presses. The tier is
-		how much trouble a feed is worth: the wire keeps a lead image, archive holds every picture,
-		and kindle does that and sends the weekly book.
-	</p>
-
 	<form
 		onsubmit={(event) => {
 			event.preventDefault();
@@ -187,15 +179,16 @@
 							<label>
 								<span class="what-for">Ages out after</span>
 								<select
-									value={String(feed.expires_after_seconds ?? '')}
+									value={String(feed.expires_after_seconds)}
 									aria-label="Window for {feed.title || feed.url}"
 									onchange={(event) =>
 										act(() =>
 											api.file(
 												feed.id,
 												filing(feed, {
-													expires_after_seconds:
-														Number(event.currentTarget.value) || null,
+													expires_after_seconds: Number(
+														event.currentTarget.value,
+													),
 												}),
 											),
 										)}
@@ -223,15 +216,8 @@
 		letter-spacing: -0.015em;
 	}
 
-	.say {
-		margin: 8px 0 18px;
-		font-size: 15px;
-		line-height: 1.5;
-		color: var(--ink-soft);
-		text-wrap: pretty;
-	}
-
 	form {
+		margin-top: 18px;
 		display: flex;
 		flex-direction: column;
 		gap: 8px;

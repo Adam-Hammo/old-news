@@ -33,8 +33,8 @@ class Following:
     category: str
     tier: str
     # Seconds, not an interval: JSON has no duration, and the screen offers a handful of
-    # named lengths rather than a number. Null is a feed nothing ages out of.
-    expires_after_seconds: int | None
+    # named lengths rather than a number.
+    expires_after_seconds: int
     last_success_at: datetime.datetime | None
 
 
@@ -144,7 +144,7 @@ async def refile(
     *,
     category: str,
     tier: str,
-    expires_after_seconds: int | None,
+    expires_after_seconds: int,
 ) -> bool:
     """Every per-feed choice at once, so the screen never has to send a partial one."""
     subscription = await _following(session, Feed.id == feed_id)
@@ -152,9 +152,7 @@ async def refile(
         return False
     subscription.category = category
     subscription.tier = tier
-    subscription.expires_after = (
-        None if expires_after_seconds is None else datetime.timedelta(seconds=expires_after_seconds)
-    )
+    subscription.expires_after = datetime.timedelta(seconds=expires_after_seconds)
     return True
 
 

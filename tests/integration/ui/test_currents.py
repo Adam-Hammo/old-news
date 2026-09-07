@@ -16,12 +16,13 @@ async def _titles(**kwargs) -> list[str]:
     return [entry.title for entry in (await ui.river(KINDLE, **kwargs)).entries]
 
 
-async def test_a_feed_with_no_window_never_ages_out(clean: None, feed, story):
-    """Null is what every row starts as, so nothing disappears until a window is set."""
+async def test_a_feed_nobody_has_filed_still_ages_out(clean: None, feed, story):
+    """There is no window that keeps a thing in the river: past the longest one it is archive."""
     feed_id = await feed("kept.example.com")
+    await story(feed_id, "This week", first_seen_at=NOW - DAY)
     await story(feed_id, "From last year", first_seen_at=NOW - 365 * DAY)
 
-    assert await _titles() == ["From last year"]
+    assert await _titles() == ["This week"]
 
 
 async def test_an_item_older_than_its_window_leaves_the_river(clean: None, feed, story):
@@ -35,7 +36,7 @@ async def test_an_item_older_than_its_window_leaves_the_river(clean: None, feed,
 async def test_each_feed_ages_out_on_its_own_window(clean: None, feed, story):
     """The point of hanging it off the subscription rather than the section."""
     fast = await feed("wire.example.com", category="Wire", expires_after=2 * DAY)
-    slow = await feed("essays.example.com", category="Wire", expires_after=60 * DAY)
+    slow = await feed("essays.example.com", category="Wire", expires_after=30 * DAY)
     await story(fast, "Wire, last week", first_seen_at=NOW - 7 * DAY)
     await story(slow, "Essay, last week", first_seen_at=NOW - 7 * DAY)
 
@@ -108,8 +109,8 @@ async def test_opening_an_article_leaves_it_due(clean: None, feed, story):
 
 async def test_an_item_past_the_kindle_window_is_not_due(clean: None, feed, story):
     """Its window is long, but a weekly issue only reaches back a week."""
-    feed_id = await feed("essays.example.com", tier=Tier.KINDLE, expires_after=365 * DAY)
-    await story(feed_id, "An old essay", body="Some text.", first_seen_at=NOW - 30 * DAY)
+    feed_id = await feed("essays.example.com", tier=Tier.KINDLE, expires_after=30 * DAY)
+    await story(feed_id, "An old essay", body="Some text.", first_seen_at=NOW - 20 * DAY)
 
     assert (await ui.river(KINDLE)).entries[0].queued is False
 

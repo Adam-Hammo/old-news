@@ -313,9 +313,9 @@ export interface components {
 		/** Filing */
 		Filing: {
 			category: string;
+			expires_after_seconds: number;
 			/** @default wire */
 			tier: string;
-			expires_after_seconds?: number | null;
 		};
 		/** Finished */
 		Finished: {
@@ -331,7 +331,7 @@ export interface components {
 			site_url: string;
 			category: string;
 			tier: string;
-			expires_after_seconds: number | null;
+			expires_after_seconds: number;
 			last_success_at: string | null;
 		};
 		/** Found */
