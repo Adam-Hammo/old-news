@@ -30,7 +30,7 @@ class Finished:
     finished_at: datetime.datetime
 
 
-@get("/river", summary="A page of the river, newest first by when we first saw it.")
+@get("/river", summary="A page of the river, newest first by when a thing was written.")
 async def river(
     section: str = Parameter(default="", description="A subscription category; empty is all."),
     after: str = Parameter(default="", description="The cursor a previous page ended on."),

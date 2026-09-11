@@ -45,11 +45,17 @@ async def test_each_feed_ages_out_on_its_own_window(clean: None, feed, story):
 
 
 async def test_expiry_survives_a_page_boundary(clean: None, feed, story):
-    """The cutoff and the cursor are bounds on the same key, so paging cannot leak a row."""
+    """The cutoff is on one key and the cursor on another, so paging has to hold them both."""
     # Half a day of margin, or the row sitting exactly on the cutoff races the clock.
     feed_id = await feed("wire.example.com", expires_after=3 * DAY + datetime.timedelta(hours=12))
     for day in range(6):
-        await story(feed_id, f"Day {day}", first_seen_at=NOW - day * DAY)
+        # Two days behind the sighting, so every row is placed by the ceiling and not its date.
+        await story(
+            feed_id,
+            f"Day {day}",
+            first_seen_at=NOW - day * DAY,
+            published_at=NOW - day * DAY - 2 * DAY,
+        )
 
     seen: list[str] = []
     cursor = ""

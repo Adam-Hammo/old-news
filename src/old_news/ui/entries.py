@@ -5,7 +5,7 @@ import datetime
 import enum
 import uuid
 
-from sqlalchemy import Select, and_, func, literal, select, tuple_
+from sqlalchemy import Select, func, literal, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import kindle, training
@@ -97,14 +97,16 @@ def dated():
     return func.coalesce(ItemVersion.published_at, Item.first_seen_at)
 
 
-# Matches `IngestSettings.max_interval_seconds`: the longest a healthy feed goes unpolled, so
-# the longest a piece can have been out before we could have found it. Raising one raises this.
-POLL_CEILING = datetime.timedelta(hours=6)
+# Matches `IngestSettings.max_backoff_seconds`: the longest a feed goes unpolled with nothing
+# properly wrong, so the longest a piece can have been out before we could have found it. At
+# the poll ceiling instead it placed under half the river by its date; at this one, three
+# quarters. `test_the_ceiling_tracks_the_backoff` is what holds the two together.
+SLOWEST_POLL = datetime.timedelta(hours=24)
 
 
 def placed():
     """Where a row sits: the publisher's date, unless we were too late for that to place it."""
-    return func.greatest(dated(), Item.first_seen_at - POLL_CEILING)
+    return func.greatest(dated(), Item.first_seen_at - SLOWEST_POLL)
 
 
 def listed(settings: KindleSettings):
@@ -136,7 +138,7 @@ def _values(order: Order, row: Entry):
     """The same three facts off a row, in the same order the keys are in."""
     dated_at = row.published_at or row.first_seen_at
     if order is Order.PLACED:
-        return (max(dated_at, row.first_seen_at - POLL_CEILING), row.first_seen_at, row.id)
+        return (max(dated_at, row.first_seen_at - SLOWEST_POLL), row.first_seen_at, row.id)
     return (dated_at, row.first_seen_at, row.id)
 
 
@@ -155,11 +157,7 @@ def before(order: Order, first: datetime.datetime, second: datetime.datetime, it
     stamp = Item.first_seen_at.type
     columns = keys(order)
     bounds = (literal(first, stamp), literal(second, stamp), literal(item_id, Item.id.type))
-    return and_(
-        # Implied by the row comparison, and the half of it a scan can stop on.
-        columns[0] <= bounds[0],
-        tuple_(*columns) < tuple_(*bounds),
-    )
+    return tuple_(*columns) < tuple_(*bounds)
 
 
 async def page(session: AsyncSession, query: Select, limit: int, order: Order) -> Listing:

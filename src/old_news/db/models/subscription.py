@@ -43,9 +43,10 @@ TIERS = (Tier.WIRE, Tier.ARCHIVE, Tier.KINDLE)
 LONGEST_WINDOW = datetime.timedelta(days=30)
 
 # A floor under how late a piece may arrive and still count as new. A window can be shorter
-# than a poll is legitimately behind — backoff alone reaches a day — and that must not
-# empty a feed rather than trim it.
-SLOWEST_ARRIVAL = datetime.timedelta(days=2)
+# than a poll is legitimately behind, and a publisher down for a few days is retried across
+# all of them — dropping is permanent, so this is generous where `ui.entries.SLOWEST_POLL`,
+# which only moves a row, is tight.
+SLOWEST_ARRIVAL = datetime.timedelta(days=7)
 
 if TYPE_CHECKING:
     from old_news.db.models.feed import Feed
@@ -90,7 +91,7 @@ def subscribed(feed_id) -> ColumnElement[bool]:
 
 
 def new_when_seen(seen, published) -> ColumnElement[bool]:
-    """Whether the publisher's date was inside the window at the moment we first saw it."""
+    """Whether the publisher's date was inside the tolerance at the moment we first saw it."""
     tolerance = func.greatest(Subscription.expires_after, SLOWEST_ARRIVAL)
     return func.coalesce(published, seen) >= seen - tolerance
 
