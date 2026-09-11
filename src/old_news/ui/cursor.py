@@ -7,23 +7,30 @@ import uuid
 
 SEPARATOR = "|"
 
+# What the keys mean, not what they hold. A cursor cut on one ordering and read against
+# another pages from a place that means nothing, so a deploy that moves them retires them.
+VERSION = "2"
+
 
 class BadCursor(ValueError):
     """Handed something that was not one of ours."""
 
 
-def encode(seen: datetime.datetime, dated: datetime.datetime, item_id: uuid.UUID) -> str:
-    raw = SEPARATOR.join((seen.isoformat(), dated.isoformat(), str(item_id))).encode()
+def encode(first: datetime.datetime, second: datetime.datetime, item_id: uuid.UUID) -> str:
+    """The sort keys of the last row on a page, in the order that list is sorted by."""
+    raw = SEPARATOR.join((VERSION, first.isoformat(), second.isoformat(), str(item_id))).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
 def decode(cursor: str) -> tuple[datetime.datetime, datetime.datetime, uuid.UUID]:
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
-        seen, dated, item_id = base64.urlsafe_b64decode(padded).decode().split(SEPARATOR)
+        version, first, second, item_id = base64.urlsafe_b64decode(padded).decode().split(SEPARATOR)
+        if version != VERSION:
+            raise BadCursor(cursor)
         return (
-            datetime.datetime.fromisoformat(seen),
-            datetime.datetime.fromisoformat(dated),
+            datetime.datetime.fromisoformat(first),
+            datetime.datetime.fromisoformat(second),
             uuid.UUID(item_id),
         )
     except (binascii.Error, UnicodeDecodeError, ValueError) as exc:

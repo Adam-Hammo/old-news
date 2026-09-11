@@ -137,8 +137,29 @@ synthesised one carries the date.
 
 Expiry is the other half of the same idea and is deliberately not a job. A window on the
 subscription and a clause in the river's `WHERE` means widening one is instant rather than a rewrite
-of the archive, and the cutoff lands on the leading column of `ix_items_river`, so it costs less
-than no cutoff at all.
+of the archive. It is two bounds rather than one: a row is in the river while we have held it for
+less than the window, _and_ if the publisher's date was inside the window when we first saw it. The
+second is what keeps a new subscription's backfill — a whole catalogue under one afternoon, every
+row of it sharing a `first_seen_at` — out of the river without taking it out of the archive. It is
+measured from the sighting rather than from now, so being slow to find a thing never costs it any of
+its shelf; a floor under that tolerance keeps a window shorter than the backoff from emptying a feed
+instead of trimming it.
+
+Those windows are also what the river's ordering rests on. A row is placed by the publisher's date,
+held up to the longest a feed goes unpolled with nothing properly wrong, so a piece we were slow to
+find lands near the top rather than wherever its own date would have buried it — ordering on the
+sighting instead used to hand a whole poll's batch to the top together, one outlet at a time, in no
+particular relation to when anything was written. The ceiling is a real trade and not a free one:
+where it binds, a row is back to being placed by the poll that found it, so raising it buys ordering
+at the cost of burying a late arrival deeper. Measured on the deployed archive it decides about a
+quarter of the rows either way.
+
+The key spans `items` and `item_versions`, so no index covers it: a page projects the whole window,
+sort included, before it takes forty rows. That is the one cost here worth watching, because the
+per-row marks are `EXISTS` subqueries and the sort makes every page pay for all of them rather than
+for a page's worth. It was six milliseconds over 367 rows when this was written, and it grows with
+the window rather than with the archive — but "the window" is a policy, and a long one over feeds
+that publish like the wire is where to measure again rather than assume.
 
 That window is then read a third time, by the sweep that fetches body images. Whether a picture is
 worth holding is the same question as whether the article is — a long window, or a book to appear in

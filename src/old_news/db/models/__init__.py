@@ -26,6 +26,7 @@ from old_news.db.models.subscription import (
     Subscription,
     Tier,
     at_least,
+    new_when_seen,
     unexpired,
 )
 from old_news.db.models.training import Dimension, RuleSource, TrainingRule
@@ -64,5 +65,6 @@ __all__ = [
     "ZstdDictionary",
     "at_least",
     "item_reading",
+    "new_when_seen",
     "unexpired",
 ]

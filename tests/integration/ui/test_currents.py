@@ -8,6 +8,7 @@ from old_news.db import Tier
 
 NOW = datetime.datetime.now(datetime.UTC)
 DAY = datetime.timedelta(days=1)
+HOUR = datetime.timedelta(hours=1)
 
 KINDLE = KindleSettings()
 
@@ -44,11 +45,17 @@ async def test_each_feed_ages_out_on_its_own_window(clean: None, feed, story):
 
 
 async def test_expiry_survives_a_page_boundary(clean: None, feed, story):
-    """The cutoff and the cursor are bounds on the same key, so paging cannot leak a row."""
+    """The cutoff is on one key and the cursor on another, so paging has to hold them both."""
     # Half a day of margin, or the row sitting exactly on the cutoff races the clock.
     feed_id = await feed("wire.example.com", expires_after=3 * DAY + datetime.timedelta(hours=12))
     for day in range(6):
-        await story(feed_id, f"Day {day}", first_seen_at=NOW - day * DAY)
+        # Two days behind the sighting, so every row is placed by the ceiling and not its date.
+        await story(
+            feed_id,
+            f"Day {day}",
+            first_seen_at=NOW - day * DAY,
+            published_at=NOW - day * DAY - 2 * DAY,
+        )
 
     seen: list[str] = []
     cursor = ""
@@ -134,3 +141,45 @@ async def test_finishing_an_article_counts_as_opening_it(clean: None, feed, stor
     article = await ui.article(item_id)
     assert article is not None
     assert article.read is True
+
+
+async def test_a_backlog_a_new_feed_arrives_with_is_not_the_river(clean: None, feed, story):
+    """A first poll backfills years under one afternoon. The river takes what was new then."""
+    feed_id = await feed("essays.example.com", expires_after=30 * DAY)
+    await story(feed_id, "Last week", first_seen_at=NOW, published_at=NOW - 7 * DAY)
+    await story(feed_id, "From 2023", first_seen_at=NOW, published_at=NOW - 900 * DAY)
+
+    assert await _titles() == ["Last week"]
+
+
+async def test_a_late_poll_does_not_shorten_the_shelf(clean: None, feed, story):
+    """The bound is off when we saw it, so a late poll costs the row none of its shelf."""
+    feed_id = await feed("essays.example.com", expires_after=10 * DAY)
+    await story(feed_id, "Found late", first_seen_at=NOW - 9 * DAY, published_at=NOW - 18 * DAY)
+
+    assert await _titles() == ["Found late"]
+
+
+async def test_a_publisher_who_dates_nothing_still_has_a_river(clean: None, feed, story):
+    """No publish date is not a stale one — xkcd and Tedium carry none at all."""
+    feed_id = await feed("comics.example.com", expires_after=10 * DAY)
+    await story(feed_id, "Today", first_seen_at=NOW)
+    await story(feed_id, "Last month", first_seen_at=NOW - 30 * DAY)
+
+    assert await _titles() == ["Today"]
+
+
+async def test_a_short_window_still_allows_for_a_slow_poll(clean: None, feed, story):
+    """A wire feed's window is shorter than backoff, and being late must not empty it."""
+    feed_id = await feed("wire.example.com", expires_after=DAY)
+    await story(feed_id, "Found late", first_seen_at=NOW, published_at=NOW - 30 * HOUR)
+
+    assert await _titles() == ["Found late"]
+
+
+async def test_a_piece_older_than_the_tolerance_is_archive_not_river(clean: None, feed, story):
+    """The other side of the same bound: past it a row never reaches the river at all."""
+    feed_id = await feed("essays.example.com", expires_after=10 * DAY)
+    await story(feed_id, "Found far too late", first_seen_at=NOW, published_at=NOW - 11 * DAY)
+
+    assert await _titles() == []

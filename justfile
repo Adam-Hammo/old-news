@@ -209,8 +209,11 @@ web-build:
     npm --prefix web run build
 
 # Regenerate the client's types from the API's own OpenAPI. Needs the API running.
+# Formats after generating: the file is in pre-commit's exclude list, so nothing else will,
+# and the committed copy is prettier's shape rather than the generator's.
 web-types:
     npm --prefix web run api
+    npm --prefix web exec -- prettier --write web/src/lib/api/schema.d.ts
 
 # --- images ---
 

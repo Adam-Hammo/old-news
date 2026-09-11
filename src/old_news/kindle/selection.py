@@ -17,6 +17,7 @@ from old_news.db import (
     ItemVersion,
     Subscription,
     Tier,
+    new_when_seen,
 )
 
 
@@ -54,6 +55,7 @@ def wanted(cutoff: datetime.datetime) -> ColumnElement[bool]:
         Subscription.tier == Tier.KINDLE,
         Item.finished_at.is_(None),
         Item.first_seen_at >= cutoff,
+        new_when_seen(Item.first_seen_at, ItemVersion.published_at),
         ~training.blocked(ItemVersion, Item),
         has_reading(),
     )
