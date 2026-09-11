@@ -96,7 +96,7 @@ export interface paths {
 			path?: never;
 			cookie?: never;
 		};
-		/** A page of the river, newest first by when we first saw it. */
+		/** A page of the river, newest first by when a thing was written. */
 		get: operations['RiverRiver'];
 		put?: never;
 		post?: never;
