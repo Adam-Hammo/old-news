@@ -14,6 +14,7 @@ from old_news.db import Dimension, Feed, RuleSource, TrainingRule
 NOW = datetime.datetime.now(datetime.UTC)
 MINUTE = datetime.timedelta(minutes=1)
 DAY = datetime.timedelta(days=1)
+HOUR = datetime.timedelta(hours=1)
 
 KINDLE = KindleSettings()
 
@@ -34,15 +35,23 @@ async def _block(session: AsyncSession, phrase: str) -> None:
     )
 
 
-async def test_the_river_sorts_on_when_we_first_saw_it_not_the_publishers_date(
-    clean: None, feed, story
-):
-    """What we only just found sorts above what was published since: we have not shown it yet."""
-    feed_id = await feed("outlet.example.com")
-    await story(feed_id, "Found today", first_seen_at=NOW, published_at=NOW - 20 * DAY)
-    await story(feed_id, "Newer", first_seen_at=NOW - MINUTE, published_at=NOW)
+async def test_two_outlets_polled_apart_still_read_in_time_order(clean: None, feed, story):
+    """Ordering on the poll put a whole batch above one found a minute earlier, whenever written."""
+    slow = await feed("slow.example.com")
+    quick = await feed("quick.example.com")
+    await story(slow, "Written at nine", first_seen_at=NOW - MINUTE, published_at=NOW - 3 * HOUR)
+    await story(quick, "Written at eight", first_seen_at=NOW, published_at=NOW - 4 * HOUR)
 
-    assert await _titles() == ["Found today", "Newer"]
+    assert await _titles() == ["Written at nine", "Written at eight"]
+
+
+async def test_a_piece_we_were_slow_to_find_is_not_buried(clean: None, feed, story):
+    """Held up to the poll ceiling: its date would have filed it under a week we have read."""
+    feed_id = await feed("outlet.example.com")
+    await story(feed_id, "Found late", first_seen_at=NOW, published_at=NOW - 20 * DAY)
+    await story(feed_id, "A week ago", first_seen_at=NOW - 7 * DAY, published_at=NOW - 7 * DAY)
+
+    assert await _titles() == ["Found late", "A week ago"]
 
 
 async def test_items_from_one_poll_share_a_timestamp_and_still_page_cleanly(

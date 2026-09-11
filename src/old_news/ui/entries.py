@@ -97,6 +97,16 @@ def dated():
     return func.coalesce(ItemVersion.published_at, Item.first_seen_at)
 
 
+# Matches `IngestSettings.max_interval_seconds`: the longest a healthy feed goes unpolled, so
+# the longest a piece can have been out before we could have found it. Raising one raises this.
+POLL_CEILING = datetime.timedelta(hours=6)
+
+
+def placed():
+    """Where a row sits: the publisher's date, unless we were too late for that to place it."""
+    return func.greatest(dated(), Item.first_seen_at - POLL_CEILING)
+
+
 def listed(settings: KindleSettings):
     """The columns every list of items shows, in no order: search does not want the river's."""
     return held(*shared(), *_marks(kindle.cutoff_from(settings)))
@@ -105,9 +115,10 @@ def listed(settings: KindleSettings):
 class Order(enum.StrEnum):
     """Which way a list comes back, which is also what its cursor is cut on."""
 
-    # When we first saw a thing. `ix_items_river` leads on it, so the river is a range
-    # scan on its own index.
-    SEEN = "seen"
+    # When it was published, held up to the poll ceiling so a piece we were slow to find
+    # lands near the top rather than wherever its date would have buried it. A sort, but
+    # the river is bounded by its windows and there are a few hundred rows in one.
+    PLACED = "placed"
     # When it was published. A feed's first poll backfills a whole catalogue under one
     # afternoon, and an archive that filed it there would be lying about when it was
     # written — so this one is a sort, not a scan.
@@ -116,16 +127,16 @@ class Order(enum.StrEnum):
 
 def keys(order: Order):
     """The sort keys, most significant first. A cursor holds their values in this order."""
-    if order is Order.SEEN:
-        return (Item.first_seen_at, dated(), Item.id)
+    if order is Order.PLACED:
+        return (placed(), Item.first_seen_at, Item.id)
     return (dated(), Item.first_seen_at, Item.id)
 
 
 def _values(order: Order, row: Entry):
     """The same three facts off a row, in the same order the keys are in."""
     dated_at = row.published_at or row.first_seen_at
-    if order is Order.SEEN:
-        return (row.first_seen_at, dated_at, row.id)
+    if order is Order.PLACED:
+        return (max(dated_at, row.first_seen_at - POLL_CEILING), row.first_seen_at, row.id)
     return (dated_at, row.first_seen_at, row.id)
 
 
@@ -145,7 +156,7 @@ def before(order: Order, first: datetime.datetime, second: datetime.datetime, it
     columns = keys(order)
     bounds = (literal(first, stamp), literal(second, stamp), literal(item_id, Item.id.type))
     return and_(
-        # Implied by the row comparison, and the only part of it an index can use.
+        # Implied by the row comparison, and the half of it a scan can stop on.
         columns[0] <= bounds[0],
         tuple_(*columns) < tuple_(*bounds),
     )

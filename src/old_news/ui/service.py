@@ -62,14 +62,14 @@ async def river(
         entries.listed(settings).where(
             Subscription.active.is_(True), unexpired(Item.first_seen_at, ItemVersion.published_at)
         ),
-        entries.Order.SEEN,
+        entries.Order.PLACED,
     )
     if section:
         query = query.where(Subscription.category == section)
     if after:
-        query = query.where(entries.before(entries.Order.SEEN, *cursor.decode(after)))
+        query = query.where(entries.before(entries.Order.PLACED, *cursor.decode(after)))
 
-    return await entries.page(session, query, entries.bounded(limit), entries.Order.SEEN)
+    return await entries.page(session, query, entries.bounded(limit), entries.Order.PLACED)
 
 
 # What the article screen asks for a picture by. The reader's own prefix, not the

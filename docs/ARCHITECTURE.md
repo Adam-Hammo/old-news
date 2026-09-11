@@ -137,14 +137,21 @@ synthesised one carries the date.
 
 Expiry is the other half of the same idea and is deliberately not a job. A window on the
 subscription and a clause in the river's `WHERE` means widening one is instant rather than a rewrite
-of the archive, and the cutoff lands on the leading column of `ix_items_river`, so it costs less
-than no cutoff at all. It is two bounds rather than one: a row is in the river while we have held it
-for less than the window, _and_ if the publisher's date was inside the window when we first saw it.
-The second is what keeps a new subscription's backfill — a whole catalogue under one afternoon,
-every row of it sharing a `first_seen_at` — out of the river without taking it out of the archive.
-It is measured from the sighting rather than from now, so being slow to find a thing never costs it
-any of its shelf; a floor under that tolerance keeps a window shorter than the backoff from emptying
-a feed instead of trimming it.
+of the archive. It is two bounds rather than one: a row is in the river while we have held it for
+less than the window, _and_ if the publisher's date was inside the window when we first saw it. The
+second is what keeps a new subscription's backfill — a whole catalogue under one afternoon, every
+row of it sharing a `first_seen_at` — out of the river without taking it out of the archive. It is
+measured from the sighting rather than from now, so being slow to find a thing never costs it any of
+its shelf; a floor under that tolerance keeps a window shorter than the backoff from emptying a feed
+instead of trimming it.
+
+Those windows are also what make the river's ordering affordable. A row is placed by the publisher's
+date, held up to the poll ceiling so a piece we were slow to find lands near the top rather than
+wherever its own date would have buried it — ordering on the sighting instead used to hand a whole
+poll's batch to the top together, one outlet at a time, in no particular relation to when anything
+was written. The key spans `items` and `item_versions`, so no index covers it and a page is a sort
+rather than a scan. It costs a few milliseconds, because a river is a few hundred rows however large
+the archive has grown, which is the windows' doing again.
 
 That window is then read a third time, by the sweep that fetches body images. Whether a picture is
 worth holding is the same question as whether the article is — a long window, or a book to appear in
