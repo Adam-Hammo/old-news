@@ -134,3 +134,29 @@ async def test_finishing_an_article_counts_as_opening_it(clean: None, feed, stor
     article = await ui.article(item_id)
     assert article is not None
     assert article.read is True
+
+
+async def test_a_backlog_a_new_feed_arrives_with_is_not_the_river(clean: None, feed, story):
+    """A first poll backfills years under one afternoon. The river takes what was new then."""
+    feed_id = await feed("essays.example.com", expires_after=30 * DAY)
+    await story(feed_id, "Last week", first_seen_at=NOW, published_at=NOW - 7 * DAY)
+    await story(feed_id, "From 2023", first_seen_at=NOW, published_at=NOW - 900 * DAY)
+
+    assert await _titles() == ["Last week"]
+
+
+async def test_a_late_poll_does_not_shorten_the_shelf(clean: None, feed, story):
+    """The bound is off when we saw it, so the window is the window whenever it was written."""
+    feed_id = await feed("essays.example.com", expires_after=10 * DAY)
+    await story(feed_id, "Found late", first_seen_at=NOW - 9 * DAY, published_at=NOW - 18 * DAY)
+
+    assert await _titles() == ["Found late"]
+
+
+async def test_a_publisher_who_dates_nothing_still_has_a_river(clean: None, feed, story):
+    """No publish date is not a stale one — xkcd and Tedium carry none at all."""
+    feed_id = await feed("comics.example.com", expires_after=10 * DAY)
+    await story(feed_id, "Today", first_seen_at=NOW)
+    await story(feed_id, "Last month", first_seen_at=NOW - 30 * DAY)
+
+    assert await _titles() == ["Today"]

@@ -140,6 +140,17 @@ async def test_the_window_is_how_far_back_an_issue_reaches(clean: None, feed, st
     assert await _due() == ["This week"]
 
 
+async def test_a_new_feeds_backlog_is_not_an_issue(clean: None, feed, story):
+    """Flagging a feed must not post its whole catalogue: a book is the river's window too."""
+    feed_id = await feed("essays.example.com", tier=Tier.KINDLE, expires_after=30 * DAY)
+    await story(feed_id, "Recent", body="Some text.", first_seen_at=NOW, published_at=NOW - DAY)
+    await story(
+        feed_id, "Ancient", body="Some text.", first_seen_at=NOW, published_at=NOW - 900 * DAY
+    )
+
+    assert await _due() == ["Recent"]
+
+
 async def test_an_issue_groups_one_outlets_pieces_together(clean: None, feed, story):
     first = await feed("aaa.example.com", tier=Tier.KINDLE)
     second = await feed("bbb.example.com", tier=Tier.KINDLE)

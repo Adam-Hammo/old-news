@@ -60,7 +60,7 @@ async def river(
     """A page of the river, newest first by when we first saw it, then by the publisher's date."""
     query = entries.ordered(
         entries.listed(settings).where(
-            Subscription.active.is_(True), unexpired(Item.first_seen_at)
+            Subscription.active.is_(True), unexpired(Item.first_seen_at, ItemVersion.published_at)
         ),
         entries.Order.SEEN,
     )

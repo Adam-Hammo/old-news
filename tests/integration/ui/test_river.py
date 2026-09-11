@@ -37,12 +37,12 @@ async def _block(session: AsyncSession, phrase: str) -> None:
 async def test_the_river_sorts_on_when_we_first_saw_it_not_the_publishers_date(
     clean: None, feed, story
 ):
-    """A backfilled 2019 article arrives at the top of nothing."""
+    """What we only just found sorts above what was published since: we have not shown it yet."""
     feed_id = await feed("outlet.example.com")
-    await story(feed_id, "Old news", first_seen_at=NOW, published_at=NOW - datetime.timedelta(2000))
+    await story(feed_id, "Found today", first_seen_at=NOW, published_at=NOW - 20 * DAY)
     await story(feed_id, "Newer", first_seen_at=NOW - MINUTE, published_at=NOW)
 
-    assert await _titles() == ["Old news", "Newer"]
+    assert await _titles() == ["Found today", "Newer"]
 
 
 async def test_items_from_one_poll_share_a_timestamp_and_still_page_cleanly(

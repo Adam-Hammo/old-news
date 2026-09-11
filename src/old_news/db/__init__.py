@@ -33,6 +33,7 @@ from old_news.db.models import (
     ZstdDictionary,
     at_least,
     item_reading,
+    new_when_seen,
     unexpired,
 )
 from old_news.db.session import configure, dispose, engine, session, transactional
@@ -75,6 +76,7 @@ __all__ = [
     "dispose",
     "engine",
     "item_reading",
+    "new_when_seen",
     "session",
     "transactional",
     "unexpired",

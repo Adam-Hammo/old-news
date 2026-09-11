@@ -11,6 +11,7 @@ from sqlalchemy import (
     Interval,
     String,
     Text,
+    and_,
     func,
     select,
     text,
@@ -83,9 +84,19 @@ def subscribed(feed_id) -> ColumnElement[bool]:
     )
 
 
-def unexpired(seen) -> ColumnElement[bool]:
-    """Whether a row this old is still inside its feed's window."""
-    return seen >= func.now() - Subscription.expires_after
+def new_when_seen(seen, published) -> ColumnElement[bool]:
+    """Whether the publisher's date was inside the window at the moment we first saw it."""
+    # Bounded off `seen`, not `now()`. Against a moving cutoff a backfilled item loses a
+    # day of shelf for every day it predates the poll that found it.
+    return func.coalesce(published, seen) >= seen - Subscription.expires_after
+
+
+def unexpired(seen, published) -> ColumnElement[bool]:
+    """Whether a row is still in the river: seen inside the window, and new when we saw it."""
+    return and_(
+        seen >= func.now() - Subscription.expires_after,
+        new_when_seen(seen, published),
+    )
 
 
 def at_least(tier: Tier) -> ColumnElement[bool]:
