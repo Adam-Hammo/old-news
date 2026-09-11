@@ -1,6 +1,6 @@
 # pg_search comes from ParadeDB's extension-only OCI artifact rather than their full
 # image, which bootstraps PostGIS, pg_ivm and pg_cron into template1 and your database.
-FROM paradedb/paradedb-extension:0.25.2-18-trixie AS pg_search
+FROM paradedb/paradedb-extension:0.25.6-18-trixie AS pg_search
 
 FROM postgres:18.4-trixie
 
