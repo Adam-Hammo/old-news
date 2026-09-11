@@ -8,6 +8,7 @@ from old_news.db import Tier
 
 NOW = datetime.datetime.now(datetime.UTC)
 DAY = datetime.timedelta(days=1)
+HOUR = datetime.timedelta(hours=1)
 
 KINDLE = KindleSettings()
 
@@ -146,7 +147,7 @@ async def test_a_backlog_a_new_feed_arrives_with_is_not_the_river(clean: None, f
 
 
 async def test_a_late_poll_does_not_shorten_the_shelf(clean: None, feed, story):
-    """The bound is off when we saw it, so the window is the window whenever it was written."""
+    """The bound is off when we saw it, so a late poll costs the row none of its shelf."""
     feed_id = await feed("essays.example.com", expires_after=10 * DAY)
     await story(feed_id, "Found late", first_seen_at=NOW - 9 * DAY, published_at=NOW - 18 * DAY)
 
@@ -160,3 +161,19 @@ async def test_a_publisher_who_dates_nothing_still_has_a_river(clean: None, feed
     await story(feed_id, "Last month", first_seen_at=NOW - 30 * DAY)
 
     assert await _titles() == ["Today"]
+
+
+async def test_a_short_window_still_allows_for_a_slow_poll(clean: None, feed, story):
+    """A wire feed's window is shorter than backoff, and being late must not empty it."""
+    feed_id = await feed("wire.example.com", expires_after=DAY)
+    await story(feed_id, "Found late", first_seen_at=NOW, published_at=NOW - 30 * HOUR)
+
+    assert await _titles() == ["Found late"]
+
+
+async def test_a_piece_older_than_the_tolerance_is_archive_not_river(clean: None, feed, story):
+    """The other side of the same bound: past it a row never reaches the river at all."""
+    feed_id = await feed("essays.example.com", expires_after=10 * DAY)
+    await story(feed_id, "Found far too late", first_seen_at=NOW, published_at=NOW - 11 * DAY)
+
+    assert await _titles() == []

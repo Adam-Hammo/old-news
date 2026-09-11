@@ -42,6 +42,11 @@ TIERS = (Tier.WIRE, Tier.ARCHIVE, Tier.KINDLE)
 # forever: keeping it is the archive's job, not the window's.
 LONGEST_WINDOW = datetime.timedelta(days=30)
 
+# A floor under how late a piece may arrive and still count as new. A window can be shorter
+# than a poll is legitimately behind — backoff alone reaches a day — and that must not
+# empty a feed rather than trim it.
+SLOWEST_ARRIVAL = datetime.timedelta(days=2)
+
 if TYPE_CHECKING:
     from old_news.db.models.feed import Feed
 
@@ -86,9 +91,8 @@ def subscribed(feed_id) -> ColumnElement[bool]:
 
 def new_when_seen(seen, published) -> ColumnElement[bool]:
     """Whether the publisher's date was inside the window at the moment we first saw it."""
-    # Bounded off `seen`, not `now()`. Against a moving cutoff a backfilled item loses a
-    # day of shelf for every day it predates the poll that found it.
-    return func.coalesce(published, seen) >= seen - Subscription.expires_after
+    tolerance = func.greatest(Subscription.expires_after, SLOWEST_ARRIVAL)
+    return func.coalesce(published, seen) >= seen - tolerance
 
 
 def unexpired(seen, published) -> ColumnElement[bool]:

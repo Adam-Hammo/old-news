@@ -11,7 +11,7 @@ from old_news import db, ui
 from old_news.config import KindleSettings
 from old_news.db import Dimension, Feed, RuleSource, TrainingRule
 
-NOW = datetime.datetime(2026, 8, 31, 12, 0, tzinfo=datetime.UTC)
+NOW = datetime.datetime.now(datetime.UTC)
 MINUTE = datetime.timedelta(minutes=1)
 DAY = datetime.timedelta(days=1)
 
