@@ -88,3 +88,22 @@ def test_alerts_only_watch_spans_the_code_emits():
     missing = [name for name in watched if f'"{name}"' not in source]
 
     assert not missing, f"{missing} are alerted on but no span is opened with that name"
+
+
+PG_SEARCH_IMAGE = re.compile(r"paradedb-extension:(\d+\.\d+\.\d+)-")
+PG_SEARCH_UPDATE = re.compile(r"alter extension pg_search update to '([^']+)'")
+
+
+def test_the_pg_search_catalog_follows_the_image():
+    """A new library leaves an existing database's catalog behind until a revision updates it."""
+    shipped = PG_SEARCH_IMAGE.search((REPO / "docker" / "postgres.Dockerfile").read_text())
+    revisions = sorted((REPO / "src/old_news/db/migrations/versions").glob("*.py"))
+    updates = [
+        version for path in revisions for version in PG_SEARCH_UPDATE.findall(path.read_text())
+    ]
+
+    assert shipped, "no paradedb-extension tag found — has the Dockerfile changed shape?"
+    assert updates[-1:] == [shipped.group(1)], (
+        f"the image ships pg_search {shipped.group(1)} but the latest revision updates to "
+        f"{updates[-1] if updates else 'nothing'}"
+    )
