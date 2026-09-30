@@ -137,8 +137,12 @@ jobs:
 
   # Provider credentials stay in stack config; the token is what decrypts them.
   infra:
-    # Fork pull requests get no secrets, and a preview cannot run without them.
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # Fork and Dependabot pull requests get no secrets, and a preview cannot run without
+    # them. Dependabot never touches infra/, so its preview would say nothing anyway.
+    if: >-
+      github.event_name == 'push'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
