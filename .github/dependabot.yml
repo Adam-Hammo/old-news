@@ -31,6 +31,10 @@ updates:
     groups:
       web:
         patterns: ["*"]
+    ignore:
+      # Until svelte-check's typescript peer range admits 7, which blocks the whole group.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directories: ["/", "/docker", "/web"]
