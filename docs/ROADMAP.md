@@ -272,9 +272,9 @@ link in Medium's own feed carries `?source=rss-…`. Replayed across the whole c
 disagreed on one URL out of 1,482, and on that one the stdlib was wrong.
 
 So `protego` now, which is a dependency this project would rather not have and takes anyway, because
-a robots parser quietly allowing what a publisher forbade is the wrong way round to be wrong. It has
-its own open wildcard bug — scrapy/protego#51, an `Allow` that both contains a wildcard and ends in
-`$` — pinned by a test, because no host here writes one yet and the day one does should be loud.
+a robots parser quietly allowing what a publisher forbade is the wrong way round to be wrong. It had
+its own wildcard bug — scrapy/protego#51, an `Allow` that both contains a wildcard and ends in `$` —
+pinned by a test so the fix would be loud. It was, in 0.7.0, and the test now holds the fix instead.
 `robots/parse.py` also carries RFC 9309's implicit allow for `/robots.txt` itself, which the stdlib
 implements and protego does not.
 

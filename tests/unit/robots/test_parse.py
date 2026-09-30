@@ -93,13 +93,9 @@ def test_a_wildcard_rule_matching_a_query_string_is_obeyed():
     assert rules.allows("https://admiralcloudberg.medium.com/trial-by-fire-abc?source=rss-x")
 
 
-def test_an_anchored_wildcard_allow_is_a_known_protego_bug():
-    """scrapy/protego#51: an `Allow` both containing a wildcard and ending in `$` is not applied.
-
-    No host here writes one, so this fails the day one does rather than quietly denying a page.
-    """
+def test_an_anchored_wildcard_allow_is_obeyed():
+    """scrapy/protego#51, fixed in 0.7.0: an `Allow` with a wildcard and a `$` went unapplied."""
     rules = parse("User-agent: *\nAllow: /*/filter/page=*/$\nDisallow: /\n", user_agent="old-news")
 
-    assert not rules.allows("https://example.com/1/filter/page=5/"), (
-        "protego#51 appears to be fixed — this expectation should be inverted"
-    )
+    assert rules.allows("https://example.com/1/filter/page=5/")
+    assert not rules.allows("https://example.com/1/filter/page=5/more")
