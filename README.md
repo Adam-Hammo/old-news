@@ -77,7 +77,7 @@ infra/
   ansible/roles/     app + backup
 docker/
   postgres.Dockerfile   pg18 + pgvector + pg_search, multi-arch
-  initdb/               CREATE EXTENSION on first boot
+  initdb/               tuning on first boot
 compose.yaml            the deploy contract — any Docker host runs this
 compose.override.yaml   local dev only; auto-loaded, not used on the server
 ```
