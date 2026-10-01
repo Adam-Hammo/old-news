@@ -7,6 +7,8 @@ test — so the guard is on the command the deployment actually runs.
 import re
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[2]
 OUR_WORKER = "python -m old_news worker"
 OUR_API = 'python", "-m", "old_news", "serve'
@@ -88,3 +90,31 @@ def test_alerts_only_watch_spans_the_code_emits():
     missing = [name for name in watched if f'"{name}"' not in source]
 
     assert not missing, f"{missing} are alerted on but no span is opened with that name"
+
+
+# Where the image pins each extension it ships.
+SHIPPED = {
+    "pg_search": re.compile(r"paradedb-extension:(\d+\.\d+\.\d+)-"),
+    "vector": re.compile(r"pgvector/pgvector:(\d+\.\d+\.\d+)-"),
+    "vectorscale": re.compile(r"PGVECTORSCALE_VERSION=(\d+\.\d+\.\d+)"),
+}
+UPDATE = re.compile(r"alter extension (\w+) update to '([^']+)'")
+
+
+@pytest.mark.parametrize("extension", SHIPPED)
+def test_the_catalog_follows_the_image(extension: str):
+    """A new library leaves an existing database's catalog behind until a revision updates it."""
+    shipped = SHIPPED[extension].search((REPO / "docker" / "postgres.Dockerfile").read_text())
+    revisions = sorted((REPO / "src/old_news/db/migrations/versions").glob("*.py"))
+    updates = [
+        version
+        for path in revisions
+        for name, version in UPDATE.findall(path.read_text())
+        if name == extension
+    ]
+
+    assert shipped, f"no pinned {extension} found — has the Dockerfile changed shape?"
+    assert updates[-1:] == [shipped.group(1)], (
+        f"the image ships {extension} {shipped.group(1)} but the latest revision updates to "
+        f"{updates[-1] if updates else 'nothing'}"
+    )

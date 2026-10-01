@@ -1,6 +1,8 @@
 # pg_search comes from ParadeDB's extension-only OCI artifact rather than their full
 # image, which bootstraps PostGIS, pg_ivm and pg_cron into template1 and your database.
-FROM paradedb/paradedb-extension:0.25.2-18-trixie AS pg_search
+FROM paradedb/paradedb-extension:0.25.10-18-trixie AS pg_search
+# From an image rather than apt, so the version is pinned and Dependabot moves it.
+FROM pgvector/pgvector:0.8.6-pg18-trixie AS pgvector
 
 FROM postgres:18.4-trixie
 
@@ -10,8 +12,13 @@ ARG TARGETARCH
 # curl is for initdb/00-tune.sh, which fetches tuning from api.pgconfig.org.
 # hadolint ignore=DL3008
 RUN apt-get update \
- && apt-get install -y --no-install-recommends postgresql-18-pgvector curl ca-certificates unzip \
+ && apt-get install -y --no-install-recommends curl ca-certificates unzip \
  && rm -rf /var/lib/apt/lists/*
+
+COPY --from=pgvector /usr/lib/postgresql/18/lib/vector.so /usr/lib/postgresql/18/lib/
+COPY --from=pgvector /usr/lib/postgresql/18/lib/bitcode/vector /usr/lib/postgresql/18/lib/bitcode/vector
+COPY --from=pgvector /usr/lib/postgresql/18/lib/bitcode/vector.index.bc /usr/lib/postgresql/18/lib/bitcode/
+COPY --from=pgvector /usr/share/postgresql/18/extension/vector* /usr/share/postgresql/18/extension/
 
 COPY --from=pg_search /lib/pg_search.so /usr/lib/postgresql/18/lib/
 COPY --from=pg_search /share/extension/ /usr/share/postgresql/18/extension/

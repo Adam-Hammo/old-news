@@ -46,25 +46,33 @@ from factories import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-POSTGRES_IMAGE = "old-news-postgres:test"
+DOCKER_DIR = REPO_ROOT / "docker"
 
 
-def _build_postgres_image() -> None:
-    exists = subprocess.run(["docker", "image", "inspect", POSTGRES_IMAGE], capture_output=True)
-    if exists.returncode == 0:
-        return
-    subprocess.run(
-        ["docker", "build", "-t", POSTGRES_IMAGE, "-f", "postgres.Dockerfile", "."],
-        cwd=REPO_ROOT / "docker",
-        check=True,
-    )
+def _postgres_image() -> str:
+    """The test image for the current Dockerfile and initdb, built only if it is new."""
+    inputs = [DOCKER_DIR / "postgres.Dockerfile", *sorted((DOCKER_DIR / "initdb").rglob("*"))]
+    digest = hashlib.sha256()
+    for path in inputs:
+        if path.is_file():
+            digest.update(str(path.relative_to(DOCKER_DIR)).encode())
+            digest.update(path.read_bytes())
+    image = f"old-news-postgres:test-{digest.hexdigest()[:12]}"
+
+    exists = subprocess.run(["docker", "image", "inspect", image], capture_output=True)
+    if exists.returncode != 0:
+        subprocess.run(
+            ["docker", "build", "-t", image, "-f", "postgres.Dockerfile", "."],
+            cwd=DOCKER_DIR,
+            check=True,
+        )
+    return image
 
 
 @pytest.fixture(scope="session")
 def postgres() -> Iterator[PostgresContainer]:
-    _build_postgres_image()
     container = PostgresContainer(
-        POSTGRES_IMAGE,
+        _postgres_image(),
         username="old_news",
         password="old_news",
         dbname="old_news",
