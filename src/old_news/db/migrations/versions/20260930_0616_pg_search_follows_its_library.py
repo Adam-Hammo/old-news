@@ -15,7 +15,7 @@ The downgrade is a no-op: pg_search ships upgrade scripts and no downgrade ones,
 older library would be running against this catalog either way.
 
 Revision ID: 10f563a4931f
-Revises: c3d9f021b796
+Revises: 227cc3d66c53
 
 """
 
@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "10f563a4931f"
-down_revision: str | Sequence[str] | None = "c3d9f021b796"
+down_revision: str | Sequence[str] | None = "227cc3d66c53"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
