@@ -14,6 +14,7 @@ from old_news.db.models.extraction import (
 )
 from old_news.db.models.feed import Feed
 from old_news.db.models.feed_capture import FeedCapture
+from old_news.db.models.filters import Dimension, Filter, FilterSource
 from old_news.db.models.host import Host
 from old_news.db.models.image import ImageCapture
 from old_news.db.models.issue import Issue, IssueItem
@@ -29,7 +30,6 @@ from old_news.db.models.subscription import (
     new_when_seen,
     unexpired,
 )
-from old_news.db.models.training import Dimension, RuleSource, TrainingRule
 
 __all__ = [
     "CAPTURE_POLICY",
@@ -47,6 +47,8 @@ __all__ = [
     "FeedCapture",
     "FeedExtraction",
     "FeedPoll",
+    "Filter",
+    "FilterSource",
     "Host",
     "ImageCapture",
     "ImageRole",
@@ -58,10 +60,8 @@ __all__ = [
     "PageExtraction",
     "PollOutcome",
     "RobotsPolicy",
-    "RuleSource",
     "Subscription",
     "Tier",
-    "TrainingRule",
     "ZstdDictionary",
     "at_least",
     "item_reading",

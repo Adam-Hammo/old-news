@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from old_news import db, training
+from old_news import db, filters
 from old_news.config import ExtractSettings
 from old_news.db import (
     CAPTURE_POLICY,
@@ -90,7 +90,7 @@ async def due_captures(
             ItemVersion.is_head,
             ItemVersion.id.not_in(settled),
             Item.version_count <= settings.max_versions_per_item,
-            ~training.blocked(ItemVersion, Item),
+            ~filters.blocked(ItemVersion, Item),
             # A version superseding nothing is the item's first, and is due at once.
             ItemVersion.supersedes_id.is_(None) | (ItemVersion.observed_at <= settled_by),
             # Never tried, or refused and now off its backoff with tries still left.

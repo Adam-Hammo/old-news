@@ -18,14 +18,14 @@ from old_news.db import (
     Dimension,
     Extraction,
     ExtractionImage,
+    Filter,
+    FilterSource,
     ImageCapture,
     ImageRole,
     Issue,
     IssueItem,
     ItemVersion,
-    RuleSource,
     Tier,
-    TrainingRule,
 )
 from old_news.kindle import book, images, selection, service
 from old_news.politeness import ensure
@@ -80,11 +80,10 @@ async def _picture(session: AsyncSession, item_id: uuid.UUID, url: str, role: st
 @db.transactional
 async def _block(session, phrase: str) -> None:
     session.add(
-        TrainingRule(
+        Filter(
             dimension=Dimension.TITLE_PHRASE,
             pattern=phrase,
-            blocks=True,
-            source=RuleSource.HAND,
+            source=FilterSource.HAND,
         )
     )
 
@@ -106,7 +105,7 @@ async def test_an_inactive_subscription_is_not_drawn_on(clean: None, feed, story
 
 
 async def test_a_blocked_title_is_left_out(clean: None, feed, story):
-    """The roundups and live blogs are title rules, which is how the list gets tuned."""
+    """The roundups and live blogs are title filters, which is how the list gets tuned."""
     feed_id = await feed("essays.example.com", tier=Tier.KINDLE)
     await story(feed_id, "The Zap: this week in health", body="Some text.")
     await story(feed_id, "A real essay", body="Some text.")
