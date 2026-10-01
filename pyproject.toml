@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
   "litestar[opentelemetry]>=2.24",
-  "sqlalchemy[asyncio]>=2.1.0b3",
+  "sqlalchemy[asyncio]>=2.1.0rc2",
   "alembic>=1.14",
   "asyncpg>=0.31",
   # itsdangerous is what starlette's SessionMiddleware signs cookies with;
@@ -24,7 +24,7 @@ dependencies = [
   "defusedxml>=0.7.1",
   # The stdlib's robotparser percent-encodes `=` in a rule pattern but not in the
   # query it matches against, so a rule like `Disallow: /*/*source=` can never fire.
-  "protego>=0.6.2",
+  "protego>=0.7.0",
   "trafilatura>=2.2",
   # Renditions only — originals are never re-encoded. Declares free-thread safety, so
   # unlike older lxml it does not re-enable the GIL for the whole worker.
