@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Config from '#lib/components/Config.svelte';
 	import Feeds from '#lib/components/Feeds.svelte';
+	import Filters from '#lib/components/Filters.svelte';
 	import Pane from '#lib/components/Pane.svelte';
 	import Polling from '#lib/components/Polling.svelte';
 	import Publishers from '#lib/components/Publishers.svelte';
@@ -15,7 +16,7 @@
 <Pane back="/" whence="River">
 	<div class="body measured">
 		<p class="kicker">Settings</p>
-		<!-- Scrolls at 320px, where four of these do not fit on one line. -->
+		<!-- Scrolls at 320px, where these do not fit on one line. -->
 		<nav>
 			{#each TABS as tab (tab.id)}
 				<a href={href(tab.id)} class:current={tab.id === data.tab}>{tab.label}</a>
@@ -29,6 +30,8 @@
 			<Polling feeds={data.polling} />
 		{:else if data.tab === 'publishers'}
 			<Publishers hosts={data.publishers} />
+		{:else if data.tab === 'filters'}
+			<Filters filters={data.filters} feeds={data.feeds} />
 		{:else}
 			<Config config={data.config} />
 		{/if}

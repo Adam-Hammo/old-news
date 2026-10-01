@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from old_news import db, ui
 from old_news.config import KindleSettings
-from old_news.db import Dimension, Feed, RuleSource, TrainingRule
+from old_news.db import Dimension, Feed, Filter, FilterSource
 
 NOW = datetime.datetime.now(datetime.UTC)
 MINUTE = datetime.timedelta(minutes=1)
@@ -26,11 +26,10 @@ async def _titles(**kwargs) -> list[str]:
 @db.transactional
 async def _block(session: AsyncSession, phrase: str) -> None:
     session.add(
-        TrainingRule(
+        Filter(
             dimension=Dimension.TITLE_PHRASE,
             pattern=phrase,
-            blocks=True,
-            source=RuleSource.HAND,
+            source=FilterSource.HAND,
         )
     )
 

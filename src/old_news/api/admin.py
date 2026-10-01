@@ -21,6 +21,7 @@ from old_news.db import (
     Feed,
     FeedCapture,
     FeedPoll,
+    Filter,
     ImageCapture,
     Issue,
     IssueItem,
@@ -29,7 +30,6 @@ from old_news.db import (
     PageCapture,
     PageExtraction,
     Subscription,
-    TrainingRule,
 )
 
 logger = logging.getLogger(__name__)
@@ -261,21 +261,20 @@ class ImageCaptureAdmin(MachineWritten, ModelView, model=ImageCapture):
     column_default_sort = [(ImageCapture.byte_size, True)]
 
 
-class TrainingRuleAdmin(ModelView, model=TrainingRule):
-    name = "Training rule"
+class FilterAdmin(ModelView, model=Filter):
+    name = "Filter"
     icon = "fa-solid fa-filter"
-    # Full CRUD: these are hand-made and unrecoverable. A rule with no feed is global.
+    # Full CRUD: these are hand-made and unrecoverable. A filter with no feed is global.
     column_list = [
-        TrainingRule.dimension,
-        TrainingRule.pattern,
-        TrainingRule.blocks,
-        TrainingRule.feed_id,
-        TrainingRule.source,
-        TrainingRule.note,
+        Filter.dimension,
+        Filter.pattern,
+        Filter.feed_id,
+        Filter.source,
+        Filter.note,
     ]
-    column_searchable_list = [TrainingRule.pattern, TrainingRule.note]
-    column_sortable_list = [TrainingRule.dimension, TrainingRule.created_at]
-    column_default_sort = [(TrainingRule.created_at, True)]
+    column_searchable_list = [Filter.pattern, Filter.note]
+    column_sortable_list = [Filter.dimension, Filter.created_at]
+    column_default_sort = [(Filter.created_at, True)]
 
 
 def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
@@ -302,7 +301,7 @@ def create_admin(engine: AsyncEngine, settings: AdminSettings) -> ASGIApp:
         ExtractionAdmin,
         PageExtractionAdmin,
         ImageCaptureAdmin,
-        TrainingRuleAdmin,
+        FilterAdmin,
     )
     for view in views:
         admin.add_view(view)

@@ -1,8 +1,9 @@
-/** The settings screen's four pages. Each loads only what it shows. */
+/** The settings screen's pages. Each loads only what it shows. */
 export const TABS = [
 	{ id: 'feeds', label: 'Feeds' },
 	{ id: 'polling', label: 'Polling' },
 	{ id: 'publishers', label: 'Publishers' },
+	{ id: 'filters', label: 'Filters' },
 	{ id: 'config', label: 'Config' },
 ] as const;
 

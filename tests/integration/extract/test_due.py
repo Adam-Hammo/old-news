@@ -10,10 +10,10 @@ from old_news.config import ExtractSettings
 from old_news.db import (
     CaptureOutcome,
     Dimension,
+    Filter,
+    FilterSource,
     PageCapture,
     RobotsPolicy,
-    RuleSource,
-    TrainingRule,
 )
 from old_news.politeness import ensure
 
@@ -22,8 +22,8 @@ MINUTE = datetime.timedelta(minutes=1)
 
 
 @db.transactional
-async def _rule(session: AsyncSession, **values) -> None:
-    session.add(TrainingRule(source=RuleSource.HAND, blocks=True, **values))
+async def _filter(session: AsyncSession, **values) -> None:
+    session.add(Filter(source=FilterSource.HAND, **values))
     await session.flush()
 
 
@@ -163,7 +163,7 @@ async def test_a_blocked_item_is_never_due(clean: None, feed_id, article):
     """With the first version captured unconditionally, this is what caps a live blog."""
     await _rules_read()
     await article(feed_id, ("Politics live", "https://loopback.example.com/politics/live/a"))
-    await _rule(dimension=Dimension.URL_PATTERN, pattern="/live/")
+    await _filter(dimension=Dimension.URL_PATTERN, pattern="/live/")
 
     assert await _due_urls() == []
 

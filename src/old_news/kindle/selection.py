@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import ColumnElement, and_, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from old_news import db, training
+from old_news import db, filters
 from old_news.config import KindleSettings
 from old_news.db import (
     Extraction,
@@ -56,7 +56,7 @@ def wanted(cutoff: datetime.datetime) -> ColumnElement[bool]:
         Item.finished_at.is_(None),
         Item.first_seen_at >= cutoff,
         new_when_seen(Item.first_seen_at, ItemVersion.published_at),
-        ~training.blocked(ItemVersion, Item),
+        ~filters.blocked(ItemVersion, Item),
         has_reading(),
     )
 

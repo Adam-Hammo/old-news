@@ -1,4 +1,4 @@
-"""Which items a blocking rule takes out, and which it must leave alone."""
+"""Which items a filter takes out, and which it must leave alone."""
 
 import uuid
 
@@ -7,8 +7,8 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from old_news import db, training
-from old_news.db import Dimension, Document, Item, ItemVersion, RuleSource, TrainingRule
+from old_news import db, filters
+from old_news.db import Dimension, Document, Filter, FilterSource, Item, ItemVersion
 from old_news.subscriptions.service import add
 
 
@@ -39,8 +39,8 @@ async def _item(session: AsyncSession, feed_id: uuid.UUID, *, title: str, url: s
 
 
 @db.transactional
-async def _rule(session: AsyncSession, **values) -> None:
-    session.add(TrainingRule(source=RuleSource.HAND, **values))
+async def _filter(session: AsyncSession, **values) -> None:
+    session.add(Filter(source=FilterSource.HAND, **values))
     await session.flush()
 
 
@@ -49,7 +49,7 @@ async def _blocked_titles(session: AsyncSession) -> list[str]:
     rows = await session.execute(
         select(ItemVersion.title)
         .join(Item, Item.id == ItemVersion.item_id)
-        .where(training.blocked(ItemVersion, Item))
+        .where(filters.blocked(ItemVersion, Item))
     )
     return sorted(rows.scalars().all())
 
@@ -60,7 +60,7 @@ async def test_a_url_pattern_blocks_only_matching_items(clean: None):
         feed_id, title="Politics live", url="https://loopback.example.com/politics/live/2026/aug"
     )
     await _item(feed_id, title="A finished article", url="https://loopback.example.com/news/one")
-    await _rule(dimension=Dimension.URL_PATTERN, pattern="/live/", blocks=True)
+    await _filter(dimension=Dimension.URL_PATTERN, pattern="/live/")
 
     assert await _blocked_titles() == ["Politics live"]
 
@@ -69,27 +69,23 @@ async def test_a_title_phrase_blocks_the_other_convention(clean: None):
     feed_id = await _feed("https://loopback.example.com/feed.xml")
     await _item(feed_id, title="Live: the second test", url="https://loopback.example.com/sport/a")
     await _item(feed_id, title="Alive and well", url="https://loopback.example.com/sport/b")
-    await _rule(dimension=Dimension.TITLE_PHRASE, pattern="live:", blocks=True)
+    await _filter(dimension=Dimension.TITLE_PHRASE, pattern="live:")
 
     assert await _blocked_titles() == ["Live: the second test"]
 
 
-async def test_a_rule_that_does_not_block_blocks_nothing(clean: None):
-    """`blocks` is the tier, not the existence of the row. Thumbs will not filter."""
-    feed_id = await _feed("https://loopback.example.com/feed.xml")
-    await _item(feed_id, title="Politics live", url="https://loopback.example.com/live/a")
-    await _rule(dimension=Dimension.URL_PATTERN, pattern="/live/", blocks=False)
-
-    assert await _blocked_titles() == []
+async def test_an_empty_pattern_cannot_be_stored(clean: None):
+    """Every title contains the empty string, so it would block everything."""
+    with pytest.raises(IntegrityError):
+        await _filter(dimension=Dimension.TITLE_PHRASE, pattern="")
 
 
-async def test_a_per_feed_rule_leaves_other_feeds_alone(clean: None):
-    """The override half of "global, with per-feed overrides"."""
+async def test_a_per_feed_filter_leaves_other_feeds_alone(clean: None):
     one = await _feed("https://one.example.com/feed.xml")
     two = await _feed("https://two.example.com/feed.xml")
     await _item(one, title="Blocked here", url="https://one.example.com/live/a")
     await _item(two, title="Fine over here", url="https://two.example.com/live/a")
-    await _rule(dimension=Dimension.URL_PATTERN, pattern="/live/", blocks=True, feed_id=one)
+    await _filter(dimension=Dimension.URL_PATTERN, pattern="/live/", feed_id=one)
 
     assert await _blocked_titles() == ["Blocked here"]
 
@@ -99,26 +95,26 @@ async def test_an_underscore_in_a_pattern_is_not_a_wildcard(clean: None):
     feed_id = await _feed("https://loopback.example.com/feed.xml")
     await _item(feed_id, title="Real", url="https://loopback.example.com/live_blog/a")
     await _item(feed_id, title="Coincidence", url="https://loopback.example.com/liveXblog/a")
-    await _rule(dimension=Dimension.URL_PATTERN, pattern="live_blog", blocks=True)
+    await _filter(dimension=Dimension.URL_PATTERN, pattern="live_blog")
 
     assert await _blocked_titles() == ["Real"]
 
 
 async def test_a_dimension_with_no_matching_code_cannot_be_stored(clean: None):
-    """A rule that could never fire is worse than a missing feature. The enum stops it in
+    """A filter that could never fire is worse than a missing feature. The enum stops it in
     Python; this is the database refusing it too, for anything the ORM did not write."""
     with pytest.raises(IntegrityError):
         async with db.session() as session:
             await session.execute(
                 text(
-                    "INSERT INTO training_rules (dimension, pattern, blocks, source) "
-                    "VALUES ('author', 'someone', true, 'hand')"
+                    "INSERT INTO filters (dimension, pattern, source) "
+                    "VALUES ('author', 'someone', 'hand')"
                 )
             )
 
 
-async def test_the_same_global_rule_cannot_be_added_twice(clean: None):
-    await _rule(dimension=Dimension.URL_PATTERN, pattern="/live/", blocks=True)
+async def test_the_same_global_filter_cannot_be_added_twice(clean: None):
+    await _filter(dimension=Dimension.URL_PATTERN, pattern="/live/")
 
     with pytest.raises(IntegrityError):
-        await _rule(dimension=Dimension.URL_PATTERN, pattern="/live/", blocks=True)
+        await _filter(dimension=Dimension.URL_PATTERN, pattern="/live/")

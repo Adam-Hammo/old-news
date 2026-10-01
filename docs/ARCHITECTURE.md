@@ -23,7 +23,7 @@ src/old_news/
   subscriptions/     what we follow: add, OPML, discovery
 
   # what the reader wants
-  training/          rules about what is worth keeping
+  filters/           what the reader never wants to see
   ui/                what the reading UI asks for: a river, an article, the archive
   kindle/            the weekly periodical: what goes in it, and getting it there
 
@@ -282,6 +282,7 @@ And for a request:
 api/routes/reading.py        ──►  ui/service.py             ──►  db/
 api/routes/archive.py        ──►  ui/archive.py, ui/search.py  ──►  db/
 api/routes/subscriptions.py  ──►  subscriptions/service.py  ──►  fetch/, db/
+api/routes/filters.py        ──►  filters/service.py        ──►  db/
 ```
 
 A service never imports from `api/` or `tasks/`. That's the only direction rule, and it's what keeps
@@ -385,7 +386,7 @@ no threshold, and reads off the log. Those were one column called `suspended`, w
 the limit used to leave rows stamped with the old one.
 
 **Everything else** is raw DDL in a revision: `op.execute` is how a column gets backfilled and how
-the seed `training_rules` get in.
+the seed `filters` get in.
 
 ### Stored bodies are compressed, sometimes against a dictionary
 
@@ -512,9 +513,9 @@ omission is the same overload as a column that means two things depending on the
 declares no identity, so `source` being NOT NULL makes the database refuse a reading that will not
 say which kind it is.
 
-`title` stays on `item_versions`, with both urls, because `training.blocked()` matches on them in
-the `WHERE` of `due_captures` — before anything is fetched. Moving a title to an extraction would
-make a block unevaluable on a version whose extraction sweep has not run yet, and the obvious fix,
+`title` stays on `item_versions`, with both urls, because `filters.blocked()` matches on them in the
+`WHERE` of `due_captures` — before anything is fetched. Moving a title to an extraction would make a
+block unevaluable on a version whose extraction sweep has not run yet, and the obvious fix,
 extracting inside the poll, is ruled out: a failing extractor must not fail a poll.
 
 A page reading claims metadata; a feed reading does not. On a fragment `extract_metadata` returns

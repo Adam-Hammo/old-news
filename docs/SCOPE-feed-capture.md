@@ -38,7 +38,7 @@ Do not re-litigate these.
   `feed_captures` is one row per version that cannot, `image_captures` is content-addressed and
   shared across articles. A shared base would carry `outcome` where it is meaningless or shrink to
   four columns and buy a join.
-- **`title` stays on `item_versions`**, with both urls. `training.blocked()` matches `TITLE_PHRASE`
+- **`title` stays on `item_versions`**, with both urls. `filters.blocked()` matches `TITLE_PHRASE`
   and `URL_PATTERN` in the `WHERE` of `due_captures`, before anything is fetched. Moving title to an
   extraction would make a block unevaluable on a version whose extraction sweep has not run. Running
   feed extraction inside the poll would fix that and is ruled out: a failing extractor must not fail
