@@ -85,6 +85,7 @@ STATES = {
     "unread": lambda: Item.read.is_(False),
     "finished": lambda: Item.finished_at.is_not(None),
     "unfinished": lambda: Item.finished_at.is_(None),
+    "saved": lambda: Item.saved_at.is_not(None),
 }
 
 
@@ -205,15 +206,9 @@ def _period(zone: str, monthly: bool):
 
 
 def _states(asked: Query, zone: str):
-    """All four at once: they are four readings of two columns, not four groups."""
-    counted = {
-        "read": Item.read.is_(True),
-        "unread": Item.read.is_(False),
-        "finished": Item.finished_at.is_not(None),
-        "unfinished": Item.finished_at.is_(None),
-    }
+    """All at once: they are readings of a few columns, not separate groups."""
     return _reached(
-        entries.held(*(func.count().filter(where).label(name) for name, where in counted.items())),
+        entries.held(*(func.count().filter(where()).label(name) for name, where in STATES.items())),
         asked,
         zone,
     )

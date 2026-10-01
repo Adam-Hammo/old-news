@@ -4,7 +4,9 @@ import datetime
 import uuid
 
 from litestar.testing import AsyncTestClient
+from sqlalchemy import text
 
+from old_news import db
 from old_news.db import Tier
 
 
@@ -67,6 +69,8 @@ async def test_an_item_that_is_not_there_is_a_404(client: AsyncTestClient):
 
     assert (await client.get(f"/items/{missing}")).status_code == 404
     assert (await client.post(f"/items/{missing}/opened")).status_code == 404
+    assert (await client.put(f"/items/{missing}/saved")).status_code == 404
+    assert (await client.delete(f"/items/{missing}/saved")).status_code == 404
 
 
 async def test_reading_to_the_bottom_is_recorded(served, feed, story):
@@ -79,6 +83,27 @@ async def test_reading_to_the_bottom_is_recorded(served, feed, story):
     assert finished.status_code == 201
     assert finished.json()["finished_at"]
     assert article.json()["read"] is True
+
+
+async def test_saving_an_item_asks_for_its_pictures_and_unsaving_keeps_them(served, feed, story):
+    item_id = await story(await feed("outlet.example.com"), "A headline", body="Text.")
+    client = await served()
+
+    saved = await client.put(f"/items/{item_id}/saved")
+    assert saved.status_code == 200
+    assert saved.json()["saved_at"]
+    assert (await client.get(f"/items/{item_id}")).json()["saved"] is True
+
+    assert (await client.delete(f"/items/{item_id}/saved")).status_code == 204
+    assert (await client.get(f"/items/{item_id}")).json()["saved"] is False
+
+    # The app's connections are bound to its own loop; hand them back before reading here.
+    await db.engine().dispose()
+    async with db.session() as session:
+        asked = await session.scalars(
+            text("SELECT args FROM procrastinate_jobs WHERE task_name = 'capture_saved_images'")
+        )
+        assert [job["item_id"] for job in asked] == [str(item_id)]
 
 
 async def test_the_river_drops_what_has_aged_out(served, feed, story):

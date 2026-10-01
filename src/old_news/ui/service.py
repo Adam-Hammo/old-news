@@ -37,6 +37,7 @@ class Article:
     published_at: datetime.datetime | None
     first_seen_at: datetime.datetime
     read: bool
+    saved: bool
     comments_url: str
     versions: int
     # The kicker. A row cannot carry one — a section is a set of feeds and a row would be
@@ -106,6 +107,7 @@ async def _reading_row(session: AsyncSession, item_id: uuid.UUID) -> dict | None
         item_reading(ExtractionSource.PAGE).label("page"),
         ItemVersion.comments_url.label("comments_url"),
         Item.version_count.label("versions"),
+        Item.saved_at.is_not(None).label("saved"),
         func.coalesce(Subscription.category, "").label("section"),
     ).where(Item.id == item_id)
 
@@ -177,3 +179,24 @@ async def mark_finished(session: AsyncSession, item_id: uuid.UUID) -> datetime.d
         .returning(Item.finished_at)
     )
     return finished.scalar_one_or_none()
+
+
+@db.transactional
+async def mark_saved(session: AsyncSession, item_id: uuid.UUID) -> datetime.datetime | None:
+    """Put an item in the saved collection. None if there is no such item."""
+    saved = await session.execute(
+        update(Item)
+        .where(Item.id == item_id)
+        .values(saved_at=func.coalesce(Item.saved_at, func.now()))
+        .returning(Item.saved_at)
+    )
+    return saved.scalar_one_or_none()
+
+
+@db.transactional
+async def unsave(session: AsyncSession, item_id: uuid.UUID) -> bool:
+    """Take an item out of the saved collection, keeping what was captured for it."""
+    found = await session.execute(
+        update(Item).where(Item.id == item_id).values(saved_at=None).returning(Item.id)
+    )
+    return found.scalar_one_or_none() is not None

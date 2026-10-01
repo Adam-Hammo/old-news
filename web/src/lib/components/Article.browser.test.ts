@@ -17,6 +17,7 @@ function article(over: Partial<Article> = {}): Article {
 		published_at: '2026-08-30T06:46:00Z',
 		first_seen_at: '2026-08-30T07:00:00Z',
 		read: false,
+		saved: false,
 		comments_url: '',
 		versions: 1,
 		section: 'Surveillance',
@@ -27,7 +28,14 @@ function article(over: Partial<Article> = {}): Article {
 }
 
 const show = (over: Partial<Article> = {}, back = '/', finish = () => {}, whence = 'River') =>
-	render(ArticleView, { article: article(over), back, whence, finish });
+	render(ArticleView, {
+		article: article(over),
+		back,
+		whence,
+		finish,
+		saved: false,
+		toggleSaved: () => {},
+	});
 
 test('the headline, the byline and the text', async () => {
 	const screen = await show();

@@ -131,8 +131,18 @@ async def schedule_lead_images(timestamp: int) -> None:
 @app.task(name="schedule_body_images", queue=QUEUE, priority=SCHEDULER_PRIORITY)
 async def schedule_body_images(timestamp: int) -> None:
     """The rest of an article's pictures, for the feeds worth holding them for."""
+    await _defer_body_images()
+
+
+@task(app, name="capture_saved_images", queue=QUEUE, priority=SCHEDULER_PRIORITY)
+async def capture_saved_images(item_id: str) -> None:
+    """A saved article's pictures now, rather than whenever the sweep reaches them."""
+    await _defer_body_images(uuid.UUID(item_id))
+
+
+async def _defer_body_images(item_id: uuid.UUID | None = None) -> None:
     settings = get_settings()
-    due = await extract.due_body_images(settings.extract.image_batch_size)
+    due = await extract.due_body_images(settings.extract.image_batch_size, item_id=item_id)
     deferred = await sweep.defer_each(
         capture_image,
         due,

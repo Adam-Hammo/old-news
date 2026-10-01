@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { markFinished, markOpened } from '#lib/api/client.ts';
+	import { markFinished, markOpened, save } from '#lib/api/client.ts';
 	import type { Article } from '#lib/api/client.ts';
 	import ArticleView from '#lib/components/Article.svelte';
 	import { finished } from '#lib/finished.ts';
@@ -28,8 +28,17 @@
 		finished.add(id);
 		markFinished(id);
 	}
+
+	let saved = $derived(article.saved);
+
+	async function toggleSaved() {
+		const id = article.id;
+		saved = !saved;
+		// A refusal puts it back rather than leaving the sheet claiming what never happened.
+		if (await save(id, saved)) saved = !saved;
+	}
 </script>
 
 <svelte:head><title>{article.title} — old news</title></svelte:head>
 
-<ArticleView {article} {back} {whence} {finish} />
+<ArticleView {article} {back} {whence} {finish} {saved} {toggleSaved} />

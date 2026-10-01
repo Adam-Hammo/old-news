@@ -21,7 +21,7 @@ OPERATORS = frozenset({"from", "by", "after", "before", "is"})
 NEGATABLE = frozenset({"from", "by"})
 
 # What `is:` takes. Read is a tap on a headline; finished is the bottom of the article.
-STATES = ("read", "unread", "finished", "unfinished")
+STATES = ("read", "unread", "finished", "unfinished", "saved")
 
 
 class BadQuery(ValueError):

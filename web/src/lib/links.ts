@@ -72,6 +72,7 @@ const STATES: Record<string, string> = {
 	read: 'Opened',
 	finished: 'Read to the end',
 	unfinished: 'Not read to the end',
+	saved: 'Saved',
 };
 
 function bare(value: string): string {

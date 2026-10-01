@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -101,9 +101,11 @@ async def due_images(
 
 
 @db.transactional
-async def due_body_images(session: AsyncSession, limit: int) -> list[uuid.UUID]:
+async def due_body_images(
+    session: AsyncSession, limit: int, *, item_id: uuid.UUID | None = None
+) -> list[uuid.UUID]:
     """Body slots behind articles worth their pictures. Newest first, because images rot."""
-    rows = await session.execute(
+    query = (
         select(ExtractionImage.id)
         .join(Extraction, Extraction.id == ExtractionImage.extraction_id)
         .join(ItemVersion, ItemVersion.id == Extraction.item_version_id)
@@ -112,16 +114,21 @@ async def due_body_images(session: AsyncSession, limit: int) -> list[uuid.UUID]:
         .where(
             ExtractionImage.role == ImageRole.BODY,
             ExtractionImage.image_capture_id.is_(None),
-            Subscription.active.is_(True),
-            # The wire gets its lead and nothing else: measured, the short-tier feeds
-            # are about 88% of the ongoing image bill and none of what gets read twice.
-            at_least(Tier.ARCHIVE),
+            or_(
+                # The wire gets its lead and nothing else: measured, the short-tier feeds
+                # are about 88% of the ongoing image bill and none of what gets read twice.
+                and_(Subscription.active.is_(True), at_least(Tier.ARCHIVE)),
+                Item.saved_at.is_not(None),
+            ),
         )
         # uuidv7, so this is arrival order. A fresh article's pictures are still up;
         # a year-old one's are already gone or already stable.
         .order_by(ExtractionImage.id.desc())
         .limit(limit)
     )
+    if item_id is not None:
+        query = query.where(Item.id == item_id)
+    rows = await session.execute(query)
     return list(rows.scalars().all())
 
 

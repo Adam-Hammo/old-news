@@ -151,6 +151,11 @@ export function unblock(id: string): Promise<string> {
 	return send(`/filters/${id}/`, 'DELETE');
 }
 
+/** In the saved collection or out of it. Saving also fetches every picture in the article. */
+export function save(id: string, on: boolean): Promise<string> {
+	return send(`/items/${id}/saved/`, on ? 'PUT' : 'DELETE');
+}
+
 /** Fire and forget: nothing reads the answer, and a dead tailnet must not reject unhandled. */
 export function markOpened(id: string): void {
 	void fetch(`${BASE}/items/${id}/opened/`, { method: 'POST' }).catch(() => {});

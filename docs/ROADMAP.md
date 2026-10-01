@@ -17,7 +17,7 @@ job is to make that cheap. Four rules cover most of it:
 - **Derived stuff gets its own table**, tied to the version it came from, stamped with the code
   version that made it. Never bolted onto the thing it came from.
 - **Nothing gets destroyed.** No updates on the append-only tables. Expiry hides, it doesn't delete.
-- **Hand-made data is the only data that can't be rebuilt** — filters, labels, read state, per-feed
+- **Hand-made data is the only data that can't be rebuilt** — filters, saves, read state, per-feed
   overrides. Treat it accordingly.
 
 And one about the code rather than the data:
@@ -189,11 +189,12 @@ What's in it:
 - **Keyword search.** Cheaper than expected: `pg_search` is already in the image, unused. Most
   searches are keyword searches.
 - **The river**, Currents-style. Things age out of view, no unread counts, a line marking where new
-  stuff starts. Out of _view_ — nothing leaves the database, and anything labelled never ages out at
-  all, or the river eats the thing that was deliberately kept.
-- **Labels that do things.** Saved, send-to-kindle, download. One labelling idea where some labels
-  carry behaviour, instead of a new boolean column every time.
-- Folders or Currents turned out to be one idea, called sections. Those are about feeds. Labels are
+  stuff starts. Out of _view_ — nothing leaves the database.
+- **Save, and no labels.** Saving is a collection in the archive, not a hold on the river: a saved
+  item ages out of view like anything else. It does change what gets captured — a saved wire item
+  gets its body images too. Labels in general lost to search: once relatedness exists, the archive
+  can build a collection on the fly that nobody had to file by hand.
+- Folders or Currents turned out to be one idea, called sections. Those are about feeds. Saving is
   about articles.
 - **Filters**, set from Settings. A title phrase or a bit of address, everywhere or on one feed.
   Hidden from the river and Kindle, and never fetched in full — which is what keeps live blogs out.
@@ -309,9 +310,10 @@ fresh connection.
 model change runs on the same worker as the polls keeping the archive current. There are queues
 already, so this is nearly free to get right and irritating to retrofit.
 
-**The hand-made data wants backing up separately.** Filters, labels, read state and overrides are
-the only things that can't be rebuilt, and right now they're buried inside the same dump as the tens
-of gigabytes that can be. A few megabytes exported on its own is silly cheap insurance.
+**The hand-made data is in the nightly dump with everything else.** Filters, saves, read state and
+overrides are the only things that can't be rebuilt, and restoring them means restoring the lot.
+Fine while the lot is small. Exporting them on their own is worth it once pulling one table back
+means downloading tens of gigabytes.
 
 **Corpus stats somewhere visible.** This project decides things by looking at the data, and right
 now that means hand-writing SQL. Feed health goes on the same screen — Logfire already handles
