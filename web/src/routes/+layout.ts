@@ -7,14 +7,12 @@ import type { LayoutLoad } from './$types';
 // shell is served and the data is fetched from where the prefix actually resolves.
 export const ssr = false;
 
-// Two screens, and the path is what says which. The archive is not a slice of the river:
-// it has its own list, its own filters and no sections at all.
-const ARCHIVE = '/archive';
-
 // Both lists load here rather than in their own route: on a wide screen the article
 // renders over or beside one, so the list cannot belong to the page the article replaces.
-export const load: LayoutLoad = async ({ fetch, url }) => {
-	const archive = url.pathname.startsWith(ARCHIVE);
+// The param rather than the path: reading `url.pathname` reruns this on every navigation,
+// opening an article included.
+export const load: LayoutLoad = async ({ fetch, url, params }) => {
+	const archive = Boolean(params.archive);
 	const view: View = archive
 		? { ...EVERYTHING, q: url.searchParams.get('q') ?? '' }
 		: { ...NOWHERE, section: url.searchParams.get('section') ?? '' };

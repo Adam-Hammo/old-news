@@ -30,7 +30,7 @@
 	const total = $derived(latest ? latest.total : data.total);
 
 	// Anything that is not the list gets the second pane: an article, or settings.
-	const open = $derived(page.route.id !== '/' && page.route.id !== '/archive');
+	const open = $derived(page.route.id !== '/[[archive=archive]]');
 	const solo = $derived(!list);
 	const selected = $derived(page.params.id ?? '');
 	const reading = $derived(Boolean(page.route.id?.endsWith('/item/[id]')));
