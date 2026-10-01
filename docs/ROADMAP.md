@@ -17,7 +17,7 @@ job is to make that cheap. Four rules cover most of it:
 - **Derived stuff gets its own table**, tied to the version it came from, stamped with the code
   version that made it. Never bolted onto the thing it came from.
 - **Nothing gets destroyed.** No updates on the append-only tables. Expiry hides, it doesn't delete.
-- **Hand-made data is the only data that can't be rebuilt** — thumbs, labels, read state, per-feed
+- **Hand-made data is the only data that can't be rebuilt** — filters, labels, read state, per-feed
   overrides. Treat it accordingly.
 
 And one about the code rather than the data:
@@ -38,10 +38,10 @@ filesystem by a test, so a new top-level folder fails in the diff that adds it.
 
 The tell is when a module starts holding state about things it isn't about.
 
-Rule two is what makes the pivots cheap. Extraction, embeddings, scores and relatedness each in
-their own table means changing tack is a `DROP TABLE` and a rebuild, not surgery on the core. It
-also keeps the big tables alone, which matters more as they grow — adding a column to `documents` at
-30 GB is a different animal from adding one today.
+Rule two is what makes the pivots cheap. Extraction, embeddings and relatedness each in their own
+table means changing tack is a `DROP TABLE` and a rebuild, not surgery on the core. It also keeps
+the big tables alone, which matters more as they grow — adding a column to `documents` at 30 GB is a
+different animal from adding one today.
 
 ## What the corpus said
 
@@ -67,19 +67,13 @@ below.
 
 One question sets the order. **Does waiting lose anything?**
 
-Two things rot. Articles and images go offline, get walled off, get quietly rewritten. Training
-signal is worse — a thumbs-down with nowhere to click it doesn't exist anywhere, and nobody else
-keeps a copy of those opinions.
+One thing rots. Articles and images go offline, get walled off, get quietly rewritten.
 
 Everything else waits for free. Search, clustering, folders, expiry, Kindle, backfill. Embeddings
 especially: same cost whenever they happen, and they get redone on every model change anyway.
 
 None of this is about speed. Going slow makes the rotting stuff matter more, not less, and costs
 nothing at all on the rest. So no rush, and no excuse for cutting corners on groundwork.
-
-Handy side effect — a score is just a function of weights and article, so thumbs can be collected
-long before anything scores them, then the whole archive scored retroactively. The reading UI should
-be hoovering up opinions from day one, even with nothing to do with them yet.
 
 ## Versioning: mostly right already
 
@@ -187,8 +181,8 @@ Python staying the backend and stopping there. The reasoning is in PHASE-3.
 
 **No login** did. Tailnet-only, so there's nothing to log into and a pile of work vanishes.
 
-GReader stays dead. It can't express training, scoring, the river, Voices or labels — five features
-with no vocabulary in the protocol, and most of the point of the app.
+GReader stays dead. It can't express filters, the river, Voices or labels — four features with no
+vocabulary in the protocol, and most of the point of the app.
 
 What's in it:
 
@@ -201,49 +195,26 @@ What's in it:
   carry behaviour, instead of a new boolean column every time.
 - Folders or Currents turned out to be one idea, called sections. Those are about feeds. Labels are
   about articles.
-- **Thumbs, collected, unused.** Overruled for the first cut — training starts fresh, later, and the
-  item row only has to leave room for it.
+- **Filters**, set from Settings. A title phrase or a bit of address, everywhere or on one feed.
+  Hidden from the river and Kindle, and never fetched in full — which is what keeps live blogs out.
 
-Authors need sorting out around here. Two features want them — following a person instead of a feed,
-and training on an author — and right now they're 673 messy strings with a third of them blank.
-
-## Then: training
-
-Thumbs up and down on tags, authors, title phrases, feeds. Global, with per-feed overrides.
-Filtering first — hide the rubbish — and leave ranking until the rules are dense enough to sort by.
-
-**It's not a sum.** The obvious guess is that each thumb adds ±1 and an article's score is the
-total. NewsBlur doesn't do that. Each dimension settles on one value, then the strongest positive
-wins outright — except a "never show me this" tier that beats everything, and the feed's own score,
-which only counts when nothing else has an opinion. Green beats red.
-
-Better than a sum, for two reasons. A sum makes the score depend on how much training has happened
-rather than what got trained, so the cutoff drifts as rules pile up. And max/min stays explainable —
-there's always exactly one rule to point at. A sum gives you "nine rules came out to -2", which
-tells you nothing and can't be debugged.
-
-It's coarse, and there's nothing to rank on. Fine for now, and cheap to change later: the weights
-are the part that can't be lost, the combining rule is just code. So store proper integer weights
-even though three values is all the current rule needs.
-
-Stays deterministic and explainable either way — same weights and same article, same score, and the
-UI can name the rules that did it. NewsBlur has since bolted an LLM onto this. That's the part to
-skip.
+Authors need sorting out around here. Following a person instead of a feed wants them, and right now
+they're 673 messy strings with a third of them blank.
 
 ## Two kinds of per-feed knowledge
 
 Both hang off a feed, so they'll want merging. Don't.
 
 **Observed properties** — ships full text, churns 14x, guids rotate, titles start with "Live:". All
-measured from data already held. Nothing to train, nothing to maintain, and self-correcting when a
+measured from data already held. Nothing to set, nothing to maintain, and self-correcting when a
 publisher changes behaviour.
 
 **Hand-set overrides** — use this selector, never version this feed, poll it hourly. Genuinely
 hand-made and unrecoverable, so rule 4 applies.
 
-Most of what looks like per-feed training is the first kind, and the residue only grows when
-something is actually broken. Reader training is a third thing again — that one's taste, which
-nothing can derive. Different lifecycles, so different tables and different screens.
+Most of what looks like a per-feed filter is the first kind, and the residue only grows when
+something is actually broken. Filters are a third thing again — that's taste, which nothing can
+derive. Different lifecycles, so different tables and different screens.
 
 ## Then: search, properly
 
@@ -266,8 +237,7 @@ rebuilt rather than trusted.
 
 One call worth making now because it's free now and irritating later: **embeddings get their own
 table, recording which model made them.** A plain vector column forces picking dimensions before
-picking a model. Worse, swapping models silently rescores the whole archive with no error, and
-quietly voids every trained weight.
+picking a model. Worse, swapping models silently rescores the whole archive with no error.
 
 ## Someday: reaching backwards
 
@@ -339,9 +309,9 @@ fresh connection.
 model change runs on the same worker as the polls keeping the archive current. There are queues
 already, so this is nearly free to get right and irritating to retrofit.
 
-**The hand-made data wants backing up separately.** Thumbs, labels, read state and overrides are the
-only things that can't be rebuilt, and right now they're buried inside the same dump as the tens of
-gigabytes that can be. A few megabytes exported on its own is silly cheap insurance.
+**The hand-made data wants backing up separately.** Filters, labels, read state and overrides are
+the only things that can't be rebuilt, and right now they're buried inside the same dump as the tens
+of gigabytes that can be. A few megabytes exported on its own is silly cheap insurance.
 
 **Corpus stats somewhere visible.** This project decides things by looking at the data, and right
 now that means hand-writing SQL. Feed health goes on the same screen — Logfire already handles
@@ -364,6 +334,5 @@ and Currents are one idea.
   unanswerable until the extractor can scope them.
 - Whether feeds that already ship full text get their pages fetched anyway — more traffic and
   storage, but it's where the images and the citation links live.
-- Whether a filtered-out article is hidden, or collapsed to a line that expands.
 - Whether the free URL-match dedup is worth doing before relatedness exists, or just shuffles rows
   around for nothing.

@@ -11,6 +11,8 @@ export type Report = components['schemas']['Report'];
 export type Following = components['schemas']['Following'];
 export type Polling = components['schemas']['Polling'];
 export type Publisher = components['schemas']['Publisher'];
+export type Blocking = components['schemas']['Blocking'];
+export type NewFilter = components['schemas']['NewFilter'];
 export type Section = components['schemas']['Section'];
 export type Shape = components['schemas']['Shape'];
 export type Count = components['schemas']['Count'];
@@ -98,6 +100,10 @@ export function publishers(fetcher: Fetcher): Promise<Publisher[]> {
 	return get<Publisher[]>(fetcher, '/status/publishers/');
 }
 
+export function filtering(fetcher: Fetcher): Promise<Blocking[]> {
+	return get<Blocking[]>(fetcher, '/filters/');
+}
+
 export function configured(fetcher: Fetcher): Promise<Section[]> {
 	return get<Section[]>(fetcher, '/status/config/');
 }
@@ -135,6 +141,14 @@ export function file(id: string, filing: Filing): Promise<string> {
 
 export function unfollow(id: string): Promise<string> {
 	return send(`/subscriptions/${id}/`, 'DELETE');
+}
+
+export function block(filter: NewFilter): Promise<string> {
+	return send('/filters/', 'POST', filter);
+}
+
+export function unblock(id: string): Promise<string> {
+	return send(`/filters/${id}/`, 'DELETE');
 }
 
 /** Fire and forget: nothing reads the answer, and a dead tailnet must not reject unhandled. */

@@ -8,9 +8,11 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	const tab = tabbed(url.searchParams.get('tab'));
 	return {
 		tab,
-		feeds: tab === 'feeds' ? await api.following(fetch) : [],
+		// Filters picks its feed from the same list.
+		feeds: tab === 'feeds' || tab === 'filters' ? await api.following(fetch) : [],
 		polling: tab === 'polling' ? await api.polling(fetch) : [],
 		publishers: tab === 'publishers' ? await api.publishers(fetch) : [],
+		filters: tab === 'filters' ? await api.filtering(fetch) : [],
 		config: tab === 'config' ? await api.configured(fetch) : [],
 	};
 };

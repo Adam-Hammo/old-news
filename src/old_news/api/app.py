@@ -9,6 +9,7 @@ from litestar.plugins.opentelemetry import OpenTelemetryPlugin
 from old_news import __version__, db, fetch, observability
 from old_news.api.routes import (
     archive_router,
+    filters_router,
     health_router,
     reading_router,
     reports_router,
@@ -39,6 +40,7 @@ def create_app(settings: Settings | None = None) -> Litestar:
 
     handlers = [
         archive_router(),
+        filters_router(),
         health_router(),
         reading_router(),
         reports_router(),

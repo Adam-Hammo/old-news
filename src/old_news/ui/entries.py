@@ -8,7 +8,7 @@ import uuid
 from sqlalchemy import Select, func, literal, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from old_news import kindle, training
+from old_news import filters, kindle
 from old_news.config import KindleSettings
 from old_news.db import Feed, Item, ItemVersion, Subscription
 from old_news.ui import cursor
@@ -88,8 +88,8 @@ def joined(*columns):
 
 
 def held(*columns):
-    """Everything the archive holds. Blocked rows are not held: training threw them out."""
-    return joined(*columns).where(~training.blocked(ItemVersion, Item))
+    """Everything the archive holds. Blocked rows are not held: a filter threw them out."""
+    return joined(*columns).where(~filters.blocked(ItemVersion, Item))
 
 
 def dated():

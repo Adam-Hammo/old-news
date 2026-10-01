@@ -38,6 +38,41 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/filters': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		/** Every filter, and what it blocks. */
+		get: operations['FiltersFiltering'];
+		put?: never;
+		/** Block what matches a pattern. */
+		post: operations['FiltersBlock'];
+		delete?: never;
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
+	'/filters/{filter_id}': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		put?: never;
+		post?: never;
+		/** Stop filtering. What it hid comes back. */
+		delete: operations['FiltersFilterIdUnblock'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/health/live': {
 		parameters: {
 			query?: never;
@@ -320,6 +355,17 @@ export interface components {
 			lead: string;
 			lead_alt: string;
 		};
+		/** Blocking */
+		Blocking: {
+			/** Format: uuid */
+			id: string;
+			dimension: string;
+			pattern: string;
+			feed_id: string | null;
+			feed: string;
+			source: string;
+			note: string;
+		};
 		/** Count */
 		Count: {
 			name: string;
@@ -382,6 +428,14 @@ export interface components {
 			url: string;
 			/** @default  */
 			category: string;
+		};
+		/** NewFilter */
+		NewFilter: {
+			dimension: string;
+			pattern: string;
+			feed_id?: string | null;
+			/** @default  */
+			note: string;
 		};
 		/** Opened */
 		Opened: {
@@ -518,6 +572,104 @@ export interface operations {
 				content: {
 					'application/json': components['schemas']['Found'];
 				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	FiltersFiltering: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Blocking'][];
+				};
+			};
+		};
+	};
+	FiltersBlock: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		requestBody: {
+			content: {
+				'application/json': components['schemas']['NewFilter'];
+			};
+		};
+		responses: {
+			/** @description Document created, URL follows */
+			201: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	FiltersFilterIdUnblock: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				filter_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, nothing follows */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			/** @description Bad request syntax or unsupported method */
 			400: {
