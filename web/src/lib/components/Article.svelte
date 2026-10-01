@@ -11,7 +11,16 @@
 		back,
 		whence,
 		finish,
-	}: { article: Article; back: string; whence: string; finish: () => void } = $props();
+		saved,
+		toggleSaved,
+	}: {
+		article: Article;
+		back: string;
+		whence: string;
+		finish: () => void;
+		saved: boolean;
+		toggleSaved: () => void;
+	} = $props();
 
 	let sheet = $state<HTMLDialogElement | undefined>();
 	let picked = $state<string | null>(null);
@@ -110,6 +119,11 @@
 				}}
 			>
 				<span>Mark as read</span>
+			</button>
+		</li>
+		<li>
+			<button aria-pressed={saved} onclick={toggleSaved}>
+				<span>{saved ? 'Saved' : 'Save'}</span>
 			</button>
 		</li>
 		<li>

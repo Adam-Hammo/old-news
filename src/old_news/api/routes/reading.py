@@ -4,12 +4,14 @@ import dataclasses
 import datetime
 import uuid
 
-from litestar import Response, Router, get, post
+from litestar import Response, Router, delete, get, post, put
 from litestar.exceptions import ClientException, NotFoundException
 from litestar.params import FromPath, Parameter
 
 from old_news import ui
 from old_news.config import get_settings
+from old_news.tasks.extract import capture_saved_images
+from old_news.tasks.tracing import defer
 
 # The bytes at an id never change — one row per distinct bytes at a URL — so a phone
 # that has fetched a picture once never asks again.
@@ -28,6 +30,13 @@ class Finished:
     """When an article was first read to the bottom. A second call does not move it."""
 
     finished_at: datetime.datetime
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Saved:
+    """When an item was saved. Saving it again does not move it."""
+
+    saved_at: datetime.datetime
 
 
 @get("/river", summary="A page of the river, newest first by when a thing was written.")
@@ -66,6 +75,21 @@ async def finished(item_id: FromPath[uuid.UUID]) -> Finished:
     return Finished(finished_at=at)
 
 
+@put("/items/{item_id:uuid}/saved", summary="Save an item, and fetch every picture in it.")
+async def save(item_id: FromPath[uuid.UUID]) -> Saved:
+    at = await ui.mark_saved(item_id)
+    if at is None:
+        raise NotFoundException(detail="no such item")
+    await defer(capture_saved_images, item_id=str(item_id))
+    return Saved(saved_at=at)
+
+
+@delete("/items/{item_id:uuid}/saved", summary="Unsave an item. What was fetched for it stays.")
+async def unsave(item_id: FromPath[uuid.UUID]) -> None:
+    if not await ui.unsave(item_id):
+        raise NotFoundException(detail="no such item")
+
+
 @get(
     "/images/{capture_id:uuid}",
     summary="One held image, as it is stored.",
@@ -93,6 +117,6 @@ async def sections() -> tuple[str, ...]:
 def reading_router(path: str = "/") -> Router:
     return Router(
         path=path,
-        route_handlers=[river, article, opened, finished, image, sections],
+        route_handlers=[river, article, opened, finished, save, unsave, image, sections],
         tags=["reading"],
     )

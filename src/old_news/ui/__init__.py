@@ -9,8 +9,10 @@ from old_news.ui.service import (
     image,
     mark_finished,
     mark_opened,
+    mark_saved,
     river,
     sections,
+    unsave,
 )
 
 __all__ = [
@@ -35,8 +37,10 @@ __all__ = [
     "image",
     "mark_finished",
     "mark_opened",
+    "mark_saved",
     "parse",
     "river",
     "sections",
     "shape",
+    "unsave",
 ]

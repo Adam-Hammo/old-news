@@ -8,7 +8,7 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from old_news import db
+from old_news import db, ui
 from old_news.db import Extraction, ExtractionImage, ImageCapture, ImageRole, ItemVersion, Tier
 from old_news.extract import images
 from old_news.politeness import ensure
@@ -96,6 +96,33 @@ async def test_a_dropped_subscription_does_not(clean: None, feed, story):
     await _slot(item_id, "https://cdn.example.com/a.png", ImageRole.BODY)
 
     assert await _due() == []
+
+
+async def test_a_saved_wire_item_has_its_body_images_held(clean: None, feed, story):
+    item_id = await story(await feed("wire.example.com"), "A dispatch", body="Text.")
+    slot = await _slot(item_id, "https://cdn.example.com/a.png", ImageRole.BODY)
+    await ui.mark_saved(item_id)
+
+    assert await _due() == [slot]
+
+
+async def test_so_does_one_saved_from_a_dropped_subscription(clean: None, feed, story):
+    feed_id = await feed("wire.example.com", active=False)
+    item_id = await story(feed_id, "A dispatch", body="Text.")
+    slot = await _slot(item_id, "https://cdn.example.com/a.png", ImageRole.BODY)
+    await ui.mark_saved(item_id)
+
+    assert await _due() == [slot]
+
+
+async def test_one_item_can_be_asked_for_alone(clean: None, feed, story):
+    feed_id = await feed("kept.example.com", tier=Tier.ARCHIVE)
+    first = await story(feed_id, "Older", body="Text.")
+    second = await story(feed_id, "Newer", body="Text.")
+    older = await _slot(first, "https://cdn.example.com/a.png", ImageRole.BODY)
+    await _slot(second, "https://cdn.example.com/b.png", ImageRole.BODY)
+
+    assert await images.due_body_images(LIMIT, item_id=first) == [older]
 
 
 async def test_a_lead_is_not_offered_by_the_body_sweep(clean: None, feed, story):

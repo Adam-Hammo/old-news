@@ -192,6 +192,24 @@ export interface paths {
 		patch?: never;
 		trace?: never;
 	};
+	'/items/{item_id}/saved': {
+		parameters: {
+			query?: never;
+			header?: never;
+			path?: never;
+			cookie?: never;
+		};
+		get?: never;
+		/** Save an item, and fetch every picture in it. */
+		put: operations['ItemsItemIdSavedSave'];
+		post?: never;
+		/** Unsave an item. What was fetched for it stays. */
+		delete: operations['ItemsItemIdSavedUnsave'];
+		options?: never;
+		head?: never;
+		patch?: never;
+		trace?: never;
+	};
 	'/images/{capture_id}': {
 		parameters: {
 			query?: never;
@@ -349,6 +367,7 @@ export interface components {
 			/** Format: date-time */
 			first_seen_at: string;
 			read: boolean;
+			saved: boolean;
 			comments_url: string;
 			versions: number;
 			section: string;
@@ -477,6 +496,11 @@ export interface components {
 			url: string;
 			display: string;
 			since_visible: number;
+		};
+		/** Saved */
+		Saved: {
+			/** Format: date-time */
+			saved_at: string;
 		};
 		/** Section */
 		Section: {
@@ -900,6 +924,84 @@ export interface operations {
 				content: {
 					'application/json': components['schemas']['Finished'];
 				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	ItemsItemIdSavedSave: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				item_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, document follows */
+			200: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': components['schemas']['Saved'];
+				};
+			};
+			/** @description Bad request syntax or unsupported method */
+			400: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content: {
+					'application/json': {
+						status_code: number;
+						detail: string;
+						extra?:
+							| null
+							| {
+									[key: string]: unknown;
+							  }
+							| unknown[];
+					};
+				};
+			};
+		};
+	};
+	ItemsItemIdSavedUnsave: {
+		parameters: {
+			query?: never;
+			header?: never;
+			path: {
+				item_id: string;
+			};
+			cookie?: never;
+		};
+		requestBody?: never;
+		responses: {
+			/** @description Request fulfilled, nothing follows */
+			204: {
+				headers: {
+					[name: string]: unknown;
+				};
+				content?: never;
 			};
 			/** @description Bad request syntax or unsupported method */
 			400: {

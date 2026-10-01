@@ -13,6 +13,7 @@
 		{ name: 'unread', label: 'Never opened' },
 		{ name: 'read', label: 'Opened' },
 		{ name: 'finished', label: 'Read to the end' },
+		{ name: 'saved', label: 'Saved' },
 	];
 
 	// The rail reports rather than remembers: what it draws is the shape of what the query

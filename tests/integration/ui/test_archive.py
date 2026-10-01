@@ -214,6 +214,17 @@ async def test_what_has_aged_out_of_the_river_is_still_held(clean: None, feed, s
     assert [entry.title for entry in (await ui.river(KINDLE)).entries] == []
 
 
+async def test_saving_keeps_an_item_in_the_archive_not_the_river(clean: None, feed, story):
+    feed_id = await feed("wire.example.com", expires_after=2 * DAY)
+    saved = await story(feed_id, "Kept", first_seen_at=NOW - 7 * DAY)
+    await story(feed_id, "Not kept", first_seen_at=NOW - 7 * DAY)
+    await ui.mark_saved(saved)
+
+    assert await _titles("is:saved") == ["Kept"]
+    assert _named((await ui.shape(asked=ui.parse(""))).states)["saved"] == 1
+    assert [entry.title for entry in (await ui.river(KINDLE)).entries] == []
+
+
 async def test_the_shape_counts_the_states_too(clean: None, feed, story):
     feed_id = await feed("essays.example.com")
     read = await story(feed_id, "Opened", body="Some text.")
