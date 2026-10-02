@@ -47,6 +47,9 @@ class Article:
     # none, or where the reading already carries it.
     lead: str
     lead_alt: str
+    # So the page can hold the picture's room before it arrives. Zero where it did not open.
+    lead_width: int
+    lead_height: int
 
 
 @db.transactional
@@ -89,12 +92,12 @@ def _pointed_at_us(body: str, local: dict[str, str]) -> str:
     return body
 
 
-def _lead(held: tuple[extract.Held, ...], readings: str) -> tuple[str, str]:
+def _lead(held: tuple[extract.Held, ...], readings: str) -> extract.Held | None:
     """The hero, unless a reading already sets it — some publishers put it in both."""
     for picture in held:
-        if picture.role == ImageRole.LEAD and f"]({picture.url})" not in readings:
-            return f"/{IMAGES}/{picture.capture_id}/", picture.alt
-    return "", ""
+        if picture.role == ImageRole.LEAD and not extract.carries(readings, picture.url):
+            return picture
+    return None
 
 
 @db.transactional
@@ -124,14 +127,18 @@ async def article(item_id: uuid.UUID) -> Article | None:
     feed, page, body = fields.pop("feed"), fields.pop("page"), fields.pop("body")
     # Its own transaction, because the reading and the pictures are two queries.
     held = await extract.held_for([item_id])
-    lead, lead_alt = _lead(held, feed + page)
+    lead = _lead(held, feed + page)
+    stored = await extract.bytes_of(lead.capture_id) if lead else None
+    width, height = extract.measure(stored[0]) if stored else (0, 0)
     local = _local(held)
     return Article(
         feed_body=_pointed_at_us(feed, local),
         page_body=_pointed_at_us(page, local),
         reading=ExtractionSource.FEED if body == feed else ExtractionSource.PAGE,
-        lead=lead,
-        lead_alt=lead_alt,
+        lead=f"/{IMAGES}/{lead.capture_id}/" if lead else "",
+        lead_alt=lead.alt if lead else "",
+        lead_width=width,
+        lead_height=height,
         **fields,
     )
 

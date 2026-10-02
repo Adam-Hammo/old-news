@@ -373,6 +373,8 @@ export interface components {
 			section: string;
 			lead: string;
 			lead_alt: string;
+			lead_width: number;
+			lead_height: number;
 		};
 		/** Blocking */
 		Blocking: {

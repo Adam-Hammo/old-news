@@ -2,9 +2,11 @@
 
 import dataclasses
 import hashlib
+import re
 import uuid
 from collections.abc import Sequence
 from typing import Any
+from urllib.parse import unquote
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -23,6 +25,7 @@ from old_news.db import (
     Tier,
     at_least,
 )
+from old_news.extract.article import IMAGE
 from old_news.fetch import Fetcher, FetchError, Response
 from old_news.observability import count, span
 from old_news.politeness import ensure, host_of
@@ -30,6 +33,26 @@ from old_news.politeness import ensure, host_of
 
 def digest_of(url: str) -> bytes:
     return hashlib.sha256(url.encode()).digest()
+
+
+PICTURE = re.compile(r"([^/]+)\.(?:avif|gif|jpe?g|png|webp)$", re.IGNORECASE)
+# What a CMS or a CDN appends to a file it cut to another size.
+RENDITION = re.compile(r"(?:-\d+x\d+|-scaled|-rotated|[_@]\dx)+$")
+
+
+def _picture(url: str) -> str:
+    """What every rendition of one picture shares: the original's file, less its size."""
+    address = unquote(url)
+    # A resizing proxy carries the original's address inside its own.
+    path = re.split(r"[?#&]", address[address.rfind("://") + 3 :])[0]
+    found = PICTURE.search(path)
+    return RENDITION.sub("", found.group(1).lower()) if found else url
+
+
+def carries(body: str, url: str) -> bool:
+    """Whether a reading already shows this picture, at this size or another."""
+    wanted = _picture(url)
+    return any(_picture(target) == wanted for _, target in IMAGE.findall(body))
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
