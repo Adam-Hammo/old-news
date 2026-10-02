@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { back as returning } from '#lib/back.ts';
 	import type { Snippet } from 'svelte';
 
 	let { back, whence, children }: { back: string; whence: string; children: Snippet } = $props();
@@ -6,7 +7,7 @@
 
 <div class="pane">
 	<div class="top measured">
-		<a href={back} class="up">&larr;&nbsp;&nbsp;{whence}</a>
+		<a href={back} class="up" onclick={returning}>&larr;&nbsp;&nbsp;{whence}</a>
 		<div class="hair"></div>
 	</div>
 

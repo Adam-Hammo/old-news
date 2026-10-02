@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { held } from '#lib/api/client.ts';
+	import { back as returning } from '#lib/back.ts';
 	import type { Article } from '#lib/api/client.ts';
 	import Pane from '#lib/components/Pane.svelte';
 	import { dateline } from '#lib/format.ts';
@@ -87,7 +88,7 @@
 
 	<div class="cap"></div>
 	<nav class="bar">
-		<a href={back}>&larr;&nbsp; Back to the {whence.toLowerCase()}</a>
+		<a href={back} onclick={returning}>&larr;&nbsp; Back to the {whence.toLowerCase()}</a>
 		<span class="divider"></span>
 		<button onclick={() => sheet?.showModal()} aria-label="Article actions"
 			>&#183;&#183;&#183;</button
