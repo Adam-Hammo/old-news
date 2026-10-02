@@ -2,6 +2,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import * as api from '#lib/api/client.ts';
+	import { remember } from '#lib/back.ts';
 	import ArchiveShell from '#lib/components/ArchiveShell.svelte';
 	import Masthead from '#lib/components/Masthead.svelte';
 	import RiverShell from '#lib/components/RiverShell.svelte';
@@ -78,7 +79,8 @@
 	// A navigation that lands on an article and leaves the list on screen is the fault
 	// worth catching. A paint that went stale is invisible from here and reports nothing,
 	// which is the answer too: a wrong screen and no report means it was never the state.
-	afterNavigate(() => {
+	afterNavigate((navigation) => {
+		remember(navigation);
 		// The pane outlives the article in it, and nothing else puts the next one at its top.
 		if (pane) pane.scrollTop = 0;
 		requestAnimationFrame(() => {
