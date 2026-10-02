@@ -70,7 +70,12 @@
 		{#if article.lead}
 			<!-- Served from the archive, so it outlives the publisher's copy. -->
 			<figure class="lead">
-				<img src={held(article.lead)} alt={article.lead_alt} />
+				<img
+					src={held(article.lead)}
+					alt={article.lead_alt}
+					width={article.lead_width || undefined}
+					height={article.lead_height || undefined}
+				/>
 			</figure>
 		{/if}
 

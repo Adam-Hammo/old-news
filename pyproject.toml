@@ -116,6 +116,8 @@ ignore_names = [
   # Built from a SQL row by `**mapping` and read by Litestar to build the schema, so
   # neither end of the field names it.
   "robots_*",
+  # Set by keyword and read by Litestar to build the schema.
+  "lead_*",
   # Enum members reach Postgres through `db.base.one_of`, which iterates the class, and
   # through the seed SQL in a migration. Never named individually from Python.
   "OBSERVED",
