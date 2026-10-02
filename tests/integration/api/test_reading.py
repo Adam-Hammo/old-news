@@ -182,6 +182,7 @@ async def test_a_held_lead_is_offered_to_the_article(served, feed, story, held_i
     article = (await client.get(f"/items/{item_id}")).json()
 
     assert article["lead"] == f"/images/{capture_id}/"
+    assert (article["lead_width"], article["lead_height"]) == (60, 40), "so its room is held"
 
 
 async def test_a_lead_the_reading_already_carries_is_not_offered_twice(

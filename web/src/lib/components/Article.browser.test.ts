@@ -23,6 +23,8 @@ function article(over: Partial<Article> = {}): Article {
 		section: 'Surveillance',
 		lead: '',
 		lead_alt: '',
+		lead_width: 0,
+		lead_height: 0,
 		...over,
 	};
 }
@@ -197,6 +199,20 @@ test('a held lead image is set above the body', async () => {
 	const screen = await show({ lead: '/images/abc/', lead_alt: 'A quiet street' });
 
 	await expect.element(screen.getByRole('img', { name: 'A quiet street' })).toBeVisible();
+});
+
+// On a slow connection the text would otherwise land first and be pushed down the screen.
+test('a lead holds its room before the picture arrives', async () => {
+	const screen = await show({
+		lead: '/images/abc/',
+		lead_alt: 'a',
+		lead_width: 60,
+		lead_height: 40,
+	});
+
+	const room = screen.container.querySelector('.lead img')!.getBoundingClientRect();
+	expect(room.width).toBeGreaterThan(0);
+	expect(room.height).toBeCloseTo((room.width * 40) / 60, 0);
 });
 
 // The reading already carries it, or there is not one held.

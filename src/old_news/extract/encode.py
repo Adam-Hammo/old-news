@@ -104,6 +104,15 @@ def encode(body: bytes, settings: ExtractSettings) -> Encoded | None:
     return Encoded(encoded, CONTENT_TYPE)
 
 
+def measure(body: bytes) -> tuple[int, int]:
+    """Width and height, read from the header. Zeroes where it will not open."""
+    try:
+        with Image.open(io.BytesIO(body)) as opened:
+            return opened.size
+    except OSError, ValueError:
+        return 0, 0
+
+
 DEVICE_CONTENT_TYPE = "image/jpeg"
 
 
